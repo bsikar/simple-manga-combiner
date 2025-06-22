@@ -7,7 +7,7 @@ plugins {
     application
 }
 
-group = "com.example"
+group = "com.mangacombiner" 
 version = "1.0-SNAPSHOT"
 
 repositories {
@@ -39,13 +39,15 @@ tasks.test {
 }
 
 application {
-    mainClass.set("MainKt")
+    // Updated to the new fully qualified name of your main class
+    mainClass.set("com.mangacombiner.MainKt")
 }
 
 // This task creates a fat JAR that includes all dependencies.
 tasks.jar {
     manifest {
-        attributes["Main-Class"] = "MainKt"
+        // Updated here as well for the runnable JAR manifest
+        attributes["Main-Class"] = "com.mangacombiner.MainKt"
     }
     // Add a duplicates strategy to handle duplicate files from dependencies.
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
