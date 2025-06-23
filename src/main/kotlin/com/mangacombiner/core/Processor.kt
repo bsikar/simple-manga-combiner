@@ -9,9 +9,10 @@ import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionMethod
 import nl.adaptivity.xmlutil.ExperimentalXmlUtilApi
-import nl.adaptivity.xmlutil.serialization.UnknownChildHandler
+import nl.adaptivity.xmlutil.serialization.XmlConfig
 import nl.adaptivity.xmlutil.serialization.XML
 import java.io.File
+import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.*
@@ -22,59 +23,55 @@ import kotlin.io.path.nameWithoutExtension
  * Core processor for manga file operations including conversion, creation, and synchronization.
  */
 object Processor {
-    // Constants
+
     private const val COMIC_INFO_FILE = "ComicInfo.xml"
     private const val EPUB_MIMETYPE = "application/epub+zip"
     private const val CONTAINER_XML_PATH = "META-INF/container.xml"
     private const val OPF_BASE_PATH = "OEBPS"
-
-    // Supported image extensions
     private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif")
 
-    // XML configuration
+    private const val FALLBACK_WIDTH = 800
+    private const val FALLBACK_HEIGHT = 1200
+
     @OptIn(ExperimentalXmlUtilApi::class)
-    @Suppress("DEPRECATION")
     private val xmlSerializer = XML {
         indentString = "  "
-        // Keep using the original unknownChildHandler
-        unknownChildHandler = UnknownChildHandler { _, _, _, _, _ ->
-            emptyList<XML.ParsedData<*>>()
+        defaultPolicy {
+            unknownChildHandler = XmlConfig.IGNORING_UNKNOWN_CHILD_HANDLER
         }
     }
 
-    /**
-     * Extension function to convert a string to title case.
-     */
-    private fun String.titlecase(): String = this.split(' ').joinToString(" ") { word ->
-        word.replaceFirstChar { char ->
-            if (char.isLowerCase()) char.titlecase() else char.toString()
-        }
-    }
+    private fun String.titlecase(): String =
+        split(' ').joinToString(" ") { it.replaceFirstChar { c -> if (c.isLowerCase()) c.titlecase() else c.toString() } }
 
-    /**
-     * Checks if a file is an image based on its extension.
-     */
-    private fun String.isImageFile(): Boolean {
-        val extension = this.substringAfterLast('.').lowercase()
-        return extension in IMAGE_EXTENSIONS
-    }
+    private fun String.isImageFile(): Boolean =
+        substringAfterLast('.').lowercase() in IMAGE_EXTENSIONS
 
-    /**
-     * Gets the MIME type for an image file.
-     */
-    private fun String.getImageMimeType(): String {
-        return when (this.substringAfterLast('.').lowercase()) {
+    private fun String.getImageMimeType(): String =
+        when (substringAfterLast('.').lowercase()) {
             "jpg", "jpeg" -> "image/jpeg"
-            "png"         -> "image/png"
-            "webp"        -> "image/webp"
-            "gif"         -> "image/gif"
-            else          -> "image/jpeg" // Default fallback
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            else -> "image/jpeg"
         }
-    }
 
-    /**
-     * Generates ComicInfo.xml content for CBZ files.
-     */
+    private fun safeDimensions(bytes: ByteArray): Pair<Int, Int> =
+        try {
+            ImageIO.read(bytes.inputStream())?.let { it.width to it.height }
+        } catch (t: Throwable) {
+            logDebug { "ImageIO.read failed (${t.javaClass.simpleName}): ${t.message}" }
+            null
+        } ?: (FALLBACK_WIDTH to FALLBACK_HEIGHT)
+
+    private fun safeDimensions(stream: InputStream): Pair<Int, Int> =
+        try {
+            ImageIO.read(stream)?.let { it.width to it.height }
+        } catch (t: Throwable) {
+            logDebug { "ImageIO.read failed (${t.javaClass.simpleName}): ${t.message}" }
+            null
+        } ?: (FALLBACK_WIDTH to FALLBACK_HEIGHT)
+
     private fun generateComicInfoXml(
         mangaTitle: String,
         bookmarks: List<Pair<Int, String>>,
@@ -89,8 +86,8 @@ object Processor {
                 Bookmark = bookmark?.second,
                 Type = when {
                     bookmark != null && isFirstPage -> PageInfo.TYPE_FRONT_COVER
-                    bookmark != null                -> PageInfo.TYPE_STORY
-                    else                            -> null
+                    bookmark != null -> PageInfo.TYPE_STORY
+                    else -> null
                 }
             )
         }
@@ -105,39 +102,23 @@ object Processor {
         return xmlSerializer.encodeToString(ComicInfo.serializer(), comicInfo)
     }
 
-    /**
-     * Creates bookmarks for chapters based on folder information.
-     */
     private fun createBookmarks(sortedFolders: List<File>): Pair<List<Pair<Int, String>>, Int> {
         var totalPageCount = 0
         val bookmarks = mutableListOf<Pair<Int, String>>()
-
         sortedFolders.forEach { folder ->
             val pageCount = folder.listFiles()?.count { it.isFile } ?: 0
             val cleanTitle = folder.name.replace('-', ' ').replace('_', ' ').titlecase()
-            bookmarks.add(Pair(totalPageCount, cleanTitle))
+            bookmarks.add(totalPageCount to cleanTitle)
             totalPageCount += pageCount
         }
-
-        return Pair(bookmarks, totalPageCount)
+        return bookmarks to totalPageCount
     }
 
-    /**
-     * Sorts folders by chapter number.
-     */
-    private fun sortChapterFolders(folders: List<File>): List<File> {
-        return folders.sortedBy { folder ->
-            folder.name.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
-        }
-    }
+    private fun sortChapterFolders(folders: List<File>): List<File> =
+        folders.sortedBy { it.name.filter { ch -> ch.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE }
 
-    /**
-     * Creates a CBZ archive from chapter folders.
-     */
     fun createCbzFromFolders(mangaTitle: String, chapterFolders: List<File>, outputFile: File) {
-        if (outputFile.exists()) {
-            outputFile.delete()
-        }
+        if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
 
         println("Creating CBZ archive: ${outputFile.name}...")
@@ -153,13 +134,11 @@ object Processor {
         val comicInfoXml = generateComicInfoXml(mangaTitle, bookmarks, totalPageCount)
 
         ZipFile(outputFile).use { zipFile ->
-            // Add ComicInfo.xml
             zipFile.addStream(
                 comicInfoXml.byteInputStream(),
                 ZipParameters().apply { fileNameInZip = COMIC_INFO_FILE }
             )
 
-            // Add image files from each chapter folder
             sortedFolders.forEach { folder ->
                 folder.listFiles()
                     ?.filter { it.isFile }
@@ -167,9 +146,7 @@ object Processor {
                     ?.forEach { imageFile ->
                         zipFile.addFile(
                             imageFile,
-                            ZipParameters().apply {
-                                fileNameInZip = "${folder.name}/${imageFile.name}"
-                            }
+                            ZipParameters().apply { fileNameInZip = "${folder.name}/${imageFile.name}" }
                         )
                     }
             }
@@ -178,9 +155,6 @@ object Processor {
         println("Successfully created: ${outputFile.absolutePath}")
     }
 
-    /**
-     * Container for EPUB metadata.
-     */
     private data class EpubMetadata(
         val bookId: String = UUID.randomUUID().toString(),
         val manifestItems: MutableList<String> = mutableListOf(),
@@ -189,50 +163,30 @@ object Processor {
         var playOrder: Int = 1
     )
 
-    /**
-     * Creates the container.xml content for EPUB.
-     */
-    private fun createContainerXml(): String {
-        return """<?xml version="1.0"?>
+    private fun createContainerXml(): String = """<?xml version="1.0"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
     <rootfile full-path="$OPF_BASE_PATH/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>""".trimIndent()
-    }
 
-    /**
-     * Creates an XHTML page for an EPUB image.
-     */
     private fun createXhtmlPage(
         chapterTitle: String,
         pageIndex: Int,
         imageHref: String,
         width: Int,
         height: Int
-    ): String {
-        return """<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+    ): String = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
 <head>
   <title>$chapterTitle - Page ${pageIndex + 1}</title>
   <meta name="viewport" content="width=$width, height=$height"/>
-  <style>
-    body { margin: 0; padding: 0; }
-    img { width: 100%; height: 100%; object-fit: contain; }
-  </style>
-</head>
-<body>
+  <style>body{margin:0;padding:0}img{width:100%;height:100%;object-fit:contain}</style>
+</head><body>
   <img src="../$imageHref" alt="Page ${pageIndex + 1}"/>
-</body>
-</html>""".trimIndent()
-    }
+</body></html>""".trimIndent()
 
-    /**
-     * Creates the content.opf file for EPUB.
-     */
-    private fun createContentOpf(mangaTitle: String, metadata: EpubMetadata): String {
-        return """<?xml version="1.0"?>
+    private fun createContentOpf(mangaTitle: String, metadata: EpubMetadata): String = """<?xml version="1.0"?>
 <package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
     <dc:title>$mangaTitle</dc:title>
@@ -248,13 +202,8 @@ object Processor {
     ${metadata.spineItems.joinToString("\n    ")}
   </spine>
 </package>""".trimIndent()
-    }
 
-    /**
-     * Creates the toc.ncx file for EPUB.
-     */
-    private fun createTocNcx(mangaTitle: String, metadata: EpubMetadata): String {
-        return """<?xml version="1.0"?>
+    private fun createTocNcx(mangaTitle: String, metadata: EpubMetadata): String = """<?xml version="1.0"?>
 <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
 <ncx version="2005-1" xmlns="http://www.daisy.org/z3986/2005/ncx/">
   <head>
@@ -267,63 +216,57 @@ object Processor {
     ${metadata.tocNavPoints.joinToString("\n    ")}
   </navMap>
 </ncx>""".trimIndent()
-    }
 
-    /**
-     * Processes a single chapter for EPUB creation.
-     */
     private fun processEpubChapter(
         chapterName: String,
-        imageHeaders: List<Any>, // Can be FileHeader or File
+        imageHeaders: List<Any>,
         metadata: EpubMetadata,
         epubZip: ZipFile,
         sourceZip: ZipFile? = null,
         useTrueStreaming: Boolean = false
     ) {
-        val cleanChapterTitle = chapterName.replace('-', ' ').replace('_', ' ').titlecase()
-        var chapterNavPointAdded = false
+        val cleanTitle = chapterName.replace('-', ' ').replace('_', ' ').titlecase()
+        var tocAdded = false
 
         imageHeaders.forEachIndexed { pageIndex, imageSource ->
             try {
-                val (bytes, originalFileName, bufferedImage) = when (imageSource) {
+                val (bytes, originalFileName, dims) = when (imageSource) {
                     is net.lingala.zip4j.model.FileHeader -> {
                         val fileName = imageSource.fileName.substringAfterLast('/')
+                        val dimension = if (useTrueStreaming)
+                            safeDimensions(sourceZip!!.getInputStream(imageSource))
+                        else {
+                            val data = sourceZip!!.getInputStream(imageSource).use { it.readBytes() }
+                            safeDimensions(data)
+                        }
                         val data = if (useTrueStreaming) ByteArray(0)
                         else sourceZip!!.getInputStream(imageSource).use { it.readBytes() }
-                        val img = if (useTrueStreaming)
-                            sourceZip!!.getInputStream(imageSource).use { ImageIO.read(it) }
-                        else ImageIO.read(data.inputStream())
-                        Triple(data, fileName, img)
+                        Triple(data, fileName, dimension)
                     }
                     is File -> {
                         val data = imageSource.readBytes()
-                        val img = ImageIO.read(imageSource)
-                        Triple(data, imageSource.name, img)
+                        Triple(data, imageSource.name, safeDimensions(data))
                     }
                     else -> throw IllegalArgumentException("Unknown image source type")
                 }
 
-                if (bufferedImage == null) throw Exception("ImageIO.read returned null")
-
                 val imageId = "img_${chapterName}_$pageIndex"
-                val pageId  = "page_${chapterName}_$pageIndex"
+                val pageId = "page_${chapterName}_$pageIndex"
                 val imageHref = "images/$originalFileName"
-                val pageHref  = "xhtml/$pageId.xhtml"
+                val pageHref = "xhtml/$pageId.xhtml"
                 val mediaType = originalFileName.getImageMimeType()
 
-                metadata.manifestItems.add("""<item id="$imageId" href="$imageHref" media-type="$mediaType"/>""")
-                metadata.manifestItems.add("""<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>""")
-                metadata.spineItems.add("""<itemref idref="$pageId"/>""")
+                metadata.manifestItems += """<item id="$imageId" href="$imageHref" media-type="$mediaType"/>"""
+                metadata.manifestItems += """<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>"""
+                metadata.spineItems += """<itemref idref="$pageId"/>"""
 
-                if (!chapterNavPointAdded) {
-                    metadata.tocNavPoints.add(
-                        """<navPoint id="navPoint-${metadata.playOrder}" playOrder="${metadata.playOrder}">
-      <navLabel><text>$cleanChapterTitle</text></navLabel>
+                if (!tocAdded) {
+                    metadata.tocNavPoints += """<navPoint id="navPoint-${metadata.playOrder}" playOrder="${metadata.playOrder}">
+      <navLabel><text>$cleanTitle</text></navLabel>
       <content src="$pageHref"/>
     </navPoint>"""
-                    )
-                    chapterNavPointAdded = true
                     metadata.playOrder++
+                    tocAdded = true
                 }
 
                 if (useTrueStreaming && sourceZip != null && imageSource is net.lingala.zip4j.model.FileHeader) {
@@ -340,48 +283,35 @@ object Processor {
                     )
                 }
 
-                val xhtmlContent = createXhtmlPage(
-                    cleanChapterTitle,
-                    pageIndex,
-                    imageHref,
-                    bufferedImage.width,
-                    bufferedImage.height
-                )
+                val (w, h) = dims
+                val xhtml = createXhtmlPage(cleanTitle, pageIndex, imageHref, w, h)
                 epubZip.addStream(
-                    xhtmlContent.byteInputStream(),
+                    xhtml.byteInputStream(),
                     ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$pageHref" }
                 )
-
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
                 val name = when (imageSource) {
                     is net.lingala.zip4j.model.FileHeader -> imageSource.fileName
                     is File -> imageSource.path
                     else -> "unknown"
                 }
-                println("Warning: Skipping '$name': ${e.message}")
-                logDebug { "Stack trace: ${e.stackTraceToString()}" }
+                println("Warning: Skipping '$name': ${t.message}")
+                logDebug { "Stack trace: ${t.stackTraceToString()}" }
             }
         }
     }
 
-    /**
-     * Creates an EPUB from a CBZ file using streaming conversion.
-     */
     private fun createEpubFromCbzStream(
         zipFile: ZipFile,
         outputFile: File,
         mangaTitle: String,
         useTrueStreaming: Boolean
     ) {
-        if (outputFile.exists()) {
-            outputFile.delete()
-        }
+        if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
 
-        val imageHeaders = zipFile.fileHeaders.filter { header ->
-            !header.isDirectory &&
-                    header.fileName != COMIC_INFO_FILE &&
-                    header.fileName.isImageFile()
+        val imageHeaders = zipFile.fileHeaders.filter {
+            !it.isDirectory && it.fileName != COMIC_INFO_FILE && it.fileName.isImageFile()
         }
 
         if (imageHeaders.isEmpty()) {
@@ -391,10 +321,7 @@ object Processor {
 
         println("Creating EPUB archive: ${outputFile.name}...")
 
-        val chapterGroups = imageHeaders
-            .groupBy { it.fileName.substringBeforeLast('/') }
-            .toSortedMap()
-
+        val chapterGroups = imageHeaders.groupBy { it.fileName.substringBeforeLast('/') }.toSortedMap()
         val metadata = EpubMetadata()
 
         ZipFile(outputFile).use { epubZip ->
@@ -411,16 +338,8 @@ object Processor {
                 ZipParameters().apply { fileNameInZip = CONTAINER_XML_PATH }
             )
 
-            chapterGroups.forEach { (chapterName, headersInChapter) ->
-                val sortedHeaders = headersInChapter.sortedBy { it.fileName }
-                processEpubChapter(
-                    chapterName,
-                    sortedHeaders,
-                    metadata,
-                    epubZip,
-                    zipFile,
-                    useTrueStreaming
-                )
+            chapterGroups.forEach { (chapter, headers) ->
+                processEpubChapter(chapter, headers.sortedBy { it.fileName }, metadata, epubZip, zipFile, useTrueStreaming)
             }
 
             epubZip.addStream(
@@ -437,13 +356,8 @@ object Processor {
         println("Successfully created: ${outputFile.absolutePath}")
     }
 
-    /**
-     * Creates an EPUB from chapter folders.
-     */
     fun createEpubFromFolders(mangaTitle: String, chapterFolders: List<File>, outputFile: File) {
-        if (outputFile.exists()) {
-            outputFile.delete()
-        }
+        if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
 
         println("Creating EPUB archive: ${outputFile.name}...")
@@ -466,18 +380,9 @@ object Processor {
             )
 
             sortedFolders.forEach { folder ->
-                val imageFiles = folder.listFiles()
-                    ?.filter { it.isFile }
-                    ?.sorted()
-                    ?: return@forEach
-
-                if (imageFiles.isNotEmpty()) {
-                    processEpubChapter(
-                        folder.name,
-                        imageFiles,
-                        metadata,
-                        epubZip
-                    )
+                val images = folder.listFiles()?.filter { it.isFile }?.sorted() ?: return@forEach
+                if (images.isNotEmpty()) {
+                    processEpubChapter(folder.name, images, metadata, epubZip)
                 }
             }
 
@@ -495,9 +400,6 @@ object Processor {
         println("Successfully created: ${outputFile.absolutePath}")
     }
 
-    /**
-     * Downloads manga chapters and creates an archive.
-     */
     suspend fun downloadAndCreate(
         seriesUrl: String,
         customTitle: String?,
@@ -505,18 +407,12 @@ object Processor {
         format: String,
         chapterWorkers: Int
     ) {
-        val mangaTitle = customTitle ?: seriesUrl
-            .substringAfter("/manga/")
-            .trim('/')
-            .replace('-', ' ')
-            .titlecase()
-
+        val mangaTitle = customTitle ?: seriesUrl.substringAfter("/manga/").trim('/')
+            .replace('-', ' ').titlecase()
         println("Manga Title: $mangaTitle")
 
         val chapterUrls = Downloader.findChapterUrls(seriesUrl)
-            .filterNot { url ->
-                url.trimEnd('/').substringAfterLast('/') in exclude
-            }
+            .filterNot { url -> url.trimEnd('/').substringAfterLast('/') in exclude }
 
         if (chapterUrls.isEmpty()) {
             println("No chapters found to download. Exiting.")
@@ -524,38 +420,30 @@ object Processor {
         }
 
         val tempDir = Files.createTempDirectory("manga-download-").toFile()
-
         try {
             println("Downloading ${chapterUrls.size} chapters using up to $chapterWorkers parallel workers...")
-
-            val downloadedFolders = coroutineScope {
+            val downloaded = coroutineScope {
                 chapterUrls.map { url ->
                     async(Dispatchers.IO) {
-                        val chapterSlug = url.trimEnd('/').substringAfterLast('/')
-                        println("-> Starting download for chapter: $chapterSlug")
+                        val slug = url.trimEnd('/').substringAfterLast('/')
+                        println("-> Starting download for chapter: $slug")
                         Downloader.downloadChapter(url, tempDir)
                     }
                 }.awaitAll().filterNotNull()
             }
 
-            if (downloadedFolders.isNotEmpty()) {
-                val outputFile = File("$mangaTitle.$format")
-
+            if (downloaded.isNotEmpty()) {
+                val output = File("$mangaTitle.$format")
                 when (format.lowercase()) {
-                    "epub" -> createEpubFromFolders(mangaTitle, downloadedFolders, outputFile)
-                    else   -> createCbzFromFolders(mangaTitle, downloadedFolders, outputFile)
+                    "epub" -> createEpubFromFolders(mangaTitle, downloaded, output)
+                    else -> createCbzFromFolders(mangaTitle, downloaded, output)
                 }
-            } else {
-                println("No chapters were successfully downloaded.")
-            }
+            } else println("No chapters were successfully downloaded.")
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
-    /**
-     * Syncs a local CBZ file with its online source.
-     */
     suspend fun syncCbzWithSource(
         cbzFile: File,
         seriesUrl: String,
@@ -572,8 +460,8 @@ object Processor {
         val localSlugs = inferChapterSlugsFromZip(cbzFile)
         println("Found ${localSlugs.size} chapters locally.")
 
-        val allOnlineUrls = Downloader.findChapterUrls(seriesUrl)
-        val onlineUrls = allOnlineUrls.filterNot { url ->
+        val allOnline = Downloader.findChapterUrls(seriesUrl)
+        val onlineUrls = allOnline.filterNot { url ->
             url.trimEnd('/').substringAfterLast('/') in exclude
         }
 
@@ -583,9 +471,7 @@ object Processor {
         }
 
         val slugToUrl = onlineUrls.associateBy { it.trimEnd('/').substringAfterLast('/') }
-        val onlineSlugs = slugToUrl.keys
-
-        val missingSlugs = (onlineSlugs - localSlugs).sorted()
+        val missingSlugs = (slugToUrl.keys - localSlugs).sorted()
 
         if (missingSlugs.isEmpty()) {
             println("CBZ is already up-to-date.")
@@ -602,8 +488,8 @@ object Processor {
             coroutineScope {
                 urlsToDownload.map { url ->
                     async(Dispatchers.IO) {
-                        val chapterSlug = url.trimEnd('/').substringAfterLast('/')
-                        println("-> Downloading new chapter: $chapterSlug")
+                        val slug = url.trimEnd('/').substringAfterLast('/')
+                        println("-> Downloading new chapter: $slug")
                         Downloader.downloadChapter(url, tempDir)
                     }
                 }.awaitAll()
@@ -612,14 +498,9 @@ object Processor {
             println("Extracting existing chapters...")
             ZipFile(cbzFile).extractAll(tempDir.absolutePath)
 
-            val allChapterFolders = tempDir.listFiles()
-                ?.filter { it.isDirectory }
-                ?.toList()
-                ?: emptyList()
-
-            if (allChapterFolders.isNotEmpty()) {
-                val mangaTitle = cbzFile.nameWithoutExtension
-                createCbzFromFolders(mangaTitle, allChapterFolders, cbzFile)
+            val folders = tempDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+            if (folders.isNotEmpty()) {
+                createCbzFromFolders(cbzFile.nameWithoutExtension, folders, cbzFile)
                 println("--- Sync complete for: ${cbzFile.name} ---")
             }
         } finally {
@@ -627,9 +508,6 @@ object Processor {
         }
     }
 
-    /**
-     * Converts CBZ to EPUB using dangerous move operation.
-     */
     private fun convertCbzToEpubDangerously(
         sourceZip: ZipFile,
         outputFile: File,
@@ -638,11 +516,8 @@ object Processor {
         if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
 
-        val imageHeaders = sourceZip.fileHeaders.filter { header ->
-            !header.isDirectory && header.fileName != COMIC_INFO_FILE
-        }
-
-        if (imageHeaders.isEmpty()) {
+        val headers = sourceZip.fileHeaders.filter { !it.isDirectory && it.fileName != COMIC_INFO_FILE }
+        if (headers.isEmpty()) {
             println("Warning: No image files found in ${sourceZip.file.name}. Skipping EPUB creation.")
             return
         }
@@ -663,63 +538,45 @@ object Processor {
                 ZipParameters().apply { fileNameInZip = CONTAINER_XML_PATH }
             )
 
-            val chapterGroups = imageHeaders
-                .groupBy { it.fileName.substringBeforeLast('/') }
-                .toSortedMap()
-
+            val chapterGroups = headers.groupBy { it.fileName.substringBeforeLast('/') }.toSortedMap()
             val metadata = EpubMetadata()
-            val allHeadersToMove = chapterGroups.values.flatten().sortedBy { it.fileName }
+            val allHeaders = chapterGroups.values.flatten().sortedBy { it.fileName }
 
-            allHeadersToMove.forEachIndexed { pageIndex, imageHeader ->
-                println("--> Moving image (${pageIndex + 1}/${allHeadersToMove.size}): ${imageHeader.fileName}")
-
+            allHeaders.forEachIndexed { pageIndex, imageHeader ->
+                println("--> Moving image (${pageIndex + 1}/${allHeaders.size}): ${imageHeader.fileName}")
                 val imageBytes = sourceZip.getInputStream(imageHeader).use { it.readBytes() }
-                val bimg = ImageIO.read(imageBytes.inputStream())
-                    ?: throw Exception("Could not read image dimensions")
-
+                val (imgW, imgH) = safeDimensions(imageBytes)
                 val originalFileName = imageHeader.fileName.substringAfterLast('/')
 
                 epubZip.addStream(
                     imageBytes.inputStream(),
-                    ZipParameters().apply {
-                        fileNameInZip = "$OPF_BASE_PATH/images/$originalFileName"
-                    }
+                    ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/images/$originalFileName" }
                 )
-
                 sourceZip.removeFile(imageHeader)
 
                 val chapterName = imageHeader.fileName.substringBeforeLast('/')
                 val cleanChapterTitle = chapterName.replace('-', ' ').replace('_', ' ').titlecase()
-
                 val imageId = "img_${chapterName}_$pageIndex"
                 val pageId = "page_${chapterName}_$pageIndex"
                 val imageHref = "images/$originalFileName"
                 val pageHref = "xhtml/$pageId.xhtml"
                 val mediaType = originalFileName.getImageMimeType()
 
-                metadata.manifestItems.add("""<item id="$imageId" href="$imageHref" media-type="$mediaType"/>""")
-                metadata.manifestItems.add("""<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>""")
-                metadata.spineItems.add("""<itemref idref="$pageId"/>""")
+                metadata.manifestItems += """<item id="$imageId" href="$imageHref" media-type="$mediaType"/>"""
+                metadata.manifestItems += """<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>"""
+                metadata.spineItems += """<itemref idref="$pageId"/>"""
 
                 if (chapterGroups[chapterName]?.sortedBy { it.fileName }?.first() == imageHeader) {
-                    metadata.tocNavPoints.add(
-                        """<navPoint id="navPoint-${metadata.playOrder}" playOrder="${metadata.playOrder}">
+                    metadata.tocNavPoints += """<navPoint id="navPoint-${metadata.playOrder}" playOrder="${metadata.playOrder}">
       <navLabel><text>$cleanChapterTitle</text></navLabel>
       <content src="$pageHref"/>
     </navPoint>"""
-                    )
                     metadata.playOrder++
                 }
 
-                val xhtmlContent = createXhtmlPage(
-                    cleanChapterTitle,
-                    pageIndex,
-                    imageHref,
-                    bimg.width,
-                    bimg.height
-                )
+                val xhtml = createXhtmlPage(cleanChapterTitle, pageIndex, imageHref, imgW, imgH)
                 epubZip.addStream(
-                    xhtmlContent.byteInputStream(),
+                    xhtml.byteInputStream(),
                     ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$pageHref" }
                 )
             }
@@ -738,71 +595,49 @@ object Processor {
         println("DANGEROUS MOVE complete. Original file has been modified and is likely empty of images.")
     }
 
-    /**
-     * Converts an EPUB file to CBZ format.
-     */
     private fun convertEpubToCbz(inputFile: File, outputFile: File, mangaTitle: String) {
         println("Converting EPUB ${inputFile.name} to CBZ format...")
-
         val tempDir = Files.createTempDirectory("epub-to-cbz-").toFile()
-
         try {
             ZipFile(inputFile).use { sourceZip ->
                 val containerHeader = sourceZip.getFileHeader(CONTAINER_XML_PATH)
                     ?: throw Exception("Invalid EPUB: missing container.xml")
-
                 val containerXml = sourceZip.getInputStream(containerHeader).reader().readText()
                 val opfPath = Regex("""full-path="([^"]+)"""").find(containerXml)?.groupValues?.get(1)
                     ?: throw Exception("Could not find content.opf path in container.xml")
-
-                val opfStream = sourceZip.getInputStream(sourceZip.getFileHeader(opfPath))
-                val opfText = opfStream.reader().readText()
+                val opfText = sourceZip.getInputStream(sourceZip.getFileHeader(opfPath)).reader().readText()
                 val opfPackage = xmlSerializer.decodeFromString(OpfPackage.serializer(), opfText)
 
                 val imageItems = opfPackage.manifest.items.filter { it.mediaType.startsWith("image/") }
                 val opfBase = Paths.get(opfPath).parent ?: Paths.get("")
 
                 imageItems.forEach { item ->
-                    val imagePathInZip = opfBase.resolve(item.href).normalize().toString().replace(File.separatorChar, '/')
-                    val header = sourceZip.getFileHeader(imagePathInZip)
+                    val pathInZip = opfBase.resolve(item.href).normalize().toString().replace(File.separatorChar, '/')
+                    val header = sourceZip.getFileHeader(pathInZip)
                     if (header != null) {
-                        val pathParts = imagePathInZip.split('/')
-                        val chapterDir = pathParts.drop(1).dropLast(1).joinToString(File.separator)
+                        val parts = pathInZip.split('/')
+                        val chapterDir = parts.drop(1).dropLast(1).joinToString(File.separator)
                         val finalDir = File(tempDir, chapterDir)
                         finalDir.mkdirs()
-
-                        sourceZip.extractFile(
-                            header,
-                            finalDir.path,
-                            header.fileName.substringAfterLast('/')
-                        )
+                        sourceZip.extractFile(header, finalDir.path, header.fileName.substringAfterLast('/'))
                     }
                 }
             }
 
-            val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
-            if (chapterFolders.isNotEmpty()) {
-                createCbzFromFolders(mangaTitle, chapterFolders, outputFile)
-            } else {
-                println("No chapters found in EPUB.")
-            }
+            val folders = tempDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+            if (folders.isNotEmpty()) createCbzFromFolders(mangaTitle, folders, outputFile)
+            else println("No chapters found in EPUB.")
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
-    /**
-     * Process result information.
-     */
     private data class ProcessResult(
         val success: Boolean,
         val outputFile: File? = null,
         val error: String? = null
     )
 
-    /**
-     * Processes a local file for conversion or metadata update.
-     */
     fun processLocalFile(
         inputFile: File,
         customTitle: String?,
@@ -836,25 +671,24 @@ object Processor {
                     ProcessResult(true, inputFile)
                 }
                 else -> {
-                    val message = if (inputFormat == finalOutputFormat) "File is already in the target format."
-                    else "Conversion from .$inputFormat to .$finalOutputFormat is not supported."
+                    val message = if (inputFormat == finalOutputFormat)
+                        "File is already in the target format."
+                    else
+                        "Conversion from .$inputFormat to .$finalOutputFormat is not supported."
                     println(message)
                     ProcessResult(false, error = message)
                 }
             }
         } catch (e: Exception) {
-            val errorMsg = "ERROR: A failure occurred while processing ${inputFile.name}. Reason: ${e.message}"
-            println(errorMsg)
+            val msg = "ERROR: A failure occurred while processing ${inputFile.name}. Reason: ${e.message}"
+            println(msg)
             logDebug { "Stack trace for ${inputFile.name} failure: ${e.stackTraceToString()}" }
-            result = ProcessResult(false, error = errorMsg)
+            result = ProcessResult(false, error = msg)
         }
 
         handlePostProcessing(inputFile, result, deleteOriginal, useTrueDangerousMode)
     }
 
-    /**
-     * Processes CBZ to EPUB conversion.
-     */
     private fun processCbzToEpub(
         inputFile: File,
         mangaTitle: String,
@@ -878,15 +712,31 @@ object Processor {
             else -> {
                 println("Converting ${inputFile.name} to EPUB format (Temp Directory Mode)...")
                 val tempDir = Files.createTempDirectory("cbz-to-epub-").toFile()
-                try {
+                return try {
                     ZipFile(inputFile).extractAll(tempDir.absolutePath)
-                    val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+                    var chapterFolders = tempDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+
+                    if (chapterFolders.isEmpty()) {
+                        val rootImages = tempDir.listFiles()?.filter { it.isFile && it.name.isImageFile() } ?: emptyList()
+                        if (rootImages.isNotEmpty()) {
+                            val regex = Regex("""(c?\d{1,4})[_\- ]""", RegexOption.IGNORE_CASE)
+                            val grouped = rootImages.groupBy { img ->
+                                regex.find(img.name)?.groupValues?.get(1)?.lowercase() ?: "chapter_1"
+                            }
+                            chapterFolders = grouped.entries.mapIndexed { idx, (key, files) ->
+                                val dir = File(tempDir, if (key == "chapter_1" && grouped.size == 1) "chapter_1" else key)
+                                dir.mkdirs()
+                                files.forEach { it.renameTo(File(dir, it.name)) }
+                                dir
+                            }
+                        }
+                    }
 
                     if (chapterFolders.isNotEmpty()) {
                         createEpubFromFolders(mangaTitle, chapterFolders, outputFile)
                         ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
                     } else {
-                        ProcessResult(false, error = "Could not find chapter folders inside ${inputFile.name} for conversion.")
+                        ProcessResult(false, error = "Could not find chapter folders or images inside ${inputFile.name} for conversion.")
                     }
                 } finally {
                     tempDir.deleteRecursively()
@@ -895,9 +745,6 @@ object Processor {
         }
     }
 
-    /**
-     * Processes EPUB to CBZ conversion.
-     */
     private fun processEpubToCbz(
         inputFile: File,
         mangaTitle: String,
@@ -905,19 +752,13 @@ object Processor {
         useTrueStreaming: Boolean,
         useTrueDangerousMode: Boolean
     ): ProcessResult {
-        if (useTrueDangerousMode || useStreamingConversion) {
+        if (useTrueDangerousMode || useStreamingConversion)
             println("Note: Storage-saving modes for EPUB to CBZ conversion are not yet implemented. Using default Temp Directory mode.")
-        }
-
         val outputFile = File(inputFile.parent, "$mangaTitle.cbz")
         convertEpubToCbz(inputFile, outputFile, mangaTitle)
-
         return ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
     }
 
-    /**
-     * Handles post-processing after file conversion.
-     */
     private fun handlePostProcessing(
         inputFile: File,
         result: ProcessResult,
@@ -927,29 +768,23 @@ object Processor {
         when {
             result.success && deleteOriginal && !useTrueDangerousMode -> {
                 println("Operation successful. Deleting original file: ${inputFile.name}")
-                if (!inputFile.delete()) {
-                    println("Warning: Failed to delete original file: ${inputFile.name}")
-                }
+                if (!inputFile.delete()) println("Warning: Failed to delete original file: ${inputFile.name}")
             }
             !result.success && useTrueDangerousMode -> {
                 println("DANGEROUS OPERATION FAILED. Your source file ${inputFile.name} is likely CORRUPT.")
             }
             result.success && useTrueDangerousMode -> {
-                ZipFile(inputFile).use { sourceZip ->
-                    val remainingFiles = sourceZip.fileHeaders.count { !it.isDirectory }
-                    if (remainingFiles <= 1) {
+                ZipFile(inputFile).use { src ->
+                    val remaining = src.fileHeaders.count { !it.isDirectory }
+                    if (remaining <= 1) {
                         println("Dangerous move appears successful. Deleting now-empty source file: ${inputFile.name}")
-                        if (!inputFile.delete()) {
-                            println("Warning: Failed to delete modified source file: ${inputFile.name}")
-                        }
+                        if (!inputFile.delete()) println("Warning: Failed to delete modified source file: ${inputFile.name}")
                     } else {
                         println("Dangerous move complete. Source file still contains non-image data and was not deleted.")
                     }
                 }
             }
-            result.error != null -> {
-                println(result.error)
-            }
+            result.error != null -> println(result.error)
         }
     }
 }

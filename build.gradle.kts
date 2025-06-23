@@ -6,6 +6,7 @@ plugins {
     kotlin("jvm") version "2.0.0"
     application
     id("org.jetbrains.kotlin.plugin.serialization") version "2.0.0"
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 group = "com.mangacombiner"
@@ -27,7 +28,7 @@ dependencies {
 
     // XML serialization for ComicInfo.xml
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.7.1")
-    implementation("io.github.pdvrieze.xmlutil:serialization-jvm:0.90.2")
+    implementation("io.github.pdvrieze.xmlutil:serialization:0.91.1")
 
     // HTML parsing for web scraping
     implementation("org.jsoup:jsoup:1.18.1")
