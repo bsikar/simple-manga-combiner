@@ -24,18 +24,18 @@ The project includes a Gradle wrapper, so you don't need to install Gradle manua
 
 1.  **Clone the repository:**
     ```sh
-    git clone [https://github.com/YOUR_USERNAME/simple-manga-combiner.git](https://github.com/YOUR_USERNAME/simple-manga-combiner.git)
+    git clone [https://github.com/bsikar/simple-manga-combiner](https://github.com/bsikar/simple-manga-combiner)
     cd simple-manga-combiner
     ```
 
 2.  **Build the executable JAR:**
     - On macOS/Linux:
       ```sh
-      ./gradlew build
+      ./gradlew clean shadowJar
       ```
     - On Windows:
       ```sh
-      .\gradlew.bat build
+      .\gradlew.bat clean shadowJar
       ```
 
 3.  After a successful build, the executable "fat" JAR will be located at `build/libs/MangaCombiner-1.0.0.jar`.
