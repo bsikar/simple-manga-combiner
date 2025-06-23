@@ -660,19 +660,26 @@ object Processor {
         deleteOriginal: Boolean,
         useStreamingConversion: Boolean,
         useTrueStreaming: Boolean,
-        useTrueDangerousMode: Boolean
+        useTrueDangerousMode: Boolean,
+        skipIfTargetExists: Boolean
     ) {
         println("\nProcessing local file: ${inputFile.name}")
 
         val inputFormat = inputFile.extension.lowercase()
         val finalOutputFormat = outputFormat.lowercase()
+        val mangaTitle = customTitle ?: inputFile.nameWithoutExtension
+        val outputFile = File(inputFile.parent, "$mangaTitle.$finalOutputFormat")
+
+        if (skipIfTargetExists && outputFile.exists()) {
+            println("Skipping ${inputFile.name}: ${outputFile.name} already exists.")
+            return
+        }
 
         if (inputFormat !in setOf("cbz", "epub")) {
             println("Error: Input file must be a .cbz or .epub file.")
             return
         }
 
-        val mangaTitle = customTitle ?: inputFile.nameWithoutExtension
         var result = ProcessResult(false)
 
         try {

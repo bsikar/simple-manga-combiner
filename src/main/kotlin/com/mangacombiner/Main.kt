@@ -1,3 +1,4 @@
+// File: src/main/kotlin/com/mangacombiner/Main.kt
 package com.mangacombiner
 
 import com.mangacombiner.core.Processor.downloadAndCreate
@@ -124,16 +125,10 @@ object MainKt {
         useStreamingConversion: Boolean,
         useTrueStreaming: Boolean,
         trueDangerousMode: Boolean,
-        batchWorkers: Int
+        batchWorkers: Int,
+        skipIfTargetExists: Boolean
     ) {
-        val workerInfo = if (useTrueStreaming) {
-            "$batchWorkers parallel worker (Ultra-Low-Storage Mode)."
-        } else {
-            "$batchWorkers parallel workers."
-        }
-        println("Found ${files.size} files to process using up to $workerInfo")
-
-        @OptIn(ExperimentalCoroutinesApi::class)
+        println("Found ${files.size} files to process using up to $batchWorkers parallel workers.")
         val dispatcher = Dispatchers.IO.limitedParallelism(batchWorkers)
         coroutineScope {
             files.forEach { file ->
@@ -141,7 +136,8 @@ object MainKt {
                     try {
                         processLocalFile(
                             file, title, force, format, deleteOriginal,
-                            useStreamingConversion, useTrueStreaming, trueDangerousMode
+                            useStreamingConversion, useTrueStreaming, trueDangerousMode,
+                            skipIfTargetExists
                         )
                     } catch (e: Exception) {
                         println("Error processing ${file.name}: ${e.message}")
@@ -158,96 +154,26 @@ object MainKt {
     fun main(args: Array<String>) {
         val parser = ArgParser(programName = "MangaCombiner")
 
-        // Define command-line arguments
-        val source by parser.argument(
-            ArgType.String,
-            fullName = "source",
-            description = "The source URL, a local file (.cbz or .epub), or a glob pattern."
-        )
+        val source by parser.argument(ArgType.String, fullName = "source")
 
-        // Define command-line options
-        val update by parser.option(
-            ArgType.String,
-            fullName = "update",
-            description = "Path to a local CBZ file to update with missing chapters from the source URL."
-        )
+        val update by parser.option(ArgType.String, fullName = "update")
+        val title by parser.option(ArgType.String, shortName = "t", fullName = "title")
+        val format by parser.option(ArgType.String, fullName = "format").default(DEFAULT_FORMAT)
+        val exclude by parser.option(ArgType.String, shortName = "e", fullName = "exclude")
+        val force by parser.option(ArgType.Boolean, shortName = "f", fullName = "force").default(false)
+        val deleteOriginal by parser.option(ArgType.Boolean, fullName = "delete-original").default(false)
+        val lowStorageMode by parser.option(ArgType.Boolean, fullName = "low-storage-mode").default(false)
+        val ultraLowStorageMode by parser.option(ArgType.Boolean, fullName = "ultra-low-storage-mode").default(false)
+        val trueDangerousMode by parser.option(ArgType.Boolean, fullName = "true-dangerous-mode").default(false)
+        val workers by parser.option(ArgType.Int, shortName = "w", fullName = "workers").default(DEFAULT_WORKERS)
+        val chapterWorkers by parser.option(ArgType.Int, fullName = "chapter-workers").default(DEFAULT_CHAPTER_WORKERS)
+        val batchWorkers by parser.option(ArgType.Int, fullName = "batch-workers").default(DEFAULT_BATCH_WORKERS)
+        val debug by parser.option(ArgType.Boolean, fullName = "debug").default(false)
 
-        val title by parser.option(
-            ArgType.String,
-            shortName = "t",
-            fullName = "title",
-            description = "Custom title for the output."
-        )
-
-        val format by parser.option(
-            ArgType.String,
-            fullName = "format",
-            description = "The output format for new files (cbz or epub)."
-        ).default(DEFAULT_FORMAT)
-
-        val exclude by parser.option(
-            ArgType.String,
-            shortName = "e",
-            fullName = "exclude",
-            description = "Space-separated list of chapter URL slugs to exclude."
-        )
-
-        val force by parser.option(
+        val skipIfTargetExists by parser.option(
             ArgType.Boolean,
-            shortName = "f",
-            fullName = "force",
-            description = "Force overwrite of existing ComicInfo.xml in metadata-only mode."
-        ).default(false)
-
-        // Storage mode options
-        val deleteOriginal by parser.option(
-            ArgType.Boolean,
-            fullName = "delete-original",
-            description = "Delete the source file(s) after a successful 'copy-then-delete' conversion."
-        ).default(false)
-
-        val lowStorageMode by parser.option(
-            ArgType.Boolean,
-            fullName = "low-storage-mode",
-            description = "Uses a 'copy-then-delete' streaming conversion. Deletes original on success."
-        ).default(false)
-
-        val ultraLowStorageMode by parser.option(
-            ArgType.Boolean,
-            fullName = "ultra-low-storage-mode",
-            description = "Uses a minimal memory 'copy-then-delete' conversion. Deletes original. Sets workers to 1."
-        ).default(false)
-
-        val trueDangerousMode by parser.option(
-            ArgType.Boolean,
-            fullName = "true-dangerous-mode",
-            description = "DANGEROUS: Moves images one by one. Interruption WILL corrupt your source file."
-        ).default(false)
-
-        // Worker configuration options
-        val workers by parser.option(
-            ArgType.Int,
-            shortName = "w",
-            fullName = "workers",
-            description = "Concurrent image downloads per chapter."
-        ).default(DEFAULT_WORKERS)
-
-        val chapterWorkers by parser.option(
-            ArgType.Int,
-            fullName = "chapter-workers",
-            description = "Concurrent chapters to download during an update."
-        ).default(DEFAULT_CHAPTER_WORKERS)
-
-        val batchWorkers by parser.option(
-            ArgType.Int,
-            fullName = "batch-workers",
-            description = "Concurrent local files to process in batch mode."
-        ).default(DEFAULT_BATCH_WORKERS)
-
-        val debug by parser.option(
-            ArgType.Boolean,
-            fullName = "debug",
-            description = "Enable detailed debug logging."
+            fullName = "skip-if-target-exists",
+            description = "Skip conversion if the target .epub or .cbz already exists."
         ).default(false)
 
         try {
@@ -283,8 +209,7 @@ object MainKt {
         val excludeSet = exclude?.split(' ')
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }
-            ?.toSet()
-            ?: emptySet()
+            ?.toSet() ?: emptySet()
 
         // Execute main operation
         runBlocking {
@@ -305,8 +230,8 @@ object MainKt {
                     }
                     // Batch operation: Process multiple files using glob pattern
                     "*" in source || "?" in source -> {
-                        val files = expandGlobPath(source).filter { file ->
-                            file.extension.equals("cbz", true) || file.extension.equals("epub", true)
+                        val files = expandGlobPath(source).filter {
+                            it.extension.equals("cbz", true) || it.extension.equals("epub", true)
                         }
                         if (files.isEmpty()) {
                             println("No files found matching pattern '$source'.")
@@ -315,14 +240,15 @@ object MainKt {
                         processBatchFiles(
                             files, title, force, validatedFormat, finalDeleteOriginal,
                             useStreamingConversion, useTrueStreaming, trueDangerousMode,
-                            finalBatchWorkers
+                            finalBatchWorkers, skipIfTargetExists
                         )
                     }
                     // Single file operation: Process a single local file
                     File(source).exists() -> {
                         processLocalFile(
                             File(source), title, force, validatedFormat, finalDeleteOriginal,
-                            useStreamingConversion, useTrueStreaming, trueDangerousMode
+                            useStreamingConversion, useTrueStreaming, trueDangerousMode,
+                            skipIfTargetExists
                         )
                     }
                     // Invalid source
