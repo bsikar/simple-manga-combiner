@@ -325,6 +325,7 @@ object Processor {
         val metadata = EpubMetadata()
 
         ZipFile(outputFile).use { epubZip ->
+            // Step 1: Add mandatory 'mimetype' file (uncompressed)
             epubZip.addStream(
                 EPUB_MIMETYPE.byteInputStream(),
                 ZipParameters().apply {
@@ -333,22 +334,28 @@ object Processor {
                 }
             )
 
+            // Step 2: Add container.xml
             epubZip.addStream(
                 createContainerXml().byteInputStream(),
                 ZipParameters().apply { fileNameInZip = CONTAINER_XML_PATH }
             )
 
+            // Step 3: Add chapter content
             chapterGroups.forEach { (chapter, headers) ->
                 processEpubChapter(chapter, headers.sortedBy { it.fileName }, metadata, epubZip, zipFile, useTrueStreaming)
             }
 
+            // Step 4: Add OPF and NCX — always included even if no chapters
+            val opfContent = createContentOpf(mangaTitle, metadata)
+            val tocContent = createTocNcx(mangaTitle, metadata)
+
             epubZip.addStream(
-                createContentOpf(mangaTitle, metadata).byteInputStream(),
+                opfContent.byteInputStream(),
                 ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/content.opf" }
             )
 
             epubZip.addStream(
-                createTocNcx(mangaTitle, metadata).byteInputStream(),
+                tocContent.byteInputStream(),
                 ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/toc.ncx" }
             )
         }
@@ -366,6 +373,7 @@ object Processor {
         val metadata = EpubMetadata()
 
         ZipFile(outputFile).use { epubZip ->
+            // Step 1: Add mimetype
             epubZip.addStream(
                 EPUB_MIMETYPE.byteInputStream(),
                 ZipParameters().apply {
@@ -374,11 +382,13 @@ object Processor {
                 }
             )
 
+            // Step 2: Add container.xml
             epubZip.addStream(
                 createContainerXml().byteInputStream(),
                 ZipParameters().apply { fileNameInZip = CONTAINER_XML_PATH }
             )
 
+            // Step 3: Add chapters
             sortedFolders.forEach { folder ->
                 val images = folder.listFiles()?.filter { it.isFile }?.sorted() ?: return@forEach
                 if (images.isNotEmpty()) {
@@ -386,13 +396,17 @@ object Processor {
                 }
             }
 
+            // Step 4: Add OPF and NCX — even if no pages
+            val opfContent = createContentOpf(mangaTitle, metadata)
+            val tocContent = createTocNcx(mangaTitle, metadata)
+
             epubZip.addStream(
-                createContentOpf(mangaTitle, metadata).byteInputStream(),
+                opfContent.byteInputStream(),
                 ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/content.opf" }
             )
 
             epubZip.addStream(
-                createTocNcx(mangaTitle, metadata).byteInputStream(),
+                tocContent.byteInputStream(),
                 ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/toc.ncx" }
             )
         }
