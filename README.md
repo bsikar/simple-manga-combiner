@@ -1,104 +1,145 @@
-# CBZ/CBR Manga Tool
+# Manga Combiner
 
-A command-line (CLI) utility built in Kotlin to help you manage and organize your digital manga collection. This tool can scan directories for `.cbz` files, list the manga series it finds, and combine individual chapter files into a single, consolidated `.cbz` file for a seamless reading experience.
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
----
+A powerful and efficient command-line tool written in Kotlin for downloading, syncing, and managing digital manga archives. This tool can fetch entire manga series from supported websites or update your local `.cbz` files with new chapters, ensuring your collection is always complete. It can output to both `.cbz` and `.epub` formats.
+
 ## Features
 
-* **Scan & Discover**: Recursively scans a given directory to find all `.cbz` files.
-* **Manga Grouping**: Intelligently groups chapter files by parsing filenames to identify the manga title, volume, and chapter number.
-* **List Series**: Provides a clean, sorted list of all unique manga series found in your collection, along with the chapter count for each.
-* **Combine Chapters**: Merges all chapters of a specific manga series into a single, ordered `.cbz` file.
-* **Gap Detection**: Warns you about potential missing chapters by checking for non-sequential chapter or volume numbers.
-* **Dry Run Mode**: Lets you preview the combining process, showing which files would be merged and in what order, without actually creating a new file.
-* **Custom Output**: Specify a different directory for your combined files.
+- **Download to CBZ or EPUB**: Provide a URL to a manga series and download all its chapters into a single, organized archive.
+- **Convert CBZ to EPUB**: Easily convert your existing `.cbz` files to `.epub` for better Table of Contents support on e-readers.
+- **Sync Local Archives**: Compare a local `.cbz` file against its online source and download only the missing chapters.
+- **Metadata Generation**: Automatically creates `ComicInfo.xml` for CBZ and a navigation TOC for EPUB.
+- **Concurrent Operations**: Utilizes Kotlin Coroutines to download chapters and images in parallel for maximum speed.
+- **Cross-Platform**: Runs on any system with a Java Virtual Machine (JVM).
 
----
-## Prerequisites
+## Requirements
 
-* **Java Development Kit (JDK)**: Version 11 or higher must be installed on your system.
+- [JDK 11](https://www.oracle.com/java/technologies/javase/jdk11-archive-downloads.html) or newer.
 
----
-## Installation & Building
+## Building the Tool
 
-The project is built using Gradle.
+The project includes a Gradle wrapper, so you don't need to install Gradle manually.
 
-1.  **Clone the repository or download the source code.**
-2.  **Navigate to the project's root directory** in your terminal.
-3.  **Build the application** by running the Gradle wrapper command. This will compile the code and create a runnable "fat" JAR (a JAR file containing all its dependencies).
+1.  **Clone the repository:**
+    ```sh
+    git clone [https://github.com/YOUR_USERNAME/simple-manga-combiner.git](https://github.com/YOUR_USERNAME/simple-manga-combiner.git)
+    cd simple-manga-combiner
+    ```
 
-    * On macOS or Linux:
-        ```bash
-        ./gradlew build
-        ```
-    * On Windows:
-        ```bash
-        gradlew.bat build
-        ```
-    After a successful build, the runnable JAR file will be located at `build/libs/cbz-manga-tool-1.0-SNAPSHOT.jar`.
+2.  **Build the executable JAR:**
+    - On macOS/Linux:
+      ```sh
+      ./gradlew build
+      ```
+    - On Windows:
+      ```sh
+      .\gradlew.bat build
+      ```
 
----
-## Usage
+3.  After a successful build, the executable "fat" JAR will be located at `build/libs/MangaCombiner-1.0.0.jar`.
 
-You can run the application either directly through Gradle or by executing the JAR file. All commands require specifying the directory to scan with the `-d` or `--directory` flag.
+## Running the Application
 
-### Listing Manga Series
+There are two primary ways to run the application:
 
-To see all the manga series in a directory:
+### 1. For Development (Recommended)
 
-```bash
-# Using Gradle
-./gradlew run --args="-d /path/to/your/manga -l"
+Using the Gradle `run` task is the fastest way to run the application. All application arguments must be passed within a single string using the `--args` flag.
 
-# Using the JAR
-java -jar build/libs/cbz-manga-tool-1.0-SNAPSHOT.jar -d /path/to/your/manga --list
+- **On macOS/Linux:**
+  ```sh
+  ./gradlew run --args='<arguments>'
 ```
 
-### Combining a Manga Series
+- **On Windows:**
+  ```sh
+  .\gradlew.bat run --args='<arguments>'
+  ```
 
-To combine all chapters for a specific manga into one `.cbz` file:
+### 2\. From the Executable JAR
 
-```bash
-# The manga title must match the output from the --list command
-./gradlew run --args='-d /path/to/your/manga -c "Name of Manga"'
+Run the final JAR file from anywhere. This is ideal for "production" use.
 
-# Using the JAR
-java -jar build/libs/cbz-manga-tool-1.0-SNAPSHOT.jar -d /path/to/manga --combine "Name of Manga"
+```sh
+java -jar build/libs/MangaCombiner-1.0.0.jar <source> [options...]
 ```
 
-### Specifying an Output Directory
+## Usage Details
 
-Use the `-o` or `--output` flag to save the combined file to a different location.
+### Arguments
 
-```bash
-./gradlew run --args='-d /path/to/manga -c "Name of Manga" -o /path/to/output/folder'
-```
+| Argument | Description                                                                                |
+| :------- | :----------------------------------------------------------------------------------------- |
+| `source` | **(Required)** The source to operate on. This can be a manga series URL, a path to a single `.cbz` file, or a glob pattern (e.g., `"*.cbz"`). |
 
-### Performing a Dry Run
+### Options
 
-To see what the tool *would* do without creating any files, use the `--dry-run` flag. This is useful for checking the file order and verifying that the correct chapters are being targeted.
+| Option                | Description                                                                    | Default |
+| :-------------------- | :----------------------------------------------------------------------------- | :------ |
+| `--update <file>`     | Path to a local CBZ file to update with missing chapters (CBZ only).           | `null`  |
+| `-t`, `--title`       | Provide a custom title for the manga series.                                   | `null`  |
+| `--format <type>`     | The output format for new files (`cbz` or `epub`).                             | `cbz`   |
+| `-e`, `--exclude <slugs>`| A single string of space-separated chapter slugs to exclude.                  | `null`  |
+| `-f`, `--force`       | Force overwrite of existing `ComicInfo.xml` when updating CBZ metadata.        | `false` |
+| `-w`, `--workers`     | Number of concurrent image downloads per chapter.                              | `10`    |
+| `--chapter-workers`   | Number of concurrent chapters to download during a download or sync operation. | `4`     |
+| `--batch-workers`     | Number of local files to process concurrently in batch mode.                   | `4`     |
+| `--debug`             | Enable detailed debug logging for troubleshooting.                             | `false` |
 
-```bash
-./gradlew run --args='-d /path/to/manga -c "Name of Manga" --dry-run'
-```
+-----
 
----
-## Filename Convention
+## Examples
 
-For the tool to correctly identify and sort your manga, your `.cbz` files should follow a consistent naming convention. The tool's parser is designed to recognize formats like these:
+#### 1\. Download a Series as an EPUB
 
-* `Manga Title - v01 c001.cbz`
-* `Manga Title - v1 c1.cbz`
-* `Manga Title c01.cbz` (assumes volume 1 if not specified)
+- **Using Gradle:**
+  ```sh
+  ./gradlew run --args='"[https://mangasite.com/manga/my-awesome-manga](https://mangasite.com/manga/my-awesome-manga)" --format epub'
+  ```
+- **Using JAR:**
+  ```sh
+  java -jar build/libs/MangaCombiner-1.0.0.jar "[https://mangasite.com/manga/my-awesome-manga](https://mangasite.com/manga/my-awesome-manga)" --format epub
+  ```
 
-The key components are:
-* The **manga title**.
-* A `v` followed by the **volume number**.
-* A `c` followed by the **chapter number**.
+#### 2\. Convert an Existing CBZ to EPUB
 
-These components can be separated by spaces or hyphens.
+- **Using Gradle:**
+  ```sh
+  ./gradlew run --args='"path/to/my/comics/My-Manga.cbz" --format epub'
+  ```
+- **Using JAR:**
+  ```sh
+  java -jar build/libs/MangaCombiner-1.0.0.jar "path/to/my/comics/My-Manga.cbz" --format epub
+  ```
 
----
+#### 3\. Update the TOC on a CBZ File
+
+This updates the `ComicInfo.xml` inside a CBZ, overwriting any existing metadata.
+
+- **Using Gradle:**
+  ```sh
+  ./gradlew run --args='"path/to/My-Manga.cbz" --force'
+  ```
+- **Using JAR:**
+  ```sh
+  java -jar build/libs/MangaCombiner-1.0.0.jar "path/to/My-Manga.cbz" --force
+  ```
+
+#### 4\. Sync a CBZ with its Online Source
+
+Note: The sync feature only works with the CBZ format.
+
+- **Using Gradle:**
+  ```sh
+  ./gradlew run --args='"[https://mangasite.com/manga/one-punch-man](https://mangasite.com/manga/one-punch-man)" --update "path/to/One-Punch Man.cbz"'
+  ```
+- **Using JAR:**
+  ```sh
+  java -jar build/libs/MangaCombiner-1.0.0.jar "[https://mangasite.com/manga/one-punch-man](https://mangasite.com/manga/one-punch-man)" --update "path/to/One-Punch Man.cbz"
+  ```
+
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+This project is licensed under the MIT License.

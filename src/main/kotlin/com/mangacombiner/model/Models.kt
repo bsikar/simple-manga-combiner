@@ -1,42 +1,52 @@
 package com.mangacombiner.model
 
-import com.github.junrar.rarfile.FileHeader as RarFileHeader
-import net.lingala.zip4j.model.FileHeader as ZipFileHeader
-import java.io.File
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import nl.adaptivity.xmlutil.serialization.XmlElement
+import nl.adaptivity.xmlutil.serialization.XmlSerialName
 
-enum class MangaType { VOLUME, CHAPTER }
+@Serializable
+@XmlSerialName("ComicInfo")
+data class ComicInfo(
+    @XmlElement(true) val Series: String,
+    @XmlElement(true) val Title: String,
+    @XmlElement(true) val PageCount: Int,
+    @XmlElement(true) val Pages: Pages
+)
 
-data class MangaChapter(val file: File, val title: String, val type: MangaType, val volume: Int, val chapter: Double) : Comparable<MangaChapter> {
-    override fun compareTo(other: MangaChapter): Int {
-        if (this.title != other.title) return this.title.compareTo(other.title)
-        val thisSortKey = if (type == MangaType.VOLUME) volume * 1000.0 else chapter
-        val otherSortKey = if (other.type == MangaType.VOLUME) other.volume * 1000.0 else other.chapter
-        return thisSortKey.compareTo(otherSortKey)
-    }
-}
+@Serializable
+@XmlSerialName("Pages")
+data class Pages(
+    @SerialName("Page")
+    val Page: List<PageInfo>
+)
 
-sealed interface ArchiveEntry {
-    val entryName: String
-}
-data class ZipArchiveEntry(val header: ZipFileHeader) : ArchiveEntry {
-    override val entryName: String get() = header.fileName
-}
-data class RarArchiveEntry(val header: RarFileHeader) : ArchiveEntry {
-    override val entryName: String get() = header.fileName
-}
+@Serializable
+@XmlSerialName("Page")
+data class PageInfo(
+    @XmlSerialName("Image", "", "") val Image: Int,
+    @XmlSerialName("Bookmark", "", "") val Bookmark: String? = null,
+    @XmlSerialName("Type", "", "") val Type: String? = null
+)
 
-data class MangaPage(
-    val sourceArchiveFile: File,
-    val entry: ArchiveEntry,
-    val volume: Int,
-    val chapter: Int,
-    val page: Int
-) : Comparable<MangaPage> {
-    override fun compareTo(other: MangaPage): Int {
-        if (this.volume != 0 && other.volume != 0 && this.volume != other.volume) {
-            return this.volume.compareTo(other.volume)
-        }
-        if (this.chapter != other.chapter) return this.chapter.compareTo(other.chapter)
-        return this.page.compareTo(other.page)
-    }
-}
+@Serializable
+@XmlSerialName("package", "http://www.idpf.org/2007/opf", "")
+data class OpfPackage(
+    val manifest: Manifest
+)
+
+@Serializable
+@XmlSerialName("manifest", "http://www.idpf.org/2007/opf", "")
+data class Manifest(
+    @SerialName("item")
+    val items: List<Item>
+)
+
+@Serializable
+@XmlSerialName("item", "http://www.idpf.org/2007/opf", "")
+data class Item(
+    val id: String,
+    val href: String,
+    @XmlSerialName("media-type", "", "")
+    val mediaType: String
+)

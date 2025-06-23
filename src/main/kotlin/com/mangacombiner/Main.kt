@@ -1,169 +1,125 @@
 package com.mangacombiner
 
-import com.mangacombiner.combiner.handleCombination
-import com.mangacombiner.scanner.scanForManga
+import com.mangacombiner.core.downloadAndCreate
+import com.mangacombiner.core.processLocalFile
+import com.mangacombiner.core.syncCbzWithSource
 import com.mangacombiner.util.expandGlobPath
-import com.mangacombiner.util.getOutputPath
 import com.mangacombiner.util.isDebugEnabled
-import com.mangacombiner.util.logDebug
-import kotlinx.cli.ArgParser
-import kotlinx.cli.ArgType
-import kotlinx.cli.default
-import kotlinx.cli.multiple
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.runBlocking
+import kotlinx.cli.*
+import kotlinx.coroutines.*
 import java.io.File
-import java.nio.file.Files
-import kotlin.system.exitProcess
 
-@OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
-fun main(args: Array<String>) {
-    val parser = ArgParser("CbzMangaTool")
+object MainKt {
+    fun String.titlecase(): String = this.split(' ').joinToString(" ") { word ->
+        if (word.isEmpty()) {
+            word
+        } else {
+            word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        }
+    }
 
-    val directories by parser.option(
-        ArgType.String,
-        shortName = "d",
-        fullName = "directory",
-        description = "Directory to scan. Can be used multiple times.",
-    ).multiple()
+    private fun getConfirmation(prompt: String): Boolean {
+        print("$prompt (yes/no): ")
+        return readlnOrNull()?.trim()?.equals("yes", ignoreCase = true) ?: false
+    }
 
-    val useGlob by parser.option(
-        ArgType.Boolean,
-        fullName = "use-glob",
-        description = "Treat directory paths as glob patterns to find multiple directories."
-    ).default(false)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @JvmStatic
+    fun main(args: Array<String>) {
+        val parser = ArgParser(programName = "MangaCombiner")
 
-    val list by parser.option(ArgType.Boolean, shortName = "l", fullName = "list", description = "List all manga series found").default(false)
-    val checkFiles by parser.option(ArgType.Boolean, fullName = "check-files", description = "Check if combined files are up-to-date with sources.").default(false)
-    val combine by parser.option(ArgType.String, shortName = "c", fullName = "combine", description = "Name of the manga series to combine")
-    val combineAll by parser.option(ArgType.Boolean, fullName = "combine-all", description = "Combine all found manga series into their own files").default(false)
-    val outputDir by parser.option(ArgType.String, shortName = "o", fullName = "output", description = "Output directory for combined file")
-    val dryRun by parser.option(ArgType.Boolean, fullName = "dry-run", description = "Simulate combining without creating a file").default(false)
-    val overwrite by parser.option(ArgType.Boolean, fullName = "overwrite", description = "Forcefully overwrite existing combined files.").default(false)
-    val fix by parser.option(ArgType.Boolean, fullName = "fix", description = "Update combined files only if source files are newer.").default(false)
-    val deepScan by parser.option(ArgType.Boolean, fullName = "deep-scan", description = "Scan inside archives to sort by internal chapter/page numbers.").default(false)
-    val outputFormat by parser.option(ArgType.String, fullName = "output-format", description = "Output file format (only cbz is supported for writing)").default("cbz")
-    val debug by parser.option(ArgType.Boolean, fullName = "debug", description = "Enable detailed debug logging.").default(false)
+        val source by parser.argument(
+            ArgType.String,
+            fullName = "source",
+            description = "The source URL, a local file (.cbz or .epub), or a glob pattern."
+        )
 
-    try {
+        val update by parser.option(ArgType.String, fullName = "update", description = "Path to a local CBZ file to update with missing chapters from the source URL.")
+        val title by parser.option(ArgType.String, shortName = "t", fullName = "title", description = "Custom title for the output.")
+        val format by parser.option(ArgType.String, fullName = "format", description = "The output format for new files (cbz or epub).").default("cbz")
+        val exclude by parser.option(ArgType.String, shortName = "e", fullName = "exclude", description = "Space-separated list of chapter URL slugs to exclude.")
+        val force by parser.option(ArgType.Boolean, shortName = "f", fullName = "force", description = "Force overwrite of existing ComicInfo.xml in metadata-only mode.").default(false)
+
+        val deleteOriginal by parser.option(ArgType.Boolean, fullName = "delete-original", description = "Delete the source file(s) after a successful 'copy-then-delete' conversion.").default(false)
+        val lowStorageMode by parser.option(ArgType.Boolean, fullName = "low-storage-mode", description = "Uses a 'copy-then-delete' streaming conversion. Deletes original on success.").default(false)
+        val ultraLowStorageMode by parser.option(ArgType.Boolean, fullName = "ultra-low-storage-mode", description = "Uses a minimal memory 'copy-then-delete' conversion. Deletes original. Sets workers to 1.").default(false)
+        val trueDangerousMode by parser.option(ArgType.Boolean, fullName = "true-dangerous-mode", description = "DANGEROUS: Moves images one by one. Interruption WILL corrupt your source file.").default(false)
+
+        val workers by parser.option(ArgType.Int, shortName = "w", fullName = "workers", description = "Concurrent image downloads per chapter.").default(10)
+        val chapterWorkers by parser.option(ArgType.Int, fullName = "chapter-workers", description = "Concurrent chapters to download during an update.").default(4)
+        val batchWorkers by parser.option(ArgType.Int, fullName = "batch-workers", description = "Concurrent local files to process in batch mode.").default(4)
+        val debug by parser.option(ArgType.Boolean, fullName = "debug", description = "Enable detailed debug logging.").default(false)
+
         parser.parse(args)
-    } catch (e: Exception) {
-        println(e.message)
-        return
-    }
+        isDebugEnabled = debug
 
-    isDebugEnabled = debug
-    logDebug { "Debug mode enabled." }
-    logDebug { "Raw directory arguments: $directories" }
-    logDebug { "Glob mode enabled: $useGlob" }
+        val finalBatchWorkers = if (ultraLowStorageMode) 1 else batchWorkers
+        val finalDeleteOriginal = deleteOriginal || lowStorageMode || ultraLowStorageMode || trueDangerousMode
 
-    if (directories.isEmpty()) {
-        println("Error: You must provide at least one directory using the -d or --directory flag.")
-        println("Example: ./gradlew run --args='-d /path/to/manga'")
-        exitProcess(1)
-    }
-
-    val targetDirectories = if (useGlob) {
-        logDebug { "Glob mode is ON. Expanding paths as patterns." }
-        directories.flatMap { path -> expandGlobPath(path) }
-    } else {
-        logDebug { "Glob mode is OFF. Treating paths as literal." }
-        directories.map { path -> File(path) }.filter { file ->
-            val isValid = file.isDirectory
-            if (!isValid) {
-                logDebug { "Path '${file.absolutePath}' is not a valid directory. Ignoring." }
+        if (trueDangerousMode) {
+            println("---")
+            println("--- EXTREME DANGER: '--true-dangerous-mode' is enabled! ---")
+            println("--- This mode moves images one-by-one, modifying the source file as it runs.")
+            println("--- PRESSING CTRL+C WILL CORRUPT YOUR ORIGINAL FILE BEYOND RECOVERY.")
+            println("---")
+            if (!getConfirmation("You have been warned. Do you understand the risk and wish to continue?")) {
+                println("Operation cancelled. Good choice."); return
             }
-            isValid
-        }
-    }.distinct().sorted()
-
-
-    if (targetDirectories.isEmpty()) {
-        println("Error: The specified path(s) or pattern(s) did not match any directories.")
-        return
-    }
-
-    logDebug { "Input paths resolved to ${targetDirectories.size} unique director(y/ies): ${targetDirectories.map { it.name }}" }
-
-    // Process each matched directory
-    for (dir in targetDirectories) {
-        println("\n=================================================")
-        println("Processing Directory: ${dir.name}")
-        println("=================================================")
-        logDebug { "Starting main logic for directory: ${dir.absolutePath}" }
-
-        val mangaCollection = scanForManga(dir)
-        if (mangaCollection.isEmpty()) {
-            println("No CBZ, CBR, or EPUB manga files found in: ${dir.name}")
-            continue // Skip to the next matched directory
-        }
-
-        if (list) {
-            println("Found the following manga series in ${dir.name}:")
-            mangaCollection.keys.sorted().forEach { title ->
-                println("- $title (${mangaCollection[title]?.size} files)")
+            println("\n--- FINAL CONFIRMATION ---")
+            if (!getConfirmation("This is irreversible. Are you absolutely certain you want to risk your source file?")) {
+                println("Operation cancelled."); return
             }
+            println("\nConfirmation received. Proceeding with dangerous operation...")
+        } else if (finalDeleteOriginal) {
+            val mode = when {
+                ultraLowStorageMode -> "ultra-low-storage"
+                lowStorageMode -> "low-storage"
+                else -> "delete-original"
+            }
+            println("---")
+            println("--- WARNING: '$mode' mode is enabled. ---")
+            println("--- This is a safe 'copy-then-delete' operation. The original file will be deleted only after a successful conversion.")
+            println("---")
+            if (!getConfirmation("Are you sure you want to delete the original file upon success?")) {
+                println("Operation cancelled."); return
+            }
+            println("\nConfirmation received. Proceeding...")
         }
 
-        if (checkFiles) {
-            println("--- Checking status of combined files in ${dir.name} ---")
-            mangaCollection.entries.sortedBy { it.key }.forEach { (title, chapters) ->
-                val outputPath = getOutputPath(title, outputDir)
-                print("[$title]: ")
-                if (Files.exists(outputPath)) {
-                    val combinedFileModTime = Files.getLastModifiedTime(outputPath).toMillis()
-                    val needsUpdate = chapters.any { it.file.lastModified() > combinedFileModTime }
-                    if (needsUpdate) {
-                        println("Needs update (source files are newer).")
+        val useStreamingConversion = lowStorageMode || ultraLowStorageMode
+        val useTrueStreaming = ultraLowStorageMode
+        val excludeSet = exclude?.split(' ')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
+
+        runBlocking {
+            when {
+                update != null && source.lowercase().startsWith("http") -> syncCbzWithSource(File(update!!), source, excludeSet, chapterWorkers)
+                source.lowercase().startsWith("http") -> downloadAndCreate(source, title, excludeSet, format, chapterWorkers)
+
+                "*" in source || "?" in source -> {
+                    val files = expandGlobPath(source).filter { it.extension.equals("cbz", true) || it.extension.equals("epub", true) }
+                    if (files.isEmpty()) { println("No files found matching pattern '$source'."); return@runBlocking }
+
+                    val workerInfo = if (ultraLowStorageMode) {
+                        "$finalBatchWorkers parallel worker (Ultra-Low-Storage Mode)."
                     } else {
-                        println("Up-to-date.")
+                        "$finalBatchWorkers parallel workers."
                     }
-                } else {
-                    println("Not combined yet.")
-                }
-            }
-        }
+                    println("Found ${files.size} files to process using up to $workerInfo")
 
-        if (combine != null) {
-            val mangaToCombine = combine!!
-            if (mangaToCombine.startsWith("-")) {
-                println("Error: The --combine flag requires a manga title. You provided '$mangaToCombine'.")
-                println("Usage: --combine \"Manga Title\"")
-                return
-            }
-            val chapters = mangaCollection[mangaToCombine]
-            if ( chapters == null) {
-                println("Error: Manga series '$mangaToCombine' not found in ${dir.name}.")
-                val closestMatches = mangaCollection.keys.filter { it.contains(mangaToCombine, ignoreCase = true) }
-                if (closestMatches.isNotEmpty()) {
-                    println("\nDid you mean one of these?")
-                    closestMatches.forEach { println("- $it") }
-                }
-                continue
-            }
-            handleCombination(mangaToCombine, chapters, outputDir, overwrite, fix, dryRun, deepScan)
-        }
-
-        if (combineAll) {
-            println("--- Combining all found manga series in ${dir.name} ---")
-            if (dryRun) {
-                println("--- Performing DRY RUN sequentially for clean output ---")
-                mangaCollection.entries.sortedBy { it.key }.forEach { (title, chapters) ->
-                    handleCombination(title, chapters, outputDir, overwrite, fix, true, deepScan)
-                }
-            } else {
-                runBlocking {
-                    val jobs = mangaCollection.entries.sortedBy { it.key }.map { (title, chapters) ->
-                        async(Dispatchers.IO) {
-                            handleCombination(title, chapters, outputDir, overwrite, fix, false, deepScan)
+                    val dispatcher = Dispatchers.IO.limitedParallelism(finalBatchWorkers)
+                    coroutineScope {
+                        files.forEach { file ->
+                            launch(dispatcher) {
+                                processLocalFile(file, null, force, format, finalDeleteOriginal, useStreamingConversion, useTrueStreaming, trueDangerousMode)
+                            }
                         }
                     }
-                    jobs.awaitAll()
+                    println("\nBatch processing complete.")
                 }
+
+                File(source).exists() -> processLocalFile(File(source), title, force, format, finalDeleteOriginal, useStreamingConversion, useTrueStreaming, trueDangerousMode)
+                else -> println("Error: Source '$source' is not a valid URL, an existing file path, or a recognized file pattern.")
             }
         }
     }
-    println("\nAll matched directories processed.")
 }

@@ -3,31 +3,45 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.api.file.DuplicatesStrategy
 
 plugins {
-    kotlin("jvm") version "1.9.22"
+    kotlin("jvm") version "2.0.0"
     application
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.0"
 }
 
-group = "com.mangacombiner" 
-version = "1.0-SNAPSHOT"
+group = "com.mangacombiner"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    // kotlinx-cli for parsing command line arguments
+    // Command-line argument parsing
     implementation("org.jetbrains.kotlinx:kotlinx-cli-jvm:0.3.6")
-    // Zip4j for handling zip/cbz files
+
+    // ZIP file handling
     implementation("net.lingala.zip4j:zip4j:2.11.5")
-    // Kotlin Coroutines for parallel processing
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.0")
-    // Junrar for handling cbr (RAR) files
-    implementation("com.github.junrar:junrar:7.5.3")
-    
+
+    // Coroutines for concurrent operations
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.1")
+
+    // XML serialization for ComicInfo.xml
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.7.1")
+    implementation("io.github.pdvrieze.xmlutil:serialization-jvm:0.90.2")
+
+    // HTML parsing for web scraping
+    implementation("org.jsoup:jsoup:1.18.1")
+
+    // HTTP client for downloading
+    implementation("io.ktor:ktor-client-core:2.3.12")
+    implementation("io.ktor:ktor-client-cio:2.3.12")
+
+    // WebP image support
+    implementation("org.sejda.imageio:webp-imageio:0.1.6")
+
     testImplementation(kotlin("test"))
 }
 
-// Use a Java toolchain to ensure both Java and Kotlin compilers use the same JDK version.
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(11))
@@ -39,19 +53,13 @@ tasks.test {
 }
 
 application {
-    // Updated to the new fully qualified name of your main class
     mainClass.set("com.mangacombiner.MainKt")
 }
 
-// This task creates a fat JAR that includes all dependencies.
 tasks.jar {
     manifest {
-        // Updated here as well for the runnable JAR manifest
         attributes["Main-Class"] = "com.mangacombiner.MainKt"
     }
-    // Add a duplicates strategy to handle duplicate files from dependencies.
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    configurations["runtimeClasspath"].forEach { file ->
-        from(zipTree(file.absoluteFile))
-    }
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
 }
