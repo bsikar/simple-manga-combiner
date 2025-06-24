@@ -1,17 +1,19 @@
 # Manga Combiner
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[](https://github.com/bsikar/simple-manga-combiner)
+[](https://opensource.org/licenses/MIT)
 
-A powerful and efficient command-line tool written in Kotlin for downloading, syncing, and managing digital manga archives. This tool can fetch entire manga series from supported websites or update your local `.cbz` files with new chapters, ensuring your collection is always complete. It can output to both `.cbz` and `.epub` formats.
+A powerful and efficient command-line tool written in Kotlin for downloading, syncing, and managing digital manga archives. This tool can fetch entire manga series from supported websites or update your local `.cbz` files with new chapters, ensuring your collection is always complete. It can output to both `.cbz` and `.epub` formats and is designed to be respectful to host servers.
 
 ## Features
 
 - **Download to CBZ or EPUB**: Provide a URL to a manga series and download all its chapters into a single, organized archive.
-- **Convert CBZ to EPUB**: Easily convert your existing `.cbz` files to `.epub` for better Table of Contents support on e-readers.
+- **Convert Local Files**: Easily convert your existing `.cbz` files to `.epub` (or vice-versa).
+- **Batch Processing**: Convert an entire folder of archives from one format to another using a glob pattern (e.g., `*.cbz`).
 - **Sync Local Archives**: Compare a local `.cbz` file against its online source and download only the missing chapters.
+- **Server-Friendly**: Downloads chapters sequentially with built-in delays, automatic retries, and polite headers to avoid overwhelming servers.
+- **Efficient & Parallelized**: Utilizes Kotlin Coroutines to download a chapter's images in parallel for speed.
 - **Metadata Generation**: Automatically creates `ComicInfo.xml` for CBZ and a navigation TOC for EPUB.
-- **Concurrent Operations**: Utilizes Kotlin Coroutines to download chapters and images in parallel for maximum speed.
 - **Cross-Platform**: Runs on any system with a Java Virtual Machine (JVM).
 
 ## Requirements
@@ -23,12 +25,15 @@ A powerful and efficient command-line tool written in Kotlin for downloading, sy
 The project includes a Gradle wrapper, so you don't need to install Gradle manually.
 
 1.  **Clone the repository:**
+
     ```sh
-    git clone [https://github.com/bsikar/simple-manga-combiner](https://github.com/bsikar/simple-manga-combiner)
+    git clone https://github.com/bsikar/simple-manga-combiner
     cd simple-manga-combiner
     ```
 
 2.  **Build the executable JAR:**
+    This command compiles the code and packages it with all necessary dependencies into a single executable JAR.
+
     - On macOS/Linux:
       ```sh
       ./gradlew clean shadowJar
@@ -38,22 +43,24 @@ The project includes a Gradle wrapper, so you don't need to install Gradle manua
       .\gradlew.bat clean shadowJar
       ```
 
-3.  After a successful build, the executable "fat" JAR will be located at `build/libs/MangaCombiner-1.0.0.jar`.
+3.  After a successful build, the executable "fat" JAR will be located at `build/libs/simple-manga-combiner-1.0.0-all.jar`.
 
 ## Running the Application
 
 There are two primary ways to run the application:
 
-### 1. For Development (Recommended)
+### 1\. For Development (Recommended)
 
-Using the Gradle `run` task is the fastest way to run the application. All application arguments must be passed within a single string using the `--args` flag.
+Using the Gradle `run` task is the fastest way to test changes. All application arguments must be passed within a single quoted string using the `--args` flag.
 
 - **On macOS/Linux:**
+
   ```sh
   ./gradlew run --args='<arguments>'
-```
+  ```
 
 - **On Windows:**
+
   ```sh
   .\gradlew.bat run --args='<arguments>'
   ```
@@ -63,81 +70,100 @@ Using the Gradle `run` task is the fastest way to run the application. All appli
 Run the final JAR file from anywhere. This is ideal for "production" use.
 
 ```sh
-java -jar build/libs/MangaCombiner-1.0.0.jar <source> [options...]
+java -jar build/libs/simple-manga-combiner-1.0.0-all.jar <source> [options...]
 ```
 
 ## Usage Details
 
-### Arguments
+### Argument
 
-| Argument | Description                                                                                |
-| :------- | :----------------------------------------------------------------------------------------- |
-| `source` | **(Required)** The source to operate on. This can be a manga series URL, a path to a single `.cbz` file, or a glob pattern (e.g., `"*.cbz"`). |
+| Argument | Description                                                                                                                     |
+| :------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| `source` | **(Required)** The source to operate on. This can be a manga series URL, a path to a single `.cbz`/`.epub` file, or a glob pattern (e.g., `"*.cbz"`). |
 
 ### Options
 
-| Option                | Description                                                                    | Default |
-| :-------------------- | :----------------------------------------------------------------------------- | :------ |
-| `--update <file>`     | Path to a local CBZ file to update with missing chapters (CBZ only).           | `null`  |
-| `-t`, `--title`       | Provide a custom title for the manga series.                                   | `null`  |
-| `--format <type>`     | The output format for new files (`cbz` or `epub`).                             | `cbz`   |
-| `-e`, `--exclude <slugs>`| A single string of space-separated chapter slugs to exclude.                  | `null`  |
-| `-f`, `--force`       | Force overwrite of existing `ComicInfo.xml` when updating CBZ metadata.        | `false` |
-| `-w`, `--workers`     | Number of concurrent image downloads per chapter.                              | `10`    |
-| `--chapter-workers`   | Number of concurrent chapters to download during a download or sync operation. | `4`     |
-| `--batch-workers`     | Number of local files to process concurrently in batch mode.                   | `4`     |
-| `--debug`             | Enable detailed debug logging for troubleshooting.                             | `false` |
+| Option                        | Description                                                                                         | Default |
+| :---------------------------- | :-------------------------------------------------------------------------------------------------- | :------ |
+| `--update <file>`             | Path to a local CBZ file to update with missing chapters (source must be a URL).                    | `null`  |
+| `-t`, `--title <name>`        | Provide a custom title for the output file, overriding the default.                                 | `null`  |
+| `--format <type>`             | The output format for new files or conversions (`cbz` or `epub`).                                   | `cbz`   |
+| `-e`, `--exclude <slug>`      | A chapter slug to exclude. Can be used multiple times (e.g. `--exclude ch-1 --exclude ch-2`).       | `none`  |
+| `-w`, `--workers <num>`       | Number of concurrent image downloads per chapter. Higher values are faster but less server-friendly.| `2`     |
+| `--chapter-workers <num>`     | **(DEPRECATED)** This flag is ignored. Chapter downloads are now sequential to be server-friendly.    | `1`     |
+| `--batch-workers <num>`       | Number of local files to process concurrently when using a glob pattern for `source`.               | `4`     |
+| `--skip-if-target-exists`     | In batch mode, skip conversion if the target file (e.g., the `.epub`) already exists.               | `false` |
+| `--delete-original`           | Delete the original source file(s) after a successful conversion.                                   | `false` |
+| `-f`, `--force`               | Force overwrite of the output file if it already exists.                                            | `false` |
+| `--debug`                     | Enable detailed debug logging for troubleshooting.                                                  | `false` |
+| **Storage-Saving Modes** |                                                                                                     |         |
+| `--low-storage-mode`          | Uses less RAM during conversion at the cost of speed. Implies `--delete-original`.                  | `false` |
+| `--ultra-low-storage-mode`    | More aggressive streaming for very low memory. Implies `--delete-original`.                         | `false` |
+| `--true-dangerous-mode`       | **DANGER\!** Modifies the source file directly during conversion. Any interruption will corrupt it.  | `false` |
 
 -----
 
 ## Examples
 
-#### 1\. Download a Series as an EPUB
+#### 1\. Download a New Series as an EPUB
+
+This command downloads the series and packages it as `My-Awesome-Manga.epub`.
 
 - **Using Gradle:**
   ```sh
-  ./gradlew run --args='"[https://mangasite.com/manga/my-awesome-manga](https://mangasite.com/manga/my-awesome-manga)" --format epub'
+  ./gradlew run --args='"https://mangasite.com/manga/my-awesome-manga" --format epub'
   ```
 - **Using JAR:**
   ```sh
-  java -jar build/libs/MangaCombiner-1.0.0.jar "[https://mangasite.com/manga/my-awesome-manga](https://mangasite.com/manga/my-awesome-manga)" --format epub
+  java -jar build/libs/simple-manga-combiner-1.0.0-all.jar "https://mangasite.com/manga/my-awesome-manga" --format epub
   ```
 
-#### 2\. Convert an Existing CBZ to EPUB
+#### 2\. Sync a Local CBZ with its Online Source
+
+This compares your local `One-Punch-Man.cbz` with the source URL and downloads only the chapters you are missing.
 
 - **Using Gradle:**
   ```sh
-  ./gradlew run --args='"path/to/my/comics/My-Manga.cbz" --format epub'
+  ./gradlew run --args='"https://mangasite.com/manga/one-punch-man" --update "path/to/your/One-Punch-Man.cbz"'
   ```
 - **Using JAR:**
   ```sh
-  java -jar build/libs/MangaCombiner-1.0.0.jar "path/to/my/comics/My-Manga.cbz" --format epub
+  java -jar build/libs/simple-manga-combiner-1.0.0-all.jar "https://mangasite.com/manga/one-punch-man" --update "path/to/your/One-Punch-Man.cbz"
   ```
 
-#### 3\. Update the TOC on a CBZ File
+#### 3\. Download a Series, Excluding Certain Chapters
 
-This updates the `ComicInfo.xml` inside a CBZ, overwriting any existing metadata.
+Use the `--exclude` flag multiple times to skip specific chapters.
 
 - **Using Gradle:**
   ```sh
-  ./gradlew run --args='"path/to/My-Manga.cbz" --force'
+  ./gradlew run --args='"https://mangasite.com/manga/a-certain-manga" --exclude chapter-0 --exclude chapter-99-5'
   ```
 - **Using JAR:**
   ```sh
-  java -jar build/libs/MangaCombiner-1.0.0.jar "path/to/My-Manga.cbz" --force
+  java -jar build/libs/simple-manga-combiner-1.0.0-all.jar "https://mangasite.com/manga/a-certain-manga" --exclude chapter-0 --exclude chapter-99-5
   ```
 
-#### 4\. Sync a CBZ with its Online Source
+#### 4\. Batch Convert All CBZ Files in a Folder to EPUB
 
-Note: The sync feature only works with the CBZ format.
+This command finds all `.cbz` files in the `my-comics/` directory and converts each one to an `.epub` file.
 
 - **Using Gradle:**
   ```sh
-  ./gradlew run --args='"[https://mangasite.com/manga/one-punch-man](https://mangasite.com/manga/one-punch-man)" --update "path/to/One-Punch Man.cbz"'
+  ./gradlew run --args='"my-comics/*.cbz" --format epub'
   ```
 - **Using JAR:**
   ```sh
-  java -jar build/libs/MangaCombiner-1.0.0.jar "[https://mangasite.com/manga/one-punch-man](https://mangasite.com/manga/one-punch-man)" --update "path/to/One-Punch Man.cbz"
+  java -jar build/libs/simple-manga-combiner-1.0.0-all.jar "my-comics/*.cbz" --format epub
+  ```
+
+#### 5\. More Aggressive Downloading (Use with Caution)
+
+If you are on a fast connection and trust the server, you can increase the number of parallel image downloads.
+
+- **Using Gradle:**
+  ```sh
+  ./gradlew run --args='"https://mangasite.com/manga/another-manga" --workers 8'
   ```
 
 ## License
