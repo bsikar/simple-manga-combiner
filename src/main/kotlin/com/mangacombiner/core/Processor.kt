@@ -2,6 +2,7 @@ package com.mangacombiner.core
 
 import com.mangacombiner.model.*
 import com.mangacombiner.util.logDebug
+import com.mangacombiner.util.logError
 import kotlinx.coroutines.*
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
@@ -151,6 +152,21 @@ object Processor {
         }
 
         println("Successfully created: ${outputFile.absolutePath}")
+    }
+
+    /**
+     * Extracts all contents of a ZipFile to a specified directory.
+     * @return True if successful, false otherwise.
+     */
+    fun extractZip(zipFile: File, destination: File): Boolean {
+        return try {
+            logDebug { "Extracting ${zipFile.name} to ${destination.absolutePath}" }
+            ZipFile(zipFile).extractAll(destination.absolutePath)
+            true
+        } catch (e: Exception) {
+            logError("Failed to extract zip file ${zipFile.name}", e)
+            false
+        }
     }
 
     private data class EpubMetadata(

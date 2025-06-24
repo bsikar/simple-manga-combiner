@@ -1,52 +1,48 @@
 package com.mangacombiner
 
-import com.mangacombiner.core.Processor.processLocalFile
+import com.mangacombiner.core.Processor
+import com.mangacombiner.downloader.Downloader
+import com.mangacombiner.scraper.WPMangaScraper
 import com.mangacombiner.util.expandGlobPath
+import com.mangacombiner.util.inferChapterSlugsFromZip
 import com.mangacombiner.util.isDebugEnabled
 import com.mangacombiner.util.logDebug
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.DefaultRequest
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpRequestRetry
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
 import kotlinx.cli.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import java.io.File
+import java.nio.file.Files
 
 /**
  * Main entry point for the Manga Combiner application.
  * Handles command-line argument parsing and orchestrates the main operations.
  */
 object MainKt {
-    // Configuration constants
+    // Default to a very polite rate
+    private const val DEFAULT_IMAGE_WORKERS = 2
+    private const val DEFAULT_CHAPTER_WORKERS = 1 // This is now effectively ignored, but kept for consistency
+
     private const val DEFAULT_BATCH_WORKERS = 4
     private const val DEFAULT_FORMAT = "cbz"
-
-    // Supported file formats
     private val SUPPORTED_FORMATS = setOf("cbz", "epub")
 
-    /**
-     * Extension function to convert a string to title case.
-     * Capitalizes the first letter of each word.
-     */
     private fun String.titlecase(): String = this.split(' ').joinToString(" ") { word ->
         word.replaceFirstChar { char ->
             if (char.isLowerCase()) char.titlecase() else char.toString()
         }
     }
 
-    /**
-     * Prompts the user for a yes/no confirmation.
-     * @param prompt The question to ask the user
-     * @return true if user responds with "yes" (case-insensitive), false otherwise
-     */
     private fun getConfirmation(prompt: String): Boolean {
         print("$prompt (yes/no): ")
         return readlnOrNull()?.trim()?.equals("yes", ignoreCase = true) ?: false
     }
 
-    /**
-     * Validates the output format.
-     * @param format The format string to validate
-     * @return The validated format in lowercase
-     * @throws IllegalArgumentException if format is not supported
-     */
     private fun validateFormat(format: String): String {
         val lowerFormat = format.lowercase()
         require(lowerFormat in SUPPORTED_FORMATS) {
@@ -55,14 +51,6 @@ object MainKt {
         return lowerFormat
     }
 
-    /**
-     * Handles user confirmation for dangerous operations.
-     * @param trueDangerousMode whether --true-dangerous-mode is set
-     * @param finalDeleteOriginal whether delete-original/low-storage modes are in use
-     * @param ultraLowStorageMode whether ultra-low-storage mode is in use
-     * @param lowStorageMode whether low-storage mode is in use
-     * @return true if user confirms, false if cancelled
-     */
     private fun handleOperationConfirmation(
         trueDangerousMode: Boolean,
         finalDeleteOriginal: Boolean,
@@ -108,9 +96,6 @@ object MainKt {
         return true
     }
 
-    /**
-     * Processes batch operations on multiple files.
-     */
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun processBatchFiles(
         files: List<File>,
@@ -130,7 +115,7 @@ object MainKt {
             files.forEach { file ->
                 launch(dispatcher) {
                     try {
-                        processLocalFile(
+                        Processor.processLocalFile(
                             file, title, force, format, deleteOriginal,
                             useStreamingConversion, useTrueStreaming, trueDangerousMode,
                             skipIfTargetExists
@@ -145,16 +130,182 @@ object MainKt {
         println("\nBatch processing complete.")
     }
 
+    /**
+     * Creates a patiently configured HttpClient.
+     */
+    private fun createPoliteHttpClient(): HttpClient {
+        return HttpClient(CIO) {
+            // Give server plenty of time to respond
+            install(HttpTimeout) {
+                requestTimeoutMillis = 60000 // 60 seconds
+                connectTimeoutMillis = 60000 // 60 seconds
+                socketTimeoutMillis = 60000  // 60 seconds
+            }
+            // Automatically retry failed requests with increasing delays
+            install(HttpRequestRetry) {
+                retryOnServerErrors(maxRetries = 3)
+                exponentialDelay()
+            }
+        }
+    }
+
+    private suspend fun syncCbzWithSource(
+        cbzPath: String,
+        seriesUrl: String,
+        imageWorkers: Int,
+        exclude: List<String>
+    ) {
+        val cbzFile = File(cbzPath)
+        if (!cbzFile.exists()) {
+            println("Error: Local file not found at $cbzPath"); return
+        }
+
+        println("--- Starting Sync for: ${cbzFile.name} ---")
+        val client = createPoliteHttpClient()
+        val localSlugs = inferChapterSlugsFromZip(cbzFile)
+        println("Found ${localSlugs.size} chapters locally.")
+
+        var onlineUrls = WPMangaScraper.findChapterUrls(client, seriesUrl)
+        if (onlineUrls.isEmpty()) {
+            println("Could not retrieve chapter list from source. Aborting sync."); client.close(); return
+        }
+        if (exclude.isNotEmpty()) {
+            onlineUrls = onlineUrls.filter { url -> url.trimEnd('/').substringAfterLast('/') !in exclude }
+        }
+
+        val slugToUrl = onlineUrls.associateBy { it.trimEnd('/').substringAfterLast('/') }
+        val missingSlugs = (slugToUrl.keys - localSlugs).sorted()
+
+        if (missingSlugs.isEmpty()) {
+            println("CBZ is already up-to-date. No new chapters found."); client.close(); return
+        }
+
+        println("Found ${missingSlugs.size} new chapters to download: ${missingSlugs.joinToString()}")
+        val urlsToDownload = missingSlugs.mapNotNull { slugToUrl[it] }
+        val tempDir = Files.createTempDirectory("manga-sync-").toFile()
+        try {
+            // Process chapters one by one sequentially
+            for ((index, chapterUrl) in urlsToDownload.withIndex()) {
+                println("--> Downloading new chapter ${index + 1}/${urlsToDownload.size}: ${chapterUrl.substringAfterLast("/")}")
+                Downloader.downloadChapter(client, chapterUrl, tempDir, imageWorkers)
+                delay(2000L) // Wait 2 seconds before starting next chapter
+            }
+
+            println("\nExtracting existing chapters...")
+            if (!Processor.extractZip(cbzFile, tempDir)) {
+                println("Failed to extract existing CBZ file. Aborting sync."); return
+            }
+
+            val allChapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
+            if (allChapterFolders.isEmpty()) {
+                println("No chapters found after download and extraction. Aborting."); return
+            }
+
+            val mangaTitle = cbzFile.nameWithoutExtension
+            println("\nRebuilding CBZ archive...")
+            Processor.createCbzFromFolders(mangaTitle, allChapterFolders, cbzFile)
+            println("\n--- Sync complete for: ${cbzFile.name} ---")
+        } finally {
+            client.close()
+            tempDir.deleteRecursively()
+        }
+    }
+
+    private suspend fun downloadNewSeries(
+        seriesUrl: String,
+        cliTitle: String?,
+        imageWorkers: Int,
+        exclude: List<String>,
+        format: String
+    ) {
+        println("URL detected. Starting download process...")
+        val client = createPoliteHttpClient()
+
+        val mangaTitle = cliTitle ?: seriesUrl.substringAfterLast("/manga/", "")
+            .substringBefore('/')
+            .replace('-', ' ')
+            .titlecase()
+
+        println("Fetching chapter list for: $mangaTitle")
+        var chapterUrls = WPMangaScraper.findChapterUrls(client, seriesUrl)
+        if (chapterUrls.isEmpty()) {
+            println("Could not find any chapters at the provided URL."); client.close(); return
+        }
+        if (exclude.isNotEmpty()) {
+            val originalCount = chapterUrls.size
+            chapterUrls = chapterUrls.filter { url -> url.trimEnd('/').substringAfterLast('/') !in exclude }
+            println("Excluded ${originalCount - chapterUrls.size} chapters. New count: ${chapterUrls.size}")
+        }
+        if (chapterUrls.isEmpty()) {
+            println("No chapters left to download after exclusions."); client.close(); return
+        }
+
+        val tempDir = Files.createTempDirectory("manga-dl-").toFile()
+        try {
+            val downloadedFolders = mutableListOf<File>()
+            println("Downloading ${chapterUrls.size} chapters into ${tempDir.name}...")
+
+            // Process chapters one by one sequentially
+            for ((index, chapterUrl) in chapterUrls.withIndex()) {
+                println("--> Processing chapter ${index + 1}/${chapterUrls.size}: ${chapterUrl.substringAfterLast("/")}")
+                val downloadedFolder = Downloader.downloadChapter(client, chapterUrl, tempDir, imageWorkers)
+                if (downloadedFolder != null) {
+                    downloadedFolders.add(downloadedFolder)
+                }
+                delay(2000L) // Wait 2 seconds before the next chapter to be polite
+            }
+
+            if (downloadedFolders.isNotEmpty()) {
+                val outputFile = File(".", "$mangaTitle.$format")
+                when (format) {
+                    "cbz" -> Processor.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile)
+                    "epub" -> Processor.createEpubFromFolders(mangaTitle, downloadedFolders, outputFile)
+                }
+                println("\nDownload and packaging complete.")
+            } else {
+                println("\nNo chapters were downloaded. Exiting.")
+            }
+        } finally {
+            client.close()
+            tempDir.deleteRecursively()
+        }
+    }
+
+
     @JvmStatic
     fun main(args: Array<String>) {
-        // This is the corrected line. The `description` parameter has been removed.
         val parser = ArgParser(programName = "MangaCombiner")
 
         val source by parser.argument(
             type = ArgType.String,
             fullName = "source",
-            description = "Source file (.cbz or .epub) or a glob pattern for batch processing (e.g., \"mangas/*.cbz\")."
+            description = "Source URL, local file (.cbz or .epub), or a glob pattern (e.g., \"*.cbz\")."
         )
+
+        val update by parser.option(
+            type = ArgType.String,
+            fullName = "update",
+            description = "Path to a local CBZ file to update with missing chapters from the source URL."
+        )
+
+        val exclude by parser.option(
+            type = ArgType.String,
+            fullName = "exclude",
+            description = "A chapter URL slug to exclude. Can be used multiple times.",
+        ).multiple()
+
+        val workers by parser.option(
+            type = ArgType.Int,
+            shortName = "w",
+            fullName = "workers",
+            description = "Number of concurrent image download threads per chapter."
+        ).default(DEFAULT_IMAGE_WORKERS)
+
+        val chapterWorkers by parser.option(
+            type = ArgType.Int,
+            fullName = "chapter-workers",
+            description = "DEPRECATED: Chapter downloads are now sequential. This flag is ignored."
+        ).default(DEFAULT_CHAPTER_WORKERS)
 
         val title by parser.option(
             type = ArgType.String,
@@ -169,54 +320,16 @@ object MainKt {
             description = "The desired output format ('cbz' or 'epub')."
         ).default(DEFAULT_FORMAT)
 
-        val force by parser.option(
-            type = ArgType.Boolean,
-            shortName = "f",
-            fullName = "force",
-            description = "Force overwrite of the output file if it already exists."
-        ).default(false)
+        // ... (rest of the parser options are unchanged) ...
+        val force by parser.option(ArgType.Boolean, shortName = "f", fullName = "force").default(false)
+        val deleteOriginal by parser.option(ArgType.Boolean, fullName = "delete-original").default(false)
+        val lowStorageMode by parser.option(ArgType.Boolean, fullName = "low-storage-mode").default(false)
+        val ultraLowStorageMode by parser.option(ArgType.Boolean, fullName = "ultra-low-storage-mode").default(false)
+        val trueDangerousMode by parser.option(ArgType.Boolean, fullName = "true-dangerous-mode").default(false)
+        val batchWorkers by parser.option(ArgType.Int, fullName = "batch-workers").default(DEFAULT_BATCH_WORKERS)
+        val debug by parser.option(ArgType.Boolean, fullName = "debug").default(false)
+        val skipIfTargetExists by parser.option(ArgType.Boolean, fullName = "skip-if-target-exists").default(false)
 
-        val deleteOriginal by parser.option(
-            type = ArgType.Boolean,
-            fullName = "delete-original",
-            description = "Delete the original source file after a successful conversion."
-        ).default(false)
-
-        val lowStorageMode by parser.option(
-            type = ArgType.Boolean,
-            fullName = "low-storage-mode",
-            description = "Use a streaming conversion that uses less RAM but may be slower."
-        ).default(false)
-
-        val ultraLowStorageMode by parser.option(
-            type = ArgType.Boolean,
-            fullName = "ultra-low-storage-mode",
-            description = "Use a more aggressive streaming conversion for very low memory environments."
-        ).default(false)
-
-        val trueDangerousMode by parser.option(
-            type = ArgType.Boolean,
-            fullName = "true-dangerous-mode",
-            description = "EXTREME DANGER: Modifies the source file directly. Interruption will cause data loss."
-        ).default(false)
-
-        val batchWorkers by parser.option(
-            type = ArgType.Int,
-            fullName = "batch-workers",
-            description = "The number of parallel workers for batch processing."
-        ).default(DEFAULT_BATCH_WORKERS)
-
-        val debug by parser.option(
-            type = ArgType.Boolean,
-            fullName = "debug",
-            description = "Enable verbose debug logging."
-        ).default(false)
-
-        val skipIfTargetExists by parser.option(
-            type = ArgType.Boolean,
-            fullName = "skip-if-target-exists",
-            description = "Skip conversion if the target .epub or .cbz already exists."
-        ).default(false)
 
         try {
             parser.parse(args)
@@ -225,10 +338,8 @@ object MainKt {
             return
         }
 
-        // Set debug mode
         isDebugEnabled = debug
 
-        // Validate format
         val validatedFormat = try {
             validateFormat(format)
         } catch (e: IllegalArgumentException) {
@@ -236,22 +347,30 @@ object MainKt {
             return
         }
 
-        // Configure operation parameters
         val finalBatchWorkers = if (ultraLowStorageMode) 1 else batchWorkers
         val finalDeleteOriginal = deleteOriginal || lowStorageMode || ultraLowStorageMode || trueDangerousMode
         val useStreamingConversion = lowStorageMode || ultraLowStorageMode
         val useTrueStreaming = ultraLowStorageMode
 
-        // Handle operation confirmations
+        if (chapterWorkers != DEFAULT_CHAPTER_WORKERS) {
+            println("Warning: --chapter-workers is deprecated and will be ignored. Chapters are now downloaded sequentially to be server-friendly.")
+        }
+
         if (!handleOperationConfirmation(trueDangerousMode, finalDeleteOriginal, ultraLowStorageMode, lowStorageMode)) {
             return
         }
 
-        // Execute main operation
         runBlocking {
             try {
+                val isUrlSource = source.startsWith("http://", true) || source.startsWith("https://", true)
+
                 when {
-                    // Batch operation: Process multiple files using glob pattern
+                    isUrlSource && update != null -> {
+                        syncCbzWithSource(update!!, source, workers, exclude)
+                    }
+                    isUrlSource -> {
+                        downloadNewSeries(source, title, workers, exclude, validatedFormat)
+                    }
                     "*" in source || "?" in source -> {
                         val files = expandGlobPath(source).filter {
                             it.extension.equals("cbz", true) || it.extension.equals("epub", true)
@@ -266,15 +385,13 @@ object MainKt {
                             finalBatchWorkers, skipIfTargetExists
                         )
                     }
-                    // Single file operation: Process a single local file
                     File(source).exists() -> {
-                        processLocalFile(
+                        Processor.processLocalFile(
                             File(source), title, force, validatedFormat, finalDeleteOriginal,
                             useStreamingConversion, useTrueStreaming, trueDangerousMode,
                             skipIfTargetExists
                         )
                     }
-                    // Invalid source
                     else -> {
                         println("Error: Source '$source' is not an existing file path or a recognized file pattern.")
                     }

@@ -36,9 +36,14 @@ dependencies {
     // HTTP client for downloading
     implementation("io.ktor:ktor-client-core:2.3.12")
     implementation("io.ktor:ktor-client-cio:2.3.12")
+    implementation("io.ktor:ktor-client-plugins:2.3.12")
+
 
     // WebP image support
     implementation("org.sejda.imageio:webp-imageio:0.1.6")
+
+    // Add this dependency to fix the SLF4J warning
+    implementation("org.slf4j:slf4j-simple:2.0.13")
 
     testImplementation(kotlin("test"))
 }

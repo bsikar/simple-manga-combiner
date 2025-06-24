@@ -70,24 +70,15 @@ fun logError(message: String, throwable: Throwable? = null) {
 
 /**
  * Infers chapter slugs from the directory structure within a CBZ file.
- * Chapter slugs are typically the folder names containing the images.
+ * This version is robust and handles flat archives by checking the parent
+ * directory of each file, similar to the Python implementation.
  *
  * @param cbzFile The CBZ file to analyze
  * @return Set of chapter slugs found in the archive
  */
 fun inferChapterSlugsFromZip(cbzFile: File): Set<String> {
-    if (!cbzFile.exists()) {
-        logDebug { "File does not exist: ${cbzFile.absolutePath}" }
-        return emptySet()
-    }
-
-    if (!cbzFile.isFile) {
-        logDebug { "Not a file: ${cbzFile.absolutePath}" }
-        return emptySet()
-    }
-
-    if (!cbzFile.canRead()) {
-        logDebug { "Cannot read file: ${cbzFile.absolutePath}" }
+    if (!cbzFile.exists() || !cbzFile.isFile || !cbzFile.canRead()) {
+        logDebug { "Cannot read file or file does not exist: ${cbzFile.absolutePath}" }
         return emptySet()
     }
 
@@ -100,25 +91,26 @@ fun inferChapterSlugsFromZip(cbzFile: File): Set<String> {
 
             val slugs = zipFile.fileHeaders
                 .asSequence()
-                .filter { it.isDirectory }
-                .map { it.fileName.trimEnd('/') }
+                .filter { !it.isDirectory && it.fileName.lowercase() != "comicinfo.xml" }
+                .mapNotNull { File(it.fileName).parent }
                 .filter { it.isNotBlank() }
                 .toSet()
 
-            logDebug { "Found ${slugs.size} chapter slugs in ${cbzFile.name}" }
+            logDebug { "Found ${slugs.size} chapter slugs in ${cbzFile.name}: $slugs" }
             slugs
         }
     } catch (e: ZipException) {
-        logDebug { "ZIP format error reading ${cbzFile.name}: ${e.message}" }
+        logError("ZIP format error reading ${cbzFile.name}", e)
         emptySet()
     } catch (e: IOException) {
-        logDebug { "IO error reading ${cbzFile.name}: ${e.message}" }
+        logError("IO error reading ${cbzFile.name}", e)
         emptySet()
     } catch (e: Exception) {
-        logDebug { "Unexpected error reading ${cbzFile.name}: ${e.message}" }
+        logError("Unexpected error reading ${cbzFile.name}", e)
         emptySet()
     }
 }
+
 
 /**
  * Expands a file path containing glob patterns (wildcards).
