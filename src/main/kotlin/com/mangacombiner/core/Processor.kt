@@ -1,8 +1,6 @@
 package com.mangacombiner.core
 
-import com.mangacombiner.downloader.Downloader
 import com.mangacombiner.model.*
-import com.mangacombiner.util.inferChapterSlugsFromZip
 import com.mangacombiner.util.logDebug
 import kotlinx.coroutines.*
 import net.lingala.zip4j.ZipFile
@@ -412,114 +410,6 @@ object Processor {
         }
 
         println("Successfully created: ${outputFile.absolutePath}")
-    }
-
-    suspend fun downloadAndCreate(
-        seriesUrl: String,
-        customTitle: String?,
-        exclude: Set<String>,
-        format: String,
-        chapterWorkers: Int
-    ) {
-        val mangaTitle = customTitle ?: seriesUrl.substringAfter("/manga/").trim('/')
-            .replace('-', ' ').titlecase()
-        println("Manga Title: $mangaTitle")
-
-        val chapterUrls = Downloader.findChapterUrls(seriesUrl)
-            .filterNot { url -> url.trimEnd('/').substringAfterLast('/') in exclude }
-
-        if (chapterUrls.isEmpty()) {
-            println("No chapters found to download. Exiting.")
-            return
-        }
-
-        val tempDir = Files.createTempDirectory("manga-download-").toFile()
-        try {
-            println("Downloading ${chapterUrls.size} chapters using up to $chapterWorkers parallel workers...")
-            val downloaded = coroutineScope {
-                chapterUrls.map { url ->
-                    async(Dispatchers.IO) {
-                        val slug = url.trimEnd('/').substringAfterLast('/')
-                        println("-> Starting download for chapter: $slug")
-                        Downloader.downloadChapter(url, tempDir)
-                    }
-                }.awaitAll().filterNotNull()
-            }
-
-            if (downloaded.isNotEmpty()) {
-                val output = File("$mangaTitle.$format")
-                when (format.lowercase()) {
-                    "epub" -> createEpubFromFolders(mangaTitle, downloaded, output)
-                    else -> createCbzFromFolders(mangaTitle, downloaded, output)
-                }
-            } else println("No chapters were successfully downloaded.")
-        } finally {
-            tempDir.deleteRecursively()
-        }
-    }
-
-    suspend fun syncCbzWithSource(
-        cbzFile: File,
-        seriesUrl: String,
-        exclude: Set<String>,
-        chapterWorkers: Int
-    ) {
-        if (!cbzFile.exists()) {
-            println("Error: Local file not found at ${cbzFile.absolutePath}")
-            return
-        }
-
-        println("--- Starting Sync for: ${cbzFile.name} ---")
-
-        val localSlugs = inferChapterSlugsFromZip(cbzFile)
-        println("Found ${localSlugs.size} chapters locally.")
-
-        val allOnline = Downloader.findChapterUrls(seriesUrl)
-        val onlineUrls = allOnline.filterNot { url ->
-            url.trimEnd('/').substringAfterLast('/') in exclude
-        }
-
-        if (onlineUrls.isEmpty()) {
-            println("Could not retrieve chapter list from source. Aborting sync.")
-            return
-        }
-
-        val slugToUrl = onlineUrls.associateBy { it.trimEnd('/').substringAfterLast('/') }
-        val missingSlugs = (slugToUrl.keys - localSlugs).sorted()
-
-        if (missingSlugs.isEmpty()) {
-            println("CBZ is already up-to-date.")
-            return
-        }
-
-        println("Found ${missingSlugs.size} new chapters to download: ${missingSlugs.joinToString()}")
-
-        val urlsToDownload = missingSlugs.mapNotNull { slugToUrl[it] }
-        val tempDir = Files.createTempDirectory("manga-sync-").toFile()
-
-        try {
-            println("Downloading new chapters using up to $chapterWorkers parallel workers...")
-            coroutineScope {
-                urlsToDownload.map { url ->
-                    async(Dispatchers.IO) {
-                        val slug = url.trimEnd('/').substringAfterLast('/')
-                        println("-> Downloading new chapter: $slug")
-                        Downloader.downloadChapter(url, tempDir)
-                    }
-                }.awaitAll()
-            }
-
-            println("Extracting existing chapters...")
-            ZipFile(cbzFile).extractAll(tempDir.absolutePath)
-
-            val folders = tempDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
-            if (folders.isNotEmpty()) {
-                createCbzFromFolders(cbzFile.nameWithoutExtension, folders, cbzFile)
-                println("--- Sync complete for: ${cbzFile.name} ---")
-            }
-        } finally {
-            tempDir.deleteRecursively()
-        }
     }
 
     private fun convertCbzToEpubDangerously(

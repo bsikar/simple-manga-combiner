@@ -1,9 +1,6 @@
-// File: src/main/kotlin/com/mangacombiner/Main.kt
 package com.mangacombiner
 
-import com.mangacombiner.core.Processor.downloadAndCreate
 import com.mangacombiner.core.Processor.processLocalFile
-import com.mangacombiner.core.Processor.syncCbzWithSource
 import com.mangacombiner.util.expandGlobPath
 import com.mangacombiner.util.isDebugEnabled
 import com.mangacombiner.util.logDebug
@@ -18,8 +15,6 @@ import java.io.File
  */
 object MainKt {
     // Configuration constants
-    private const val DEFAULT_WORKERS = 10
-    private const val DEFAULT_CHAPTER_WORKERS = 4
     private const val DEFAULT_BATCH_WORKERS = 4
     private const val DEFAULT_FORMAT = "cbz"
 
@@ -95,8 +90,8 @@ object MainKt {
             finalDeleteOriginal -> {
                 val mode = when {
                     ultraLowStorageMode -> "ultra-low-storage"
-                    lowStorageMode       -> "low-storage"
-                    else                 -> "delete-original"
+                    lowStorageMode      -> "low-storage"
+                    else                -> "delete-original"
                 }
                 println("---")
                 println("--- WARNING: '$mode' mode is enabled. ---")
@@ -116,6 +111,7 @@ object MainKt {
     /**
      * Processes batch operations on multiple files.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun processBatchFiles(
         files: List<File>,
         title: String?,
@@ -149,29 +145,75 @@ object MainKt {
         println("\nBatch processing complete.")
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     @JvmStatic
     fun main(args: Array<String>) {
+        // This is the corrected line. The `description` parameter has been removed.
         val parser = ArgParser(programName = "MangaCombiner")
 
-        val source by parser.argument(ArgType.String, fullName = "source")
+        val source by parser.argument(
+            type = ArgType.String,
+            fullName = "source",
+            description = "Source file (.cbz or .epub) or a glob pattern for batch processing (e.g., \"mangas/*.cbz\")."
+        )
 
-        val update by parser.option(ArgType.String, fullName = "update")
-        val title by parser.option(ArgType.String, shortName = "t", fullName = "title")
-        val format by parser.option(ArgType.String, fullName = "format").default(DEFAULT_FORMAT)
-        val exclude by parser.option(ArgType.String, shortName = "e", fullName = "exclude")
-        val force by parser.option(ArgType.Boolean, shortName = "f", fullName = "force").default(false)
-        val deleteOriginal by parser.option(ArgType.Boolean, fullName = "delete-original").default(false)
-        val lowStorageMode by parser.option(ArgType.Boolean, fullName = "low-storage-mode").default(false)
-        val ultraLowStorageMode by parser.option(ArgType.Boolean, fullName = "ultra-low-storage-mode").default(false)
-        val trueDangerousMode by parser.option(ArgType.Boolean, fullName = "true-dangerous-mode").default(false)
-        val workers by parser.option(ArgType.Int, shortName = "w", fullName = "workers").default(DEFAULT_WORKERS)
-        val chapterWorkers by parser.option(ArgType.Int, fullName = "chapter-workers").default(DEFAULT_CHAPTER_WORKERS)
-        val batchWorkers by parser.option(ArgType.Int, fullName = "batch-workers").default(DEFAULT_BATCH_WORKERS)
-        val debug by parser.option(ArgType.Boolean, fullName = "debug").default(false)
+        val title by parser.option(
+            type = ArgType.String,
+            shortName = "t",
+            fullName = "title",
+            description = "Set a custom title for the output file, overriding the source filename."
+        )
+
+        val format by parser.option(
+            type = ArgType.String,
+            fullName = "format",
+            description = "The desired output format ('cbz' or 'epub')."
+        ).default(DEFAULT_FORMAT)
+
+        val force by parser.option(
+            type = ArgType.Boolean,
+            shortName = "f",
+            fullName = "force",
+            description = "Force overwrite of the output file if it already exists."
+        ).default(false)
+
+        val deleteOriginal by parser.option(
+            type = ArgType.Boolean,
+            fullName = "delete-original",
+            description = "Delete the original source file after a successful conversion."
+        ).default(false)
+
+        val lowStorageMode by parser.option(
+            type = ArgType.Boolean,
+            fullName = "low-storage-mode",
+            description = "Use a streaming conversion that uses less RAM but may be slower."
+        ).default(false)
+
+        val ultraLowStorageMode by parser.option(
+            type = ArgType.Boolean,
+            fullName = "ultra-low-storage-mode",
+            description = "Use a more aggressive streaming conversion for very low memory environments."
+        ).default(false)
+
+        val trueDangerousMode by parser.option(
+            type = ArgType.Boolean,
+            fullName = "true-dangerous-mode",
+            description = "EXTREME DANGER: Modifies the source file directly. Interruption will cause data loss."
+        ).default(false)
+
+        val batchWorkers by parser.option(
+            type = ArgType.Int,
+            fullName = "batch-workers",
+            description = "The number of parallel workers for batch processing."
+        ).default(DEFAULT_BATCH_WORKERS)
+
+        val debug by parser.option(
+            type = ArgType.Boolean,
+            fullName = "debug",
+            description = "Enable verbose debug logging."
+        ).default(false)
 
         val skipIfTargetExists by parser.option(
-            ArgType.Boolean,
+            type = ArgType.Boolean,
             fullName = "skip-if-target-exists",
             description = "Skip conversion if the target .epub or .cbz already exists."
         ).default(false)
@@ -205,29 +247,10 @@ object MainKt {
             return
         }
 
-        // Parse exclude list
-        val excludeSet = exclude?.split(' ')
-            ?.map { it.trim() }
-            ?.filter { it.isNotEmpty() }
-            ?.toSet() ?: emptySet()
-
         // Execute main operation
         runBlocking {
             try {
                 when {
-                    // Sync operation: Update existing CBZ with new chapters
-                    update != null && source.lowercase().startsWith("http") -> {
-                        val updateFile = File(update!!)
-                        if (!updateFile.exists()) {
-                            println("Error: Update file not found: ${updateFile.absolutePath}")
-                            return@runBlocking
-                        }
-                        syncCbzWithSource(updateFile, source, excludeSet, chapterWorkers)
-                    }
-                    // Download operation: Download new manga from URL
-                    source.lowercase().startsWith("http") -> {
-                        downloadAndCreate(source, title, excludeSet, validatedFormat, chapterWorkers)
-                    }
                     // Batch operation: Process multiple files using glob pattern
                     "*" in source || "?" in source -> {
                         val files = expandGlobPath(source).filter {
@@ -253,7 +276,7 @@ object MainKt {
                     }
                     // Invalid source
                     else -> {
-                        println("Error: Source '$source' is not a valid URL, an existing file path, or a recognized file pattern.")
+                        println("Error: Source '$source' is not an existing file path or a recognized file pattern.")
                     }
                 }
             } catch (e: Exception) {
