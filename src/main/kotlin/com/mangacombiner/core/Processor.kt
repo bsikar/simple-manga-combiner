@@ -264,11 +264,19 @@ object Processor {
                     else -> throw IllegalArgumentException("Unknown image source type")
                 }
 
+                // Create a new, unique filename to prevent collisions in the EPUB's image directory.
+                val extension = originalFileName.substringAfterLast('.', "jpg")
+                val uniqueImageName = "${chapterName}_page_${pageIndex + 1}.$extension"
+
                 val imageId = "img_${chapterName}_$pageIndex"
                 val pageId = "page_${chapterName}_$pageIndex"
-                val imageHref = "images/$originalFileName"
+
+                // Use the new unique name for the image path (href)
+                val imageHref = "images/$uniqueImageName"
                 val pageHref = "xhtml/$pageId.xhtml"
-                val mediaType = originalFileName.getImageMimeType()
+
+                // Get the media type from the unique name which has a reliable extension
+                val mediaType = uniqueImageName.getImageMimeType()
 
                 metadata.manifestItems += """<item id="$imageId" href="$imageHref" media-type="$mediaType"/>"""
                 metadata.manifestItems += """<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>"""
@@ -287,12 +295,14 @@ object Processor {
                     sourceZip.getInputStream(imageSource).use { stream ->
                         epubZip.addStream(
                             stream,
+                            // Use the unique path when adding the file to the archive
                             ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$imageHref" }
                         )
                     }
                 } else {
                     epubZip.addStream(
                         bytes.inputStream(),
+                        // Use the unique path when adding the file to the archive
                         ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$imageHref" }
                     )
                 }
@@ -535,11 +545,14 @@ object Processor {
                     val pathInZip = opfBase.resolve(item.href).normalize().toString().replace(File.separatorChar, '/')
                     val header = sourceZip.getFileHeader(pathInZip)
                     if (header != null) {
-                        val parts = pathInZip.split('/')
-                        val chapterDir = parts.drop(1).dropLast(1).joinToString(File.separator)
-                        val finalDir = File(tempDir, chapterDir)
+                        // This logic is simplified; it may not perfectly reconstruct chapter folders
+                        // if the EPUB structure is complex. It assumes images are in "images" or similar.
+                        val chapterDirName = Paths.get(item.href).parent?.toString()?.replace("images", "chapter") ?: "chapter_unknown"
+                        val finalDir = File(tempDir, chapterDirName)
                         finalDir.mkdirs()
-                        sourceZip.extractFile(header, finalDir.path, header.fileName.substringAfterLast('/'))
+                        // Extract with the original name from the href attribute
+                        val targetFileName = Paths.get(item.href).fileName.toString()
+                        sourceZip.extractFile(header, finalDir.path, targetFileName)
                     }
                 }
             }
@@ -576,7 +589,7 @@ object Processor {
         val mangaTitle = customTitle ?: inputFile.nameWithoutExtension
         val outputFile = File(inputFile.parent, "$mangaTitle.$finalOutputFormat")
 
-        if (skipIfTargetExists && outputFile.exists()) {
+        if (skipIfTargetExists && outputFile.exists() && inputFile != outputFile) {
             println("Skipping ${inputFile.name}: ${outputFile.name} already exists.")
             return
         }
@@ -592,16 +605,23 @@ object Processor {
             result = when (inputFormat to finalOutputFormat) {
                 "cbz" to "epub" -> processCbzToEpub(inputFile, mangaTitle, useStreamingConversion, useTrueStreaming, useTrueDangerousMode)
                 "epub" to "cbz" -> processEpubToCbz(inputFile, mangaTitle, useStreamingConversion, useTrueStreaming, useTrueDangerousMode)
-                "cbz" to "cbz" -> {
-                    if (deleteOriginal) println("Note: --delete-original is ignored when the source and destination formats are the same.")
-                    println("Updating metadata for: ${inputFile.name}")
-                    ProcessResult(true, inputFile)
+                "cbz" to "cbz", "epub" to "epub" -> {
+                    if (deleteOriginal && inputFile != outputFile) {
+                        // This case handles renaming and deleting the original, e.g., --title is used
+                        println("File is already in the target format. Renaming ${inputFile.name} to ${outputFile.name}")
+                        if (inputFile.renameTo(outputFile)) {
+                            ProcessResult(true, outputFile)
+                        } else {
+                            ProcessResult(false, error = "Failed to rename file.")
+                        }
+                    } else {
+                        if (deleteOriginal) println("Note: --delete-original is ignored when source and destination are the same file.")
+                        println("File is already in the target format. No action needed.")
+                        ProcessResult(true, inputFile)
+                    }
                 }
                 else -> {
-                    val message = if (inputFormat == finalOutputFormat)
-                        "File is already in the target format."
-                    else
-                        "Conversion from .$inputFormat to .$finalOutputFormat is not supported."
+                    val message = "Conversion from .$inputFormat to .$finalOutputFormat is not supported."
                     println(message)
                     ProcessResult(false, error = message)
                 }
@@ -646,12 +666,12 @@ object Processor {
                     if (chapterFolders.isEmpty()) {
                         val rootImages = tempDir.listFiles()?.filter { it.isFile && it.name.isImageFile() } ?: emptyList()
                         if (rootImages.isNotEmpty()) {
-                            val regex = Regex("""(c?\d{1,4})[_\- ]""", RegexOption.IGNORE_CASE)
+                            val regex = Regex("""(c|ch|chapter)?[_\- ]?(\d+)[_\- ]?""", RegexOption.IGNORE_CASE)
                             val grouped = rootImages.groupBy { img ->
-                                regex.find(img.name)?.groupValues?.get(1)?.lowercase() ?: "chapter_1"
+                                regex.find(img.name)?.let { "chapter-${it.groupValues[2]}" } ?: "chapter-1"
                             }
-                            chapterFolders = grouped.entries.mapIndexed { idx, (key, files) ->
-                                val dir = File(tempDir, if (key == "chapter_1" && grouped.size == 1) "chapter_1" else key)
+                            chapterFolders = grouped.map { (key, files) ->
+                                val dir = File(tempDir, key)
                                 dir.mkdirs()
                                 files.forEach { it.renameTo(File(dir, it.name)) }
                                 dir
@@ -693,9 +713,11 @@ object Processor {
         useTrueDangerousMode: Boolean
     ) {
         when {
-            result.success && deleteOriginal && !useTrueDangerousMode -> {
+            result.success && deleteOriginal && inputFile.path != result.outputFile?.path -> {
                 println("Operation successful. Deleting original file: ${inputFile.name}")
-                if (!inputFile.delete()) println("Warning: Failed to delete original file: ${inputFile.name}")
+                if (!inputFile.delete()) {
+                    println("Warning: Failed to delete original file: ${inputFile.name}")
+                }
             }
             !result.success && useTrueDangerousMode -> {
                 println("DANGEROUS OPERATION FAILED. Your source file ${inputFile.name} is likely CORRUPT.")
@@ -703,15 +725,19 @@ object Processor {
             result.success && useTrueDangerousMode -> {
                 ZipFile(inputFile).use { src ->
                     val remaining = src.fileHeaders.count { !it.isDirectory }
-                    if (remaining <= 1) {
+                    if (remaining <= 1) { // 1 remaining is usually ComicInfo.xml
                         println("Dangerous move appears successful. Deleting now-empty source file: ${inputFile.name}")
-                        if (!inputFile.delete()) println("Warning: Failed to delete modified source file: ${inputFile.name}")
+                        if (!inputFile.delete()) {
+                            println("Warning: Failed to delete modified source file: ${inputFile.name}")
+                        }
                     } else {
                         println("Dangerous move complete. Source file still contains non-image data and was not deleted.")
                     }
                 }
             }
-            result.error != null -> println(result.error)
+            result.error != null -> {
+                println(result.error)
+            }
         }
     }
 }

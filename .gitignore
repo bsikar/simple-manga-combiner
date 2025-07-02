@@ -33,6 +33,4 @@ replay_pid*
 # Ignore Gradle build output directory
 build
 
-tokenize_repo.zsh
-
 .DS_Store
