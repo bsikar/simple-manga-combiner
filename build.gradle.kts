@@ -1,71 +1,94 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.gradle.jvm.toolchain.JavaLanguageVersion
-import org.gradle.api.file.DuplicatesStrategy
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    kotlin("jvm") version "2.0.0"
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.plugin.spring)
+    alias(libs.plugins.kotlin.plugin.serialization)
+    alias(libs.plugins.spring.boot)
+    alias(libs.plugins.spring.dependency.management)
+    alias(libs.plugins.shadow.jar)
     application
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.0"
-    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 group = "com.mangacombiner"
-version = "1.0.0"
+version = "1.1.0"
 
 repositories {
     mavenCentral()
 }
 
+dependencyManagement {
+    imports {
+        mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    }
+}
+
 dependencies {
+    // Spring Boot
+    implementation(libs.spring.boot.starter)
+
     // Command-line argument parsing
-    implementation("org.jetbrains.kotlinx:kotlinx-cli-jvm:0.3.6")
+    implementation(libs.kotlinx.cli)
 
     // ZIP file handling
-    implementation("net.lingala.zip4j:zip4j:2.11.5")
+    implementation(libs.zip4j)
 
     // Coroutines for concurrent operations
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.1")
+    implementation(libs.kotlinx.coroutines.core)
 
     // XML serialization for ComicInfo.xml
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.7.1")
-    implementation("io.github.pdvrieze.xmlutil:serialization:0.91.1")
+    implementation(libs.kotlinx.serialization.core)
+    implementation(libs.xmlutil.serialization)
 
     // HTML parsing for web scraping
-    implementation("org.jsoup:jsoup:1.18.1")
+    implementation(libs.jsoup)
 
     // HTTP client for downloading
-    implementation("io.ktor:ktor-client-core:2.3.12")
-    implementation("io.ktor:ktor-client-cio:2.3.12")
-    implementation("io.ktor:ktor-client-plugins:2.3.12")
-
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.plugins)
 
     // WebP image support
-    implementation("org.sejda.imageio:webp-imageio:0.1.6")
+    implementation(libs.webp.imageio)
 
-    // Add this dependency to fix the SLF4J warning
-    implementation("org.slf4j:slf4j-simple:2.0.13")
+    // SLF4J implementation
+    implementation(libs.slf4j.simple)
 
-    testImplementation(kotlin("test"))
+    // Testing
+    testImplementation(libs.spring.boot.starter.test) {
+        exclude(group = "org.junit.vintage", module = "junit-vintage-engine")
+    }
+    testImplementation(libs.kotlin.test)
 }
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(11))
+        languageVersion.set(JavaLanguageVersion.of(17))
     }
 }
 
-tasks.test {
+// FIX: Use the modern compilerOptions DSL instead of the deprecated kotlinOptions
+tasks.withType<KotlinCompile>().configureEach {
+    compilerOptions {
+        freeCompilerArgs.add("-Xjsr305=strict")
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
+tasks.withType<Test> {
     useJUnitPlatform()
 }
 
 application {
-    mainClass.set("com.mangacombiner.MainKt")
+    mainClass.set("com.mangacombiner.MangaCombinerApplicationKt")
 }
 
-tasks.jar {
+// Configure the shadow jar to be executable
+tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
+    archiveClassifier.set("executable")
     manifest {
-        attributes["Main-Class"] = "com.mangacombiner.MainKt"
+        attributes["Main-Class"] = application.mainClass.get()
     }
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
 }
