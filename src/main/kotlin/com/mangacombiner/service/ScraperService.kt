@@ -8,9 +8,9 @@ import org.jsoup.Jsoup
 import org.springframework.stereotype.Service
 
 @Service
-class ScraperService(private val client: HttpClient) {
+class ScraperService {
 
-    suspend fun findChapterUrls(seriesUrl: String): List<String> {
+    suspend fun findChapterUrls(client: HttpClient, seriesUrl: String): List<String> {
         logDebug { "Scraping series page for chapter URLs: $seriesUrl" }
         return try {
             val response: String = client.get(seriesUrl).body()
@@ -29,7 +29,7 @@ class ScraperService(private val client: HttpClient) {
         }
     }
 
-    suspend fun findImageUrls(chapterUrl: String): List<String> {
+    suspend fun findImageUrls(client: HttpClient, chapterUrl: String): List<String> {
         logDebug { "Scraping chapter page for image URLs: $chapterUrl" }
         return try {
             val response: String = client.get(chapterUrl).body()

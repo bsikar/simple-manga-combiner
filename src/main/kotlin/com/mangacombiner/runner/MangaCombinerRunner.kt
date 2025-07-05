@@ -5,6 +5,9 @@ import com.mangacombiner.service.ProcessorService
 import com.mangacombiner.util.expandGlobPath
 import com.mangacombiner.util.isDebugEnabled
 import com.mangacombiner.util.logError
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
 import kotlinx.cli.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -26,6 +29,14 @@ class MangaCombinerRunner(
         const val DEFAULT_BATCH_WORKERS = 4
         const val DEFAULT_FORMAT = "cbz"
         val SUPPORTED_FORMATS = setOf("cbz", "epub")
+
+        val BROWSER_USER_AGENTS = listOf(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0"
+        )
     }
 
     private fun getConfirmation(prompt: String): Boolean {
@@ -86,14 +97,12 @@ class MangaCombinerRunner(
         return true
     }
 
-    /**
-     * Prints a summary of the parsed command-line arguments and derived settings.
-     */
     private fun printJobSummary(
         source: String,
         format: String,
         tempDirectory: File,
         storageMode: String,
+        userAgent: String,
         workers: Int,
         batchWorkers: Int,
         force: Boolean,
@@ -101,12 +110,13 @@ class MangaCombinerRunner(
         skip: Boolean,
         debug: Boolean
     ) {
-        val line = "-".repeat(45)
+        val line = "-".repeat(50)
         println(line)
         println("--- Manga Combiner Job Summary ---")
         println(line)
         println("Source: ".padEnd(25) + source)
         println("Output Format: ".padEnd(25) + format)
+        println("User-Agent: ".padEnd(25) + userAgent)
         println()
         println("--- Options ---")
         println("Image Workers: ".padEnd(25) + workers)
@@ -143,6 +153,7 @@ class MangaCombinerRunner(
         val skipIfTargetExists by parser.option(ArgType.Boolean, "skip-if-target-exists", description = "In batch mode, skip conversion if the target file (e.g., the .epub) already exists.").default(false)
         val updateMissing by parser.option(ArgType.Boolean, "update-missing", "Thoroughly check for incomplete chapters.").default(false)
         val tempIsDestination by parser.option(ArgType.Boolean, "temp-is-destination", "Use output directory for temp files instead of system temp.").default(false)
+        val impersonateBrowser by parser.option(ArgType.Boolean, "impersonate-browser", description = "Use a random common browser User-Agent instead of the default Ktor agent.").default(false)
 
         try {
             parser.parse(args.filterNotNull().toTypedArray())
@@ -177,11 +188,34 @@ class MangaCombinerRunner(
         val systemTemp = File(System.getProperty("java.io.tmpdir"))
         val tempDirectory = if (tempIsDestination) File(".").apply { mkdirs() } else systemTemp
 
+        // Determine User-Agent
+        val finalUserAgent = if (impersonateBrowser) {
+            BROWSER_USER_AGENTS.random()
+        } else {
+            "Ktor/2.3.12" // Default Ktor agent
+        }
+
         // Print the job summary before starting any operations
-        printJobSummary(source, validatedFormat, tempDirectory, storageModeDescription, workers, finalBatchWorkers, force, finalDeleteOriginal, skipIfTargetExists, isDebugEnabled)
+        printJobSummary(source, validatedFormat, tempDirectory, storageModeDescription, finalUserAgent, workers, finalBatchWorkers, force, finalDeleteOriginal, skipIfTargetExists, isDebugEnabled)
 
         if (!handleOperationConfirmation(trueDangerousMode, finalDeleteOriginal, ultraLowStorageMode, lowStorageMode)) {
             return
+        }
+
+        // Create the HttpClient dynamically with the chosen User-Agent
+        val client = HttpClient(CIO) {
+            install(HttpTimeout) {
+                requestTimeoutMillis = 60000
+                connectTimeoutMillis = 60000
+                socketTimeoutMillis = 60000
+            }
+            install(HttpRequestRetry) {
+                retryOnServerErrors(maxRetries = 3)
+                exponentialDelay()
+            }
+            install(UserAgent) {
+                agent = finalUserAgent
+            }
         }
 
         try {
@@ -189,10 +223,10 @@ class MangaCombinerRunner(
                 val isUrlSource = source.startsWith("http", true)
                 when {
                     isUrlSource && update != null -> {
-                        downloadService.syncLocalSource(update!!, source, workers, exclude, updateMissing, tempDirectory)
+                        downloadService.syncLocalSource(update!!, source, workers, exclude, updateMissing, tempDirectory, client)
                     }
                     isUrlSource -> {
-                        downloadService.downloadNewSeries(source, title, workers, exclude, validatedFormat, tempDirectory)
+                        downloadService.downloadNewSeries(source, title, workers, exclude, validatedFormat, tempDirectory, client)
                     }
                     "*" in source || "?" in source -> {
                         val filesToProcess = expandGlobPath(source)
@@ -230,6 +264,8 @@ class MangaCombinerRunner(
         } catch (e: Exception) {
             println("A fatal error occurred.")
             logError(e.message ?: "Unknown error", e)
+        } finally {
+            client.close()
         }
     }
 }

@@ -14,7 +14,6 @@ import java.nio.file.Files
 
 @Service
 class DownloadService(
-    private val client: HttpClient,
     private val scraperService: ScraperService,
     private val processorService: ProcessorService,
 ) {
@@ -24,7 +23,7 @@ class DownloadService(
         }
     }
 
-    private suspend fun downloadFile(url: String, outputFile: File): Boolean {
+    private suspend fun downloadFile(client: HttpClient, url: String, outputFile: File): Boolean {
         if (outputFile.exists()) {
             logDebug { "File already exists, skipping: ${outputFile.name}" }
             return true
@@ -47,14 +46,14 @@ class DownloadService(
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private suspend fun downloadChapter(chapterUrl: String, baseDir: File, imageWorkers: Int): File? {
+    private suspend fun downloadChapter(client: HttpClient, chapterUrl: String, baseDir: File, imageWorkers: Int): File? {
         val chapterSlug = chapterUrl.trimEnd('/').substringAfterLast('/')
         val chapterDir = File(baseDir, sanitizeFilename(chapterSlug))
         if (!chapterDir.exists()) {
             chapterDir.mkdirs()
         }
 
-        val imageUrls = scraperService.findImageUrls(chapterUrl)
+        val imageUrls = scraperService.findImageUrls(client, chapterUrl)
         if (imageUrls.isEmpty()) {
             println(" --> Warning: No images found for chapter $chapterSlug. It might be empty or licensed.")
             return if (chapterDir.exists()) chapterDir else null
@@ -69,7 +68,7 @@ class DownloadService(
                     logDebug { "Downloading image ${index + 1}/${imageUrls.size}: $imageUrl" }
                     val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
                     val outputFile = File(chapterDir, "page_${String.format("%03d", index + 1)}.$extension")
-                    downloadFile(imageUrl, outputFile)
+                    downloadFile(client, imageUrl, outputFile)
                 }
             }.joinAll()
         }
@@ -84,14 +83,14 @@ class DownloadService(
         }
     }
 
-    suspend fun syncLocalSource(localPath: String, seriesUrl: String, imageWorkers: Int, exclude: List<String>, checkPageCounts: Boolean, tempDir: File) {
+    suspend fun syncLocalSource(localPath: String, seriesUrl: String, imageWorkers: Int, exclude: List<String>, checkPageCounts: Boolean, tempDir: File, client: HttpClient) {
         val localFile = File(localPath)
         if (!localFile.exists()) {
             println("Error: Local file not found at $localPath"); return
         }
 
         println("--- Starting Sync for: ${localFile.name} ---")
-        val onlineUrls = scraperService.findChapterUrls(seriesUrl)
+        val onlineUrls = scraperService.findChapterUrls(client, seriesUrl)
         if (onlineUrls.isEmpty()) {
             println("Could not retrieve chapter list from source. Aborting sync."); return
         }
@@ -121,7 +120,7 @@ class DownloadService(
                         if (localPageCount == null) {
                             println(" -> New chapter found: $rawSlug"); url
                         } else {
-                            val onlineImageUrls = scraperService.findImageUrls(url)
+                            val onlineImageUrls = scraperService.findImageUrls(client, url)
                             if (onlineImageUrls.size > localPageCount) {
                                 println(" -> Incomplete chapter found: $rawSlug (Local: $localPageCount, Online: ${onlineImageUrls.size})"); url
                             } else null
@@ -142,13 +141,13 @@ class DownloadService(
             println("\nIMPORTANT: EPUB updates are not merged. New chapters will be downloaded to a separate folder.")
             val updatesDir = File(tempDir, "${localFile.nameWithoutExtension}-updates").apply { mkdirs() }
             println("Downloading new chapters to: ${updatesDir.absolutePath}")
-            urlsToDownload.forEach { downloadChapter(it, updatesDir, imageWorkers) }
+            urlsToDownload.forEach { downloadChapter(client, it, updatesDir, imageWorkers) }
             return
         }
 
         val syncDir = Files.createTempDirectory(tempDir.toPath(), "manga-sync-").toFile()
         try {
-            urlsToDownload.forEach { downloadChapter(it, syncDir, imageWorkers) }
+            urlsToDownload.forEach { downloadChapter(client, it, syncDir, imageWorkers) }
             if (localFile.exists()) processorService.extractZip(localFile, syncDir)
             val allChapterFolders = syncDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
             processorService.createCbzFromFolders(localFile.nameWithoutExtension, allChapterFolders, localFile)
@@ -158,11 +157,11 @@ class DownloadService(
         }
     }
 
-    suspend fun downloadNewSeries(seriesUrl: String, cliTitle: String?, imageWorkers: Int, exclude: List<String>, format: String, tempDir: File) {
+    suspend fun downloadNewSeries(seriesUrl: String, cliTitle: String?, imageWorkers: Int, exclude: List<String>, format: String, tempDir: File, client: HttpClient) {
         println("URL detected. Starting download process...")
         val mangaTitle = cliTitle ?: seriesUrl.substringAfterLast("/manga/", "").substringBefore('/').replace('-', ' ').titlecase()
         println("Fetching chapter list for: $mangaTitle")
-        var chapterUrls = scraperService.findChapterUrls(seriesUrl)
+        var chapterUrls = scraperService.findChapterUrls(client, seriesUrl)
         if (chapterUrls.isEmpty()) {
             println("Could not find any chapters at the provided URL."); return
         }
@@ -177,12 +176,10 @@ class DownloadService(
         try {
             println("Downloading ${chapterUrls.size} chapters...")
             val downloadedFolders = mutableListOf<File>()
-            // FIX: Use forEachIndexed for better progress reporting
             chapterUrls.forEachIndexed { index, url ->
-                // FIX: Trim trailing slashes to get the correct slug and add a counter
                 val slug = url.trimEnd('/').substringAfterLast('/')
                 println("--> Processing chapter ${index + 1}/${chapterUrls.size}: $slug")
-                downloadChapter(url, downloadDir, imageWorkers)?.let {
+                downloadChapter(client, url, downloadDir, imageWorkers)?.let {
                     downloadedFolders.add(it)
                 }
                 delay(1000L) // Politeness delay between chapters
