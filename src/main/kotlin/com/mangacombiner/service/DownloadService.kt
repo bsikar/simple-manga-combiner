@@ -60,6 +60,7 @@ class DownloadService(
             return if (chapterDir.exists()) chapterDir else null
         }
 
+        println(" --> Found ${imageUrls.size} images for $chapterSlug. Starting download...")
         val dispatcher = Dispatchers.IO.limitedParallelism(imageWorkers)
         coroutineScope {
             imageUrls.mapIndexed { index, imageUrl ->
@@ -175,12 +176,18 @@ class DownloadService(
         val downloadDir = Files.createTempDirectory(tempDir.toPath(), "manga-dl-").toFile()
         try {
             println("Downloading ${chapterUrls.size} chapters...")
-            val downloadedFolders = chapterUrls.mapNotNull { url ->
-                println("--> Processing: ${url.substringAfterLast("/")}")
-                val folder = downloadChapter(url, downloadDir, imageWorkers)
+            val downloadedFolders = mutableListOf<File>()
+            // FIX: Use forEachIndexed for better progress reporting
+            chapterUrls.forEachIndexed { index, url ->
+                // FIX: Trim trailing slashes to get the correct slug and add a counter
+                val slug = url.trimEnd('/').substringAfterLast('/')
+                println("--> Processing chapter ${index + 1}/${chapterUrls.size}: $slug")
+                downloadChapter(url, downloadDir, imageWorkers)?.let {
+                    downloadedFolders.add(it)
+                }
                 delay(1000L) // Politeness delay between chapters
-                folder
             }
+
             if (downloadedFolders.isNotEmpty()) {
                 val outputFile = File(".", "$mangaTitle.$format")
                 if (format == "cbz") processorService.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile)
