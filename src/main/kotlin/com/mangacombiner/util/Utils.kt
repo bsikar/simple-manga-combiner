@@ -34,17 +34,33 @@ fun parseChapterSlugsForSorting(slug: String): List<Int> {
 }
 
 fun normalizeChapterSlug(slug: String): String {
-    val numbers = numberRegex.findAll(slug).map { it.value }.toList()
-    if (numbers.isEmpty()) return slug.replace(Regex("[_\\-]"), ".")
+    val matches = numberRegex.findAll(slug).toList()
 
-    var tempSlug = slug
-    numbers.firstOrNull()?.let { firstNum ->
-        val paddedFirstNumber = firstNum.padStart(4, '0')
-        tempSlug = tempSlug.replaceFirst(firstNum, paddedFirstNumber)
+    if (matches.isEmpty()) {
+        return slug.replace(Regex("[_\\-]"), ".")
     }
 
-    return tempSlug.replace(Regex("[_\\-]"), ".")
+    val sb = StringBuilder()
+    var lastEnd = 0
+
+    // Reconstruct the string, replacing numbers as we go
+    matches.forEach { match ->
+        // Append the text between the last number and this one
+        sb.append(slug.substring(lastEnd, match.range.first))
+        // Append the padded number
+        sb.append(match.value.padStart(4, '0'))
+        lastEnd = match.range.last + 1
+    }
+
+    // Append any remaining text after the last number
+    if (lastEnd < slug.length) {
+        sb.append(slug.substring(lastEnd))
+    }
+
+    // Finally, replace all separators with a period
+    return sb.toString().replace(Regex("[_\\-]"), ".")
 }
+
 
 fun inferChapterSlugsFromZip(cbzFile: File): Set<String> {
     if (!cbzFile.exists() || !cbzFile.isFile || !cbzFile.canRead()) return emptySet()

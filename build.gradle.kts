@@ -53,9 +53,6 @@ dependencies {
     // WebP image support
     implementation(libs.webp.imageio)
 
-    // SLF4J implementation
-    implementation(libs.slf4j.simple)
-
     // Testing
     testImplementation(libs.spring.boot.starter.test) {
         exclude(group = "org.junit.vintage", module = "junit-vintage-engine")

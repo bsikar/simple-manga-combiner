@@ -15,7 +15,6 @@ xmlutilSerialization = "0.91.1"
 jsoup = "1.18.1"
 ktor = "2.3.12"
 webpImageio = "0.1.6"
-slf4j = "2.0.13"
 
 # Testing
 kotlinTest = "2.0.0"
@@ -29,7 +28,6 @@ kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 xmlutil-serialization = { module = "io.github.pdvrieze.xmlutil:serialization", version.ref = "xmlutilSerialization" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 webp-imageio = { module = "org.sejda.imageio:webp-imageio", version.ref = "webpImageio" }
-slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 
 # Ktor HTTP Client
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
