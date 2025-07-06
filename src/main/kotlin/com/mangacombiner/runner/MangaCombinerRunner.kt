@@ -20,18 +20,21 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.springframework.boot.CommandLineRunner
+import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 import java.io.File
 import java.io.IOException
 import kotlin.system.exitProcess
 
 @Component
+@Profile("cli")
 class MangaCombinerRunner(
     private val downloadService: DownloadService,
     private val processorService: ProcessorService
 ) : CommandLineRunner {
 
-    private companion object {
+    // Made internal to be accessible by the UI package
+    internal companion object {
         const val LINE_WIDTH = 50
         const val PADDING_WIDTH = 25
         const val REQUEST_TIMEOUT_MS = 60000L
@@ -44,6 +47,11 @@ class MangaCombinerRunner(
                 "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
         )
+
+        // Moved constants here from CliArgs to be accessible by the GUI
+        const val DEFAULT_IMAGE_WORKERS = 2
+        const val DEFAULT_BATCH_WORKERS = 4
+        const val DEFAULT_FORMAT = "cbz"
     }
 
     private fun getConfirmation(prompt: String): Boolean {
@@ -53,19 +61,19 @@ class MangaCombinerRunner(
 
     private fun handleOperationConfirmation(cliArgs: CliArgs): Boolean {
         if (cliArgs.dryRun) {
-            println("--- DRY RUN MODE: No confirmation needed. ---")
+            Logger.logInfo("--- DRY RUN MODE: No confirmation needed. ---")
             return true
         }
 
         var confirmed = true
         if (cliArgs.trueDangerousMode) {
-            println("---")
-            println("--- EXTREME DANGER: '--true-dangerous-mode' is enabled! ---")
-            println("--- This mode modifies the source file directly during conversion.")
-            println("--- ANY INTERRUPTION WILL LIKELY CORRUPT THE ORIGINAL FILE.")
-            println("---")
+            Logger.logInfo("---")
+            Logger.logInfo("--- EXTREME DANGER: '--true-dangerous-mode' is enabled! ---")
+            Logger.logInfo("--- This mode modifies the source file directly during conversion.")
+            Logger.logInfo("--- ANY INTERRUPTION WILL LIKELY CORRUPT THE ORIGINAL FILE.")
+            Logger.logInfo("---")
             if (!getConfirmation("You have been warned. Do you wish to continue?")) {
-                println("Operation cancelled.")
+                Logger.logInfo("Operation cancelled.")
                 confirmed = false
             }
         } else if (cliArgs.deleteOriginal || cliArgs.lowStorageMode || cliArgs.ultraLowStorageMode) {
@@ -74,12 +82,12 @@ class MangaCombinerRunner(
                 cliArgs.lowStorageMode -> "low-storage"
                 else -> "delete-original"
             }
-            println("---")
-            println("--- WARNING: '$mode' mode is enabled. ---")
-            println("--- The original file will be deleted only after a successful conversion.")
-            println("---")
+            Logger.logInfo("---")
+            Logger.logInfo("--- WARNING: '$mode' mode is enabled. ---")
+            Logger.logInfo("--- The original file will be deleted only after a successful conversion.")
+            Logger.logInfo("---")
             if (!getConfirmation("Are you sure you want to delete the original file upon success?")) {
-                println("Operation cancelled.")
+                Logger.logInfo("Operation cancelled.")
                 confirmed = false
             }
         }
@@ -88,27 +96,27 @@ class MangaCombinerRunner(
 
     private fun printJobSummary(options: JobOptions) {
         val line = "-".repeat(LINE_WIDTH)
-        println(line)
-        println("--- Manga Combiner Job Summary ---")
-        println(line)
-        println("Source: ".padEnd(PADDING_WIDTH) + options.source)
-        println("Output Format: ".padEnd(PADDING_WIDTH) + options.format)
-        println("User-Agent: ".padEnd(PADDING_WIDTH) + options.userAgent)
-        println()
-        println("--- Options ---")
-        println("Dry Run: ".padEnd(PADDING_WIDTH) + options.dryRun)
-        println("Image Workers: ".padEnd(PADDING_WIDTH) + options.workers)
-        println("Batch Workers: ".padEnd(PADDING_WIDTH) + options.batchWorkers)
-        println("Force Overwrite: ".padEnd(PADDING_WIDTH) + options.force)
-        println("Delete Original: ".padEnd(PADDING_WIDTH) + options.deleteOriginal)
-        println("Skip if Target Exists: ".padEnd(PADDING_WIDTH) + options.skip)
-        println("Debug Mode: ".padEnd(PADDING_WIDTH) + options.debug)
-        println()
-        println("--- Storage & Temp Files ---")
-        println("Mode: ".padEnd(PADDING_WIDTH) + options.storageMode)
-        println("Temp Location: ".padEnd(PADDING_WIDTH) + options.tempDirectory.absolutePath)
-        println(line)
-        println()
+        Logger.logInfo(line)
+        Logger.logInfo("--- Manga Combiner Job Summary ---")
+        Logger.logInfo(line)
+        Logger.logInfo("Source: ".padEnd(PADDING_WIDTH) + options.source)
+        Logger.logInfo("Output Format: ".padEnd(PADDING_WIDTH) + options.format)
+        Logger.logInfo("User-Agent: ".padEnd(PADDING_WIDTH) + options.userAgent)
+        Logger.logInfo("")
+        Logger.logInfo("--- Options ---")
+        Logger.logInfo("Dry Run: ".padEnd(PADDING_WIDTH) + options.dryRun)
+        Logger.logInfo("Image Workers: ".padEnd(PADDING_WIDTH) + options.workers)
+        Logger.logInfo("Batch Workers: ".padEnd(PADDING_WIDTH) + options.batchWorkers)
+        Logger.logInfo("Force Overwrite: ".padEnd(PADDING_WIDTH) + options.force)
+        Logger.logInfo("Delete Original: ".padEnd(PADDING_WIDTH) + options.deleteOriginal)
+        Logger.logInfo("Skip if Target Exists: ".padEnd(PADDING_WIDTH) + options.skip)
+        Logger.logInfo("Debug Mode: ".padEnd(PADDING_WIDTH) + options.debug)
+        Logger.logInfo("")
+        Logger.logInfo("--- Storage & Temp Files ---")
+        Logger.logInfo("Mode: ".padEnd(PADDING_WIDTH) + options.storageMode)
+        Logger.logInfo("Temp Location: ".padEnd(PADDING_WIDTH) + options.tempDirectory.absolutePath)
+        Logger.logInfo(line)
+        Logger.logInfo("")
     }
 
     private fun createJobOptions(cliArgs: CliArgs): JobOptions? {
@@ -117,7 +125,7 @@ class MangaCombinerRunner(
             require(lowerFormat in SUPPORTED_FORMATS)
             lowerFormat
         } catch (e: IllegalArgumentException) {
-            println("Unsupported format: ${cliArgs.format}. Supported: ${SUPPORTED_FORMATS.joinToString()}")
+            Logger.logError("Unsupported format: ${cliArgs.format}. Supported: ${SUPPORTED_FORMATS.joinToString()}")
             Logger.logDebug { "Caught expected exception for unsupported format: ${e.message}" }
             return null
         }
@@ -161,7 +169,7 @@ class MangaCombinerRunner(
                     jobOptions.source.startsWith("http", true) -> handleUrlSource(jobOptions, client, cliArgs)
                     "*" in jobOptions.source || "?" in jobOptions.source -> handleGlobSource(jobOptions, cliArgs)
                     File(jobOptions.source).exists() -> handleLocalFileSource(jobOptions, cliArgs)
-                    else -> println("Error: Source '${jobOptions.source}' is invalid.")
+                    else -> Logger.logError("Error: Source '${jobOptions.source}' is invalid.")
                 }
             }
         } catch (e: ClientRequestException) {
@@ -207,11 +215,11 @@ class MangaCombinerRunner(
     private suspend fun handleGlobSource(jobOptions: JobOptions, cliArgs: CliArgs) {
         val files = FileUtils.expandGlobPath(jobOptions.source)
         if (files.isEmpty()) {
-            println("No files found matching pattern '${jobOptions.source}'.")
+            Logger.logInfo("No files found matching pattern '${jobOptions.source}'.")
             return
         }
 
-        println("Found ${files.size} files to process using up to ${jobOptions.batchWorkers} workers.")
+        Logger.logInfo("Found ${files.size} files to process using up to ${jobOptions.batchWorkers} workers.")
         coroutineScope {
             files.forEach { file ->
                 launch(Dispatchers.IO.limitedParallelism(jobOptions.batchWorkers)) {
@@ -253,11 +261,10 @@ class MangaCombinerRunner(
         } catch (e: Exception) {
             if (e::class.simpleName == "IllegalUsage") {
                 if (!args.contains("--help")) {
-                    println("Error parsing arguments: ${e.message}")
+                    Logger.logError("Error parsing arguments: ${e.message}")
                 }
                 exitProcess(1)
             } else {
-                // It's a different, unexpected exception, so rethrow it.
                 throw e
             }
         }
@@ -268,8 +275,8 @@ class MangaCombinerRunner(
         printJobSummary(jobOptions)
 
         if (jobOptions.dryRun) {
-            println("--- DRY RUN ENABLED: No files will be created, modified, or deleted. ---")
-            println()
+            Logger.logInfo("--- DRY RUN ENABLED: No files will be created, modified, or deleted. ---")
+            Logger.logInfo("")
         }
 
         if (!handleOperationConfirmation(cliArgs)) {

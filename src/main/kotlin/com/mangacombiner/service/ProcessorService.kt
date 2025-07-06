@@ -60,7 +60,7 @@ class ProcessorService(
         val (bookmarks, totalPageCount) = cbzGenerator.createBookmarks(sortedFolders)
 
         if (totalPageCount == 0) {
-            println("Warning: No images found for $mangaTitle. Skipping CBZ creation.")
+            Logger.logInfo("Warning: No images found for $mangaTitle. Skipping CBZ creation.")
             return
         }
 
@@ -81,7 +81,7 @@ class ProcessorService(
             ZipFile(outputFile).use { zipFile ->
                 populateCbzFile(zipFile, mangaTitle, sortedFolders)
             }
-            println("Successfully created: ${outputFile.name}")
+            Logger.logInfo("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
             Logger.logError("Failed to create CBZ file ${outputFile.name}", e)
         }
@@ -96,7 +96,7 @@ class ProcessorService(
         outputFile.parentFile?.mkdirs()
 
         val sortedFolders = sortChapterFolders(chapterFolders)
-        println("Creating CBZ archive: ${outputFile.name}...")
+        Logger.logInfo("Creating CBZ archive: ${outputFile.name}...")
 
         buildCbz(outputFile, mangaTitle, sortedFolders)
     }
@@ -122,7 +122,7 @@ class ProcessorService(
     ) {
         if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
-        println("Creating EPUB archive: ${outputFile.name}...")
+        Logger.logInfo("Creating EPUB archive: ${outputFile.name}...")
 
         val epubGenerator = EpubStructureGenerator()
         val metadata = EpubStructureGenerator.EpubMetadata()
@@ -131,12 +131,10 @@ class ProcessorService(
         try {
             ZipFile(outputFile).use { epubZip ->
                 epubGenerator.addEpubCoreFiles(epubZip)
-
-                // Add all chapters
                 addChaptersToEpub(epubZip, sortedFolders, epubGenerator, metadata)
                 epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, metadata)
             }
-            println("Successfully created: ${outputFile.name}")
+            Logger.logInfo("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
             Logger.logError("Failed to create EPUB file ${outputFile.name}", e)
         }
@@ -154,7 +152,7 @@ class ProcessorService(
     }
 
     fun processLocalFile(options: LocalFileOptions) {
-        println("\nProcessing local file: ${options.inputFile.name}")
+        Logger.logInfo("\nProcessing local file: ${options.inputFile.name}")
 
         val mangaTitle = options.customTitle ?: options.inputFile.toPath().nameWithoutExtension
         val outputFile = File(options.inputFile.parent, "$mangaTitle.${options.outputFormat}")
@@ -164,9 +162,9 @@ class ProcessorService(
         }
 
         if (options.dryRun) {
-            println("[DRY RUN] Would process ${options.inputFile.name} into ${outputFile.name}.")
+            Logger.logInfo("[DRY RUN] Would process ${options.inputFile.name} into ${outputFile.name}.")
             if (options.deleteOriginal) {
-                println("[DRY RUN] Would delete original file: ${options.inputFile.name} on success.")
+                Logger.logInfo("[DRY RUN] Would delete original file: ${options.inputFile.name} on success.")
             }
             return
         }
@@ -180,21 +178,20 @@ class ProcessorService(
         var shouldSkip = false
         when {
             options.inputFile.extension.lowercase() !in setOf("cbz", "epub") -> {
-                println("Error: Input file must be a .cbz or .epub file.")
+                Logger.logError("Error: Input file must be a .cbz or .epub file.")
                 shouldSkip = true
             }
             options.inputFile.canonicalPath == outputFile.canonicalPath &&
                 options.inputFile.extension.lowercase() == options.outputFormat.lowercase() -> {
-                println("Re-processing file in place: ${outputFile.name}")
-                // Do not skip, allow reprocessing
+                Logger.logInfo("Re-processing file in place: ${outputFile.name}")
             }
             outputFile.exists() -> {
                 if (options.skipIfTargetExists) {
-                    println("Skipping ${options.inputFile.name}: Target ${outputFile.name} already exists.")
+                    Logger.logInfo("Skipping ${options.inputFile.name}: Target ${outputFile.name} already exists.")
                     shouldSkip = true
                 } else if (!options.forceOverwrite) {
                     val message = "Error: Output file ${outputFile.name} already exists. Use --force to overwrite."
-                    println(message)
+                    Logger.logError(message)
                     shouldSkip = true
                 }
             }
@@ -215,18 +212,18 @@ class ProcessorService(
 
         when {
             successfulDelete -> {
-                println("Operation successful. Deleting original file: ${inputFile.name}")
+                Logger.logInfo("Operation successful. Deleting original file: ${inputFile.name}")
                 if (!inputFile.delete()) {
-                    println("Warning: Failed to delete original file: ${inputFile.name}")
+                    Logger.logInfo("Warning: Failed to delete original file: ${inputFile.name}")
                 }
             }
             !result.success && useTrueDangerousMode -> {
-                println(
+                Logger.logError(
                     "DANGEROUS OPERATION FAILED. Source file ${inputFile.name} may be CORRUPT."
                 )
             }
             result.error != null -> {
-                println(result.error)
+                Logger.logError(result.error)
             }
         }
     }

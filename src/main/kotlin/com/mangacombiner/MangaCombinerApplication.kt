@@ -1,12 +1,21 @@
 package com.mangacombiner
 
+import org.springframework.boot.SpringApplication
 import org.springframework.boot.autoconfigure.SpringBootApplication
-import org.springframework.boot.runApplication
 
 @SpringBootApplication
 class MangaCombinerApplication
 
 @Suppress("SpreadOperator")
 fun main(args: Array<String>) {
-    runApplication<MangaCombinerApplication>(*args)
+    val isCliMode = args.isNotEmpty()
+    val app = SpringApplication(MangaCombinerApplication::class.java)
+
+    if (isCliMode) {
+        app.setAdditionalProfiles("cli")
+    } else {
+        app.setAdditionalProfiles("gui")
+        app.setHeadless(false)
+    }
+    app.run(*args)
 }

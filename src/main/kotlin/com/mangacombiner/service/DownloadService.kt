@@ -65,11 +65,11 @@ class DownloadService(
                 writeChannelToFile(response.bodyAsChannel(), outputFile)
                 true
             } else {
-                println("Failed to download $url. Status: ${response.status}")
+                Logger.logError("Failed to download $url. Status: ${response.status}")
                 false
             }
         } catch (e: IOException) {
-            println("Error downloading file $url: ${e.message}")
+            Logger.logError("Error downloading file $url: ${e.message}")
             Logger.logDebug { "Full error for $url: ${e.stackTraceToString()}" }
             false
         }
@@ -90,11 +90,11 @@ class DownloadService(
 
         val imageUrls = scraperService.findImageUrls(client, chapterUrl)
         if (imageUrls.isEmpty()) {
-            println(" --> Warning: No images found for chapter '$chapterTitle'. It might be empty or licensed.")
+            Logger.logInfo(" --> Warning: No images found for chapter '$chapterTitle'. It might be empty or licensed.")
             return if (chapterDir.exists()) chapterDir else null
         }
 
-        println(" --> Found ${imageUrls.size} images for '$chapterTitle'. Starting download...")
+        Logger.logInfo(" --> Found ${imageUrls.size} images for '$chapterTitle'. Starting download...")
         val dispatcher = Dispatchers.IO.limitedParallelism(imageWorkers)
         coroutineScope {
             imageUrls.mapIndexed { index, imageUrl ->
@@ -124,11 +124,11 @@ class DownloadService(
         localFile: File,
         urlsToDownload: List<String>
     ) {
-        println(
+        Logger.logInfo(
             "\nIMPORTANT: EPUB updates are not merged. New chapters will be downloaded to a separate folder."
         )
         val updatesDir = File(options.tempDir, "${localFile.nameWithoutExtension}-updates").apply { mkdirs() }
-        println("Downloading new chapters to: ${updatesDir.absolutePath}")
+        Logger.logInfo("Downloading new chapters to: ${updatesDir.absolutePath}")
         // Since we only have URLs here, we derive the title from the URL slug as a fallback.
         urlsToDownload.forEach { url ->
             val title = url.substringAfterLast("/")
@@ -151,7 +151,7 @@ class DownloadService(
             if (localFile.exists()) processorService.extractZip(localFile, syncDir)
             val allChapterFolders = syncDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
             processorService.createCbzFromFolders(localFile.nameWithoutExtension, allChapterFolders, localFile)
-            println("\n--- Sync complete for: ${localFile.name} ---")
+            Logger.logInfo("\n--- Sync complete for: ${localFile.name} ---")
         } finally {
             if (syncDir.exists()) syncDir.deleteRecursively()
         }
@@ -160,20 +160,20 @@ class DownloadService(
     suspend fun syncLocalSource(options: SyncOptions) {
         val localFile = File(options.localPath)
         if (!localFile.exists()) {
-            println("Error: Local file not found at ${options.localPath}")
+            Logger.logError("Error: Local file not found at ${options.localPath}")
             return
         }
 
-        println("--- Starting Sync for: ${localFile.name} ---")
+        Logger.logInfo("--- Starting Sync for: ${localFile.name} ---")
         val onlineUrls = scraperService.findChapterUrls(options.client, options.seriesUrl)
         if (onlineUrls.isNotEmpty()) {
             val urlsToDownload = getUrlsToDownload(options, onlineUrls, localFile)
             if (urlsToDownload.isNotEmpty()) {
                 val chapterSlugs = urlsToDownload.joinToString { it.substringAfterLast("/") }
-                println("Found ${urlsToDownload.size} chapters to download/update: $chapterSlugs")
+                Logger.logInfo("Found ${urlsToDownload.size} chapters to download/update: $chapterSlugs")
 
                 if (options.dryRun) {
-                    println("[DRY RUN] Would sync ${urlsToDownload.size} chapters into ${localFile.name}.")
+                    Logger.logInfo("[DRY RUN] Would sync ${urlsToDownload.size} chapters into ${localFile.name}.")
                     return
                 }
 
@@ -183,10 +183,10 @@ class DownloadService(
                     handleCbzSync(options, localFile, urlsToDownload)
                 }
             } else {
-                println("Source is already up-to-date.")
+                Logger.logInfo("Source is already up-to-date.")
             }
         } else {
-            println("Could not retrieve chapter list from source. Aborting sync.")
+            Logger.logInfo("Could not retrieve chapter list from source. Aborting sync.")
         }
     }
 
@@ -203,10 +203,10 @@ class DownloadService(
         val onlineSlugsNormalized = onlineSlugsRaw.associateBy { SlugUtils.normalizeChapterSlug(it) }
 
         return if (options.checkPageCounts) {
-            println("Performing thorough check for missing and incomplete chapters...")
+            Logger.logInfo("Performing thorough check for missing and incomplete chapters...")
             findMissingChaptersThorough(localFile, onlineSlugsNormalized, onlineSlugToUrl, options.client)
         } else {
-            println("Performing fast check for missing chapters...")
+            Logger.logInfo("Performing fast check for missing chapters...")
             findMissingChaptersFast(localFile, onlineSlugsNormalized, onlineSlugToUrl)
         }
     }
@@ -246,12 +246,12 @@ class DownloadService(
                     val localPageCount = localChapterDataNormalized[normalizedSlug]
                     val url = onlineSlugToUrl[rawSlug]!!
                     if (localPageCount == null) {
-                        println(" -> New chapter found: $rawSlug")
+                        Logger.logInfo(" -> New chapter found: $rawSlug")
                         url
                     } else {
                         val onlineImageUrls = scraperService.findImageUrls(client, url)
                         if (onlineImageUrls.size > localPageCount) {
-                            println(
+                            Logger.logInfo(
                                 " -> Incomplete chapter found: $rawSlug " +
                                     "(Local: $localPageCount, Online: ${onlineImageUrls.size})"
                             )
@@ -270,14 +270,14 @@ class DownloadService(
         chapterData: List<Pair<String, String>>,
         downloadDir: File
     ): List<File> {
-        println("Downloading ${chapterData.size} chapters...")
+        Logger.logInfo("Downloading ${chapterData.size} chapters...")
         val downloadedFolders = mutableListOf<File>()
         chapterData.forEachIndexed { index, (url, title) ->
-            println("--> Processing chapter ${index + 1}/${chapterData.size}: $title")
+            Logger.logInfo("--> Processing chapter ${index + 1}/${chapterData.size}: $title")
             downloadChapter(options.client, url, title, downloadDir, options.imageWorkers)?.let {
                 downloadedFolders.add(it)
             }
-            delay(CHAPTER_DOWNLOAD_DELAY_MS) // Politeness delay between chapters
+            delay(CHAPTER_DOWNLOAD_DELAY_MS)
         }
         return downloadedFolders
     }
@@ -288,7 +288,7 @@ class DownloadService(
         downloadedFolders: List<File>,
     ) {
         if (downloadedFolders.isEmpty()) {
-            println("\nNo chapters were downloaded. Exiting.")
+            Logger.logInfo("\nNo chapters were downloaded. Exiting.")
             return
         }
 
@@ -298,21 +298,21 @@ class DownloadService(
         } else {
             processorService.createEpubFromFolders(mangaTitle, downloadedFolders, outputFile)
         }
-        println("\nDownload and packaging complete: ${outputFile.name}")
+        Logger.logInfo("\nDownload and packaging complete: ${outputFile.name}")
     }
 
     suspend fun downloadNewSeries(options: DownloadOptions) {
-        println("URL detected. Starting download process...")
+        Logger.logInfo("URL detected. Starting download process...")
         val mangaTitle = options.cliTitle ?: options.seriesUrl.substringAfterLast("/manga/", "")
             .substringBefore('/')
             .replace('-', ' ')
             .titlecase()
 
-        println("Fetching chapter list for: $mangaTitle")
+        Logger.logInfo("Fetching chapter list for: $mangaTitle")
         var chapterData = scraperService.findChapterUrlsAndTitles(options.client, options.seriesUrl)
 
         if (chapterData.isEmpty()) {
-            println("Could not find any chapters at the provided URL.")
+            Logger.logInfo("Could not find any chapters at the provided URL.")
         } else {
             if (options.exclude.isNotEmpty()) {
                 chapterData = chapterData.filter { (url, _) ->
@@ -321,11 +321,11 @@ class DownloadService(
             }
 
             if (chapterData.isEmpty()) {
-                println("No chapters left to download after exclusions.")
+                Logger.logInfo("No chapters left to download after exclusions.")
             } else if (options.dryRun) {
-                println("[DRY RUN] Would download ${chapterData.size} chapters for series '$mangaTitle'.")
+                Logger.logInfo("[DRY RUN] Would download ${chapterData.size} chapters for series '$mangaTitle'.")
                 val outputFile = File(".", "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
-                println("[DRY RUN] Would create output file: ${outputFile.name}")
+                Logger.logInfo("[DRY RUN] Would create output file: ${outputFile.name}")
             } else {
                 val downloadDir = Files.createTempDirectory(options.tempDir.toPath(), "manga-dl-").toFile()
                 try {

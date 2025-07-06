@@ -1,6 +1,9 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
+val mainClassName = "com.mangacombiner.MangaCombinerApplicationKt"
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -9,9 +12,10 @@ plugins {
     alias(libs.plugins.spring.boot)
     alias(libs.plugins.spring.dependency.management)
     alias(libs.plugins.shadow.jar)
-    application
+    alias(libs.plugins.compose.plugin)
 
-    id("io.gitlab.arturbosch.detekt") version "1.23.8"
+    // Corrected Detekt version to be compatible with Kotlin 1.9.23
+    id("io.gitlab.arturbosch.detekt") version "1.23.6"
 }
 
 // This block configures Detekt to use your custom settings.
@@ -25,6 +29,8 @@ version = "1.1.0"
 
 repositories {
     mavenCentral()
+    google()
+    maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
 }
 
 dependencyManagement {
@@ -36,6 +42,9 @@ dependencyManagement {
 dependencies {
     // Spring Boot
     implementation(libs.spring.boot.starter)
+
+    // Compose for Desktop UI
+    implementation(compose.desktop.currentOs)
 
     // Command-line argument parsing
     implementation(libs.kotlinx.cli)
@@ -60,8 +69,8 @@ dependencies {
     implementation(libs.ktor.io.jvm)
 
 
-    // WebP image support
-    implementation(libs.webp.imageio)
+    // WebP image support (using TwelveMonkeys library)
+    implementation(libs.imageio.webp)
 
     // Detekt Formatting Rules
     detektPlugins(libs.detekt.formatting)
@@ -90,13 +99,27 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
-application {
-    mainClass.set("com.mangacombiner.MangaCombinerApplicationKt")
+// The main class is explicitly configured for Spring Boot tasks.
+springBoot {
+    mainClass.set(mainClassName)
 }
 
 tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
-    archiveClassifier.set("executable")
+    archiveClassifier.set("cli-executable")
     manifest {
-        attributes["Main-Class"] = application.mainClass.get()
+        attributes["Main-Class"] = mainClassName
+    }
+}
+
+compose.desktop {
+    application {
+        mainClass = mainClassName
+        nativeDistributions {
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
+            packageName = "MangaCombiner"
+            packageVersion = project.version.toString()
+            description = "A tool to download and combine manga chapters."
+            vendor = "MangaCombiner"
+        }
     }
 }

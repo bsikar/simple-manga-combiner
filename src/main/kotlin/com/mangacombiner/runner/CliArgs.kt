@@ -1,5 +1,8 @@
 package com.mangacombiner.runner
 
+import com.mangacombiner.runner.MangaCombinerRunner.Companion.DEFAULT_BATCH_WORKERS
+import com.mangacombiner.runner.MangaCombinerRunner.Companion.DEFAULT_FORMAT
+import com.mangacombiner.runner.MangaCombinerRunner.Companion.DEFAULT_IMAGE_WORKERS
 import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
@@ -38,10 +41,4 @@ internal class CliArgs(parser: ArgParser) {
         .default(false)
     val impersonateBrowser by parser.option(ArgType.Boolean, "impersonate-browser", "Use browser User-Agent.")
         .default(false)
-
-    companion object {
-        const val DEFAULT_IMAGE_WORKERS = 2
-        const val DEFAULT_BATCH_WORKERS = 4
-        const val DEFAULT_FORMAT = "cbz"
-    }
 }
