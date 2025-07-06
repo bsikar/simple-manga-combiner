@@ -1,123 +1,151 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-import org.gradle.jvm.toolchain.JavaLanguageVersion
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
-val mainClassName = "com.mangacombiner.MangaCombinerApplicationKt"
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
+    }
+}
 
 plugins {
-    alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.kotlin.plugin.spring)
-    alias(libs.plugins.kotlin.plugin.serialization)
-    alias(libs.plugins.spring.boot)
-    alias(libs.plugins.spring.dependency.management)
-    alias(libs.plugins.shadow.jar)
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.application)
     alias(libs.plugins.compose.plugin)
-
-    // Corrected Detekt version to be compatible with Kotlin 1.9.23
-    id("io.gitlab.arturbosch.detekt") version "1.23.6"
+    alias(libs.plugins.kotlin.serialization) // <-- THIS IS THE NEWLY ADDED PLUGIN
+    // Make the shadow plugin available but don't apply it to the root project yet.
+    alias(libs.plugins.shadow.jar) apply false
 }
 
-// This block configures Detekt to use your custom settings.
-detekt {
-    config.setFrom(files("detekt.yml"))
-    buildUponDefaultConfig = true
-}
+val mainClassName = "com.mangacombiner.desktop.DesktopAppKt"
 
-group = "com.mangacombiner"
-version = "1.1.0"
+kotlin {
+    androidTarget {
+        compilations.all {
+            kotlinOptions {
+                jvmTarget = "17"
+            }
+        }
+    }
 
-repositories {
-    mavenCentral()
-    google()
-    maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
-}
+    jvm("desktop") {
+        // Now, apply the shadow plugin to this specific target.
+        plugins.apply("com.github.johnrengelman.shadow")
 
-dependencyManagement {
-    imports {
-        mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+        compilations.all {
+            kotlinOptions.jvmTarget = "17"
+        }
+
+        // Configure the shadowJar task, which is now correctly in scope.
+        tasks.withType<ShadowJar>().configureEach {
+            archiveClassifier.set("cli-executable")
+            manifest {
+                attributes["Main-Class"] = "com.mangacombiner.desktop.CliRunnerKt"
+            }
+            mergeServiceFiles()
+        }
+    }
+
+    // Define the source sets and their dependencies
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                // Koin for Dependency Injection
+                api(libs.koin.core)
+
+                // Kotlinx libraries
+                implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.kotlinx.serialization.core)
+                implementation(libs.kotlinx.cli)
+
+                // Ktor for HTTP
+                implementation(libs.ktor.client.core)
+                implementation(libs.ktor.client.plugins)
+
+                // Parsing & Serialization
+                implementation(libs.xmlutil.serialization)
+                implementation(libs.jsoup)
+                implementation(libs.zip4j)
+            }
+        }
+
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
+
+        val androidMain by getting {
+            dependencies {
+                implementation("com.google.android.material:material:1.12.0")
+                implementation("androidx.appcompat:appcompat:1.6.1")
+                implementation("androidx.activity:activity-compose:1.9.0")
+
+                // Koin for Android
+                api(libs.koin.android)
+
+                // Ktor engine for Android
+                implementation(libs.ktor.client.cio)
+
+                // Compose UI dependencies for Android
+                implementation(compose.ui)
+                implementation(compose.uiTooling)
+                implementation(compose.foundation)
+                implementation(compose.material)
+            }
+        }
+
+        val desktopMain by getting {
+            dependencies {
+                // Compose for Desktop
+                implementation(compose.desktop.currentOs)
+
+                // Koin for JVM
+                api(libs.koin.jvm)
+
+                // Ktor engine for Desktop
+                implementation(libs.ktor.client.cio)
+                implementation(libs.ktor.io.jvm)
+
+                // ImageIO for WebP support
+                implementation(libs.imageio.webp)
+            }
+        }
     }
 }
 
-dependencies {
-    // Spring Boot
-    implementation(libs.spring.boot.starter)
-
-    // Compose for Desktop UI
-    implementation(compose.desktop.currentOs)
-
-    // Command-line argument parsing
-    implementation(libs.kotlinx.cli)
-
-    // ZIP file handling
-    implementation(libs.zip4j)
-
-    // Coroutines for concurrent operations
-    implementation(libs.kotlinx.coroutines.core)
-
-    // XML serialization for ComicInfo.xml
-    implementation(libs.kotlinx.serialization.core)
-    implementation(libs.xmlutil.serialization)
-
-    // HTML parsing for web scraping
-    implementation(libs.jsoup)
-
-    // HTTP client for downloading
-    implementation(libs.ktor.client.core)
-    implementation(libs.ktor.client.cio)
-    implementation(libs.ktor.client.plugins)
-    implementation(libs.ktor.io.jvm)
-
-
-    // WebP image support (using TwelveMonkeys library)
-    implementation(libs.imageio.webp)
-
-    // Detekt Formatting Rules
-    detektPlugins(libs.detekt.formatting)
-
-    // Testing
-    testImplementation(libs.spring.boot.starter.test) {
-        exclude(group = "org.junit.vintage", module = "junit-vintage-engine")
+// Android-specific configuration
+android {
+    namespace = "com.mangacombiner"
+    compileSdk = 34
+    defaultConfig {
+        applicationId = "com.mangacombiner"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
     }
-    testImplementation(libs.kotlin.test)
-}
-
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    buildFeatures {
+        compose = true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.13"
     }
 }
 
-tasks.withType<KotlinCompile>().configureEach {
-    compilerOptions {
-        freeCompilerArgs.add("-Xjsr305=strict")
-        jvmTarget.set(JvmTarget.JVM_17)
-    }
-}
-
-tasks.withType<Test> {
-    useJUnitPlatform()
-}
-
-// The main class is explicitly configured for Spring Boot tasks.
-springBoot {
-    mainClass.set(mainClassName)
-}
-
-tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
-    archiveClassifier.set("cli-executable")
-    manifest {
-        attributes["Main-Class"] = mainClassName
-    }
-}
-
+// Compose Desktop configuration for the GUI app
 compose.desktop {
     application {
         mainClass = mainClassName
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "MangaCombiner"
-            packageVersion = project.version.toString()
+            packageVersion = "1.1.0"
             description = "A tool to download and combine manga chapters."
             vendor = "MangaCombiner"
         }

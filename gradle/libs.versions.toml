@@ -1,7 +1,5 @@
 [versions]
 kotlin = "1.9.23"
-springBoot = "3.2.5"
-springDependencyManagement = "1.1.5"
 shadowJar = "8.1.1"
 kotlinxCli = "0.3.6"
 zip4j = "2.11.5"
@@ -10,15 +8,15 @@ kotlinxSerialization = "1.6.3"
 xmlutil = "0.86.3"
 jsoup = "1.17.2"
 ktor = "2.3.11"
-twelvemonkeys = "3.10.1" # Replaces webpImageio
+twelvemonkeys = "3.10.1"
 detekt = "1.23.6"
 compose = "1.6.10"
+androidGradlePlugin = "8.2.2"
+koin = "3.5.6"
+# Add version for the serialization plugin, typically matches Kotlin version
+kotlinxSerializationPlugin = "1.9.23"
 
 [libraries]
-# Spring Boot
-spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
-spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
-
 # Kotlinx
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test" }
 kotlinx-cli = { module = "org.jetbrains.kotlinx:kotlinx-cli-jvm", version.ref = "kotlinxCli" }
@@ -37,16 +35,20 @@ xmlutil-serialization = { module = "io.github.pdvrieze.xmlutil:serialization", v
 
 # File Handling
 zip4j = { module = "net.lingala.zip4j:zip4j", version.ref = "zip4j" }
-imageio-webp = { module = "com.twelvemonkeys.imageio:imageio-webp", version.ref = "twelvemonkeys" } # Replaces webp-imageio
+imageio-webp = { module = "com.twelvemonkeys.imageio:imageio-webp", version.ref = "twelvemonkeys" }
 
 # Detekt
 detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
 
+# Koin for Dependency Injection
+koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
+koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin" }
+koin-jvm = { module = "io.insert-koin:koin-core-jvm", version.ref = "koin" }
+
 [plugins]
-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
-kotlin-plugin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
-kotlin-plugin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
-spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
 shadow-jar = { id = "com.github.johnrengelman.shadow", version.ref = "shadowJar" }
 compose-plugin = { id = "org.jetbrains.compose", version.ref = "compose" }
+# Add the alias for the serialization plugin
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlinxSerializationPlugin" }
