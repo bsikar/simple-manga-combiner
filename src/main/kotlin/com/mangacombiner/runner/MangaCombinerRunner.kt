@@ -97,6 +97,7 @@ class MangaCombinerRunner(
         println()
         println("--- Options ---")
         println("Dry Run: ".padEnd(PADDING_WIDTH) + options.dryRun)
+        println("Interactive Mode: ".padEnd(PADDING_WIDTH) + options.interactive)
         println("Image Workers: ".padEnd(PADDING_WIDTH) + options.workers)
         println("Batch Workers: ".padEnd(PADDING_WIDTH) + options.batchWorkers)
         println("Force Overwrite: ".padEnd(PADDING_WIDTH) + options.force)
@@ -140,7 +141,8 @@ class MangaCombinerRunner(
             deleteOriginal = cliArgs.deleteOriginal || useStreaming || cliArgs.trueDangerousMode,
             skip = cliArgs.skipIfTargetExists,
             debug = Logger.isDebugEnabled,
-            dryRun = cliArgs.dryRun
+            dryRun = cliArgs.dryRun,
+            interactive = cliArgs.interactive
         )
     }
 
@@ -197,7 +199,8 @@ class MangaCombinerRunner(
                     format = jobOptions.format,
                     tempDir = jobOptions.tempDirectory,
                     client = client,
-                    dryRun = jobOptions.dryRun
+                    dryRun = jobOptions.dryRun,
+                    interactive = jobOptions.interactive
                 )
             )
         }
@@ -239,7 +242,8 @@ class MangaCombinerRunner(
             useTrueDangerousMode = cliArgs.trueDangerousMode,
             skipIfTargetExists = jobOptions.skip,
             tempDirectory = jobOptions.tempDirectory,
-            dryRun = jobOptions.dryRun
+            dryRun = jobOptions.dryRun,
+            interactive = jobOptions.interactive
         )
     }
 

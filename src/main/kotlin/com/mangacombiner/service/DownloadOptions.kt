@@ -14,6 +14,7 @@ import java.io.File
  * @property tempDir The directory to use for temporary files.
  * @property client The HttpClient to use for downloads.
  * @property dryRun If true, simulate the download without creating files.
+ * @property interactive If true, enable interactive chapter selection.
  */
 data class DownloadOptions(
     val seriesUrl: String,
@@ -23,5 +24,6 @@ data class DownloadOptions(
     val format: String,
     val tempDir: File,
     val client: HttpClient,
-    val dryRun: Boolean = false
+    val dryRun: Boolean = false,
+    val interactive: Boolean = false
 )

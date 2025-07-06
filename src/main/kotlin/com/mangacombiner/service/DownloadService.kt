@@ -28,7 +28,8 @@ import java.util.Locale
 @Service
 class DownloadService(
     private val scraperService: ScraperService,
-    private val processorService: ProcessorService
+    private val processorService: ProcessorService,
+    private val interactiveSelector: InteractiveChapterSelector
 ) {
     private companion object {
         const val IMAGE_DOWNLOAD_DELAY_MS = 500L
@@ -301,6 +302,71 @@ class DownloadService(
         println("\nDownload and packaging complete: ${outputFile.name}")
     }
 
+    private suspend fun handleInteractiveSelection(
+        chapterData: List<Pair<String, String>>,
+        mangaTitle: String
+    ): List<Pair<String, String>>? {
+        val selectableChapters = interactiveSelector.createSelectableChapters(chapterData)
+        val selectedChapters = interactiveSelector.selectChapters(selectableChapters, mangaTitle)
+
+        return when {
+            selectedChapters == null -> {
+                println("Download cancelled by user.")
+                null
+            }
+            selectedChapters.isEmpty() -> {
+                println("No chapters selected for download.")
+                emptyList()
+            }
+            else -> {
+                println("Proceeding with ${selectedChapters.size} selected chapters...")
+                selectedChapters.map { it.url to it.title }
+            }
+        }
+    }
+
+    private suspend fun processChapterSelection(
+        options: DownloadOptions,
+        chapterData: List<Pair<String, String>>,
+        mangaTitle: String
+    ): List<Pair<String, String>>? {
+        // Apply interactive selection if enabled
+        return if (options.interactive && !options.dryRun) {
+            handleInteractiveSelection(chapterData, mangaTitle)
+        } else {
+            chapterData
+        }
+    }
+
+    private suspend fun validateAndPrepareChapters(
+        options: DownloadOptions,
+        mangaTitle: String
+    ): List<Pair<String, String>>? {
+        var chapterData = scraperService.findChapterUrlsAndTitles(options.client, options.seriesUrl)
+
+        if (chapterData.isEmpty()) {
+            println("Could not find any chapters at the provided URL.")
+            return null
+        }
+
+        if (options.exclude.isNotEmpty()) {
+            chapterData = chapterData.filter { (url, _) ->
+                url.trimEnd('/').substringAfterLast('/') !in options.exclude
+            }
+        }
+
+        return if (chapterData.isEmpty()) {
+            println("No chapters left to download after exclusions.")
+            null
+        } else {
+            val finalChapterData = processChapterSelection(options, chapterData, mangaTitle)
+            when {
+                finalChapterData == null || finalChapterData.isEmpty() -> null
+                else -> finalChapterData
+            }
+        }
+    }
+
     suspend fun downloadNewSeries(options: DownloadOptions) {
         println("URL detected. Starting download process...")
         val mangaTitle = options.cliTitle ?: options.seriesUrl.substringAfterLast("/manga/", "")
@@ -309,31 +375,19 @@ class DownloadService(
             .titlecase()
 
         println("Fetching chapter list for: $mangaTitle")
-        var chapterData = scraperService.findChapterUrlsAndTitles(options.client, options.seriesUrl)
+        val finalChapterData = validateAndPrepareChapters(options, mangaTitle) ?: return
 
-        if (chapterData.isEmpty()) {
-            println("Could not find any chapters at the provided URL.")
+        if (options.dryRun) {
+            println("[DRY RUN] Would download ${finalChapterData.size} chapters for series '$mangaTitle'.")
+            val outputFile = File(".", "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
+            println("[DRY RUN] Would create output file: ${outputFile.name}")
         } else {
-            if (options.exclude.isNotEmpty()) {
-                chapterData = chapterData.filter { (url, _) ->
-                    url.trimEnd('/').substringAfterLast('/') !in options.exclude
-                }
-            }
-
-            if (chapterData.isEmpty()) {
-                println("No chapters left to download after exclusions.")
-            } else if (options.dryRun) {
-                println("[DRY RUN] Would download ${chapterData.size} chapters for series '$mangaTitle'.")
-                val outputFile = File(".", "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
-                println("[DRY RUN] Would create output file: ${outputFile.name}")
-            } else {
-                val downloadDir = Files.createTempDirectory(options.tempDir.toPath(), "manga-dl-").toFile()
-                try {
-                    val downloadedFolders = downloadChapters(options, chapterData, downloadDir)
-                    processDownloadedChapters(options, mangaTitle, downloadedFolders)
-                } finally {
-                    downloadDir.deleteRecursively()
-                }
+            val downloadDir = Files.createTempDirectory(options.tempDir.toPath(), "manga-dl-").toFile()
+            try {
+                val downloadedFolders = downloadChapters(options, finalChapterData, downloadDir)
+                processDownloadedChapters(options, mangaTitle, downloadedFolders)
+            } finally {
+                downloadDir.deleteRecursively()
             }
         }
     }
