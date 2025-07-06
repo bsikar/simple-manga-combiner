@@ -28,8 +28,7 @@ import java.util.Locale
 @Service
 class DownloadService(
     private val scraperService: ScraperService,
-    private val processorService: ProcessorService,
-    private val infoPageGeneratorService: InfoPageGeneratorService,
+    private val processorService: ProcessorService
 ) {
     private companion object {
         const val IMAGE_DOWNLOAD_DELAY_MS = 500L
@@ -287,38 +286,19 @@ class DownloadService(
         options: DownloadOptions,
         mangaTitle: String,
         downloadedFolders: List<File>,
-        tempDir: File
     ) {
-        if (downloadedFolders.isEmpty() && !options.generateInfoPage) {
+        if (downloadedFolders.isEmpty()) {
             println("\nNo chapters were downloaded. Exiting.")
             return
         }
 
-        var infoPageFile: File? = null
-        if (options.generateInfoPage) {
-            println("Generating informational page...")
-            val totalPages = downloadedFolders.sumOf { it.listFiles()?.count { f -> f.isFile } ?: 0 }
-            val lastUpdated = scraperService.findLastUpdateTime(options.client, options.seriesUrl)
-            infoPageFile = infoPageGeneratorService.create(
-                InfoPageData(
-                    title = mangaTitle,
-                    sourceUrl = options.seriesUrl,
-                    lastUpdated = lastUpdated,
-                    chapterCount = downloadedFolders.size,
-                    pageCount = totalPages,
-                    tempDir = tempDir
-                )
-            )
-        }
-
         val outputFile = File(".", "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
         if (options.format == "cbz") {
-            processorService.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile, infoPageFile)
+            processorService.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile)
         } else {
-            processorService.createEpubFromFolders(mangaTitle, downloadedFolders, outputFile, infoPageFile)
+            processorService.createEpubFromFolders(mangaTitle, downloadedFolders, outputFile)
         }
         println("\nDownload and packaging complete: ${outputFile.name}")
-        infoPageFile?.delete() // Clean up the generated info page
     }
 
     suspend fun downloadNewSeries(options: DownloadOptions) {
@@ -350,7 +330,7 @@ class DownloadService(
                 val downloadDir = Files.createTempDirectory(options.tempDir.toPath(), "manga-dl-").toFile()
                 try {
                     val downloadedFolders = downloadChapters(options, chapterData, downloadDir)
-                    processDownloadedChapters(options, mangaTitle, downloadedFolders, options.tempDir)
+                    processDownloadedChapters(options, mangaTitle, downloadedFolders)
                 } finally {
                     downloadDir.deleteRecursively()
                 }

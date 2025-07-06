@@ -2,7 +2,6 @@ package com.mangacombiner.service
 
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.SlugUtils
-import com.mangacombiner.util.ZipUtils
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import net.lingala.zip4j.model.ZipParameters
@@ -13,8 +12,7 @@ import kotlin.io.path.nameWithoutExtension
 
 @Service
 class ProcessorService(
-    private val fileConverter: FileConverter,
-    private val infoPageGeneratorService: InfoPageGeneratorService
+    private val fileConverter: FileConverter
 ) {
     internal companion object {
         val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif")
@@ -56,25 +54,20 @@ class ProcessorService(
     private fun populateCbzFile(
         zipFile: ZipFile,
         mangaTitle: String,
-        sortedFolders: List<File>,
-        infoPage: File?
+        sortedFolders: List<File>
     ) {
         val cbzGenerator = CbzStructureGenerator(xmlSerializer)
         val (bookmarks, totalPageCount) = cbzGenerator.createBookmarks(sortedFolders)
 
-        if (totalPageCount == 0 && infoPage == null) {
+        if (totalPageCount == 0) {
             println("Warning: No images found for $mangaTitle. Skipping CBZ creation.")
             return
         }
+
         val comicInfoXml = cbzGenerator.generateComicInfoXml(mangaTitle, bookmarks, totalPageCount)
 
         val params = ZipParameters().apply { fileNameInZip = COMIC_INFO_FILE }
         zipFile.addStream(comicInfoXml.byteInputStream(), params)
-
-        infoPage?.let {
-            val infoParams = ZipParameters().apply { fileNameInZip = "0000_info_page.${it.extension}" }
-            zipFile.addFile(it, infoParams)
-        }
 
         addChaptersToCbz(zipFile, sortedFolders)
     }
@@ -82,12 +75,11 @@ class ProcessorService(
     private fun buildCbz(
         outputFile: File,
         mangaTitle: String,
-        sortedFolders: List<File>,
-        infoPage: File?
+        sortedFolders: List<File>
     ) {
         try {
             ZipFile(outputFile).use { zipFile ->
-                populateCbzFile(zipFile, mangaTitle, sortedFolders, infoPage)
+                populateCbzFile(zipFile, mangaTitle, sortedFolders)
             }
             println("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
@@ -98,8 +90,7 @@ class ProcessorService(
     fun createCbzFromFolders(
         mangaTitle: String,
         chapterFolders: List<File>,
-        outputFile: File,
-        infoPage: File? = null
+        outputFile: File
     ) {
         if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
@@ -107,7 +98,7 @@ class ProcessorService(
         val sortedFolders = sortChapterFolders(chapterFolders)
         println("Creating CBZ archive: ${outputFile.name}...")
 
-        buildCbz(outputFile, mangaTitle, sortedFolders, infoPage)
+        buildCbz(outputFile, mangaTitle, sortedFolders)
     }
 
     private fun addChaptersToEpub(
@@ -127,8 +118,7 @@ class ProcessorService(
     fun createEpubFromFolders(
         mangaTitle: String,
         chapterFolders: List<File>,
-        outputFile: File,
-        infoPage: File? = null
+        outputFile: File
     ) {
         if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
@@ -141,9 +131,8 @@ class ProcessorService(
         try {
             ZipFile(outputFile).use { epubZip ->
                 epubGenerator.addEpubCoreFiles(epubZip)
-                infoPage?.let {
-                    epubGenerator.addInfoPageToEpub(it, metadata, epubZip)
-                }
+
+                // Add all chapters
                 addChaptersToEpub(epubZip, sortedFolders, epubGenerator, metadata)
                 epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, metadata)
             }
@@ -176,38 +165,13 @@ class ProcessorService(
 
         if (options.dryRun) {
             println("[DRY RUN] Would process ${options.inputFile.name} into ${outputFile.name}.")
-            if (options.generateInfoPage) {
-                println("[DRY RUN] Would generate and include an info page.")
-            }
             if (options.deleteOriginal) {
                 println("[DRY RUN] Would delete original file: ${options.inputFile.name} on success.")
             }
             return
         }
 
-        var infoPageFile: File? = null
-        if (options.generateInfoPage) {
-            val chapterData = if (options.inputFile.extension.equals("epub", true)) {
-                ZipUtils.getChapterPageCountsFromEpub(options.inputFile)
-            } else {
-                ZipUtils.getChapterPageCountsFromZip(options.inputFile)
-            }
-            val pageCount = chapterData.values.sum()
-
-            infoPageFile = infoPageGeneratorService.create(
-                InfoPageData(
-                    title = mangaTitle,
-                    sourceUrl = "Local File: ${options.inputFile.name}",
-                    lastUpdated = null,
-                    chapterCount = chapterData.size,
-                    pageCount = pageCount,
-                    tempDir = options.tempDirectory
-                )
-            )
-        }
-
-        val result = fileConverter.process(options, mangaTitle, outputFile, this, infoPageFile)
-        infoPageFile?.delete()
+        val result = fileConverter.process(options, mangaTitle, outputFile, this)
 
         handlePostProcessing(options.inputFile, result, options.deleteOriginal, options.useTrueDangerousMode)
     }

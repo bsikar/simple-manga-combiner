@@ -38,13 +38,6 @@ internal class CliArgs(parser: ArgParser) {
         .default(false)
     val impersonateBrowser by parser.option(ArgType.Boolean, "impersonate-browser", "Use browser User-Agent.")
         .default(false)
-    val generateInfoPage by parser.option(
-        ArgType.Boolean,
-        "generate-info-page",
-        "g",
-        "Generate an informational first page."
-    )
-        .default(false)
 
     companion object {
         const val DEFAULT_IMAGE_WORKERS = 2

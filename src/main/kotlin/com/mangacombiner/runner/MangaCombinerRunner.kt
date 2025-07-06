@@ -103,7 +103,6 @@ class MangaCombinerRunner(
         println("Delete Original: ".padEnd(PADDING_WIDTH) + options.deleteOriginal)
         println("Skip if Target Exists: ".padEnd(PADDING_WIDTH) + options.skip)
         println("Debug Mode: ".padEnd(PADDING_WIDTH) + options.debug)
-        println("Generate Info Page: ".padEnd(PADDING_WIDTH) + options.generateInfoPage)
         println()
         println("--- Storage & Temp Files ---")
         println("Mode: ".padEnd(PADDING_WIDTH) + options.storageMode)
@@ -141,7 +140,6 @@ class MangaCombinerRunner(
             deleteOriginal = cliArgs.deleteOriginal || useStreaming || cliArgs.trueDangerousMode,
             skip = cliArgs.skipIfTargetExists,
             debug = Logger.isDebugEnabled,
-            generateInfoPage = cliArgs.generateInfoPage,
             dryRun = cliArgs.dryRun
         )
     }
@@ -199,7 +197,6 @@ class MangaCombinerRunner(
                     format = jobOptions.format,
                     tempDir = jobOptions.tempDirectory,
                     client = client,
-                    generateInfoPage = cliArgs.generateInfoPage,
                     dryRun = jobOptions.dryRun
                 )
             )
@@ -242,7 +239,6 @@ class MangaCombinerRunner(
             useTrueDangerousMode = cliArgs.trueDangerousMode,
             skipIfTargetExists = jobOptions.skip,
             tempDirectory = jobOptions.tempDirectory,
-            generateInfoPage = cliArgs.generateInfoPage,
             dryRun = jobOptions.dryRun
         )
     }

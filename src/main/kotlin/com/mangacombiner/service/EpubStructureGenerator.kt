@@ -47,44 +47,7 @@ internal class EpubStructureGenerator {
     }
 
     /**
-     * Adds a generated info page to the EPUB, making it the first page.
-     */
-    @Suppress("SwallowedException")
-    fun addInfoPageToEpub(infoPage: File, metadata: EpubMetadata, epubZip: ZipFile) {
-        val imageDim = try {
-            ImageIO.read(infoPage)?.let { it.width to it.height } ?: (DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT)
-        } catch (e: IOException) {
-            Logger.logDebug { "Could not read image dimensions for info page, using defaults. Error: ${e.message}" }
-            DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT
-        }
-
-        val imageId = "img_info_page"
-        val imageHref = "images/$imageId.${infoPage.extension}"
-        val pageId = "page_info"
-        val pageHref = "text/$pageId.xhtml"
-
-        // Add the image file to the EPUB's images directory
-        val imageParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$imageHref" }
-        epubZip.addFile(infoPage, imageParams)
-        metadata.manifestItems.add(
-            """<item id="$imageId" href="$imageHref" media-type="image/${infoPage.extension}"/>"""
-        )
-
-        // Add the XHTML page that will display the image
-        val xhtmlContent = createXhtmlPage("Info", 0, "../$imageHref", imageDim.first, imageDim.second)
-        val pageParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$pageHref" }
-        epubZip.addStream(xhtmlContent.byteInputStream(Charsets.UTF_8), pageParams)
-        metadata.manifestItems.add("""<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>""")
-
-        // Prepend to the spine to ensure it's the first page in the reading order
-        metadata.spineItems.add(0, """<itemref idref="$pageId"/>""")
-
-        // Prepend to the navigation points to make it the first item in the table of contents
-        metadata.navPoints.add(0, createNavPoint(metadata.playOrder++, "Information", pageHref))
-    }
-
-    /**
-     * Adds a full chapter (images and XHTML pages) to the EPUB.
+     * Adds a chapter to the EPUB with all its images.
      */
     @Suppress("SwallowedException")
     fun addChapterToEpub(images: List<File>, chapterName: String, metadata: EpubMetadata, epubZip: ZipFile) {
@@ -123,10 +86,12 @@ internal class EpubStructureGenerator {
             metadata.manifestItems.add("""<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>""")
             metadata.spineItems.add("""<itemref idref="$pageId"/>""")
 
-            // Add chapter entry to navMap (table of contents)
+            // Add chapter entry to navMap (table of contents) only for first page of chapter
             if (firstPageOfChapter) {
                 val cleanChapterName = chapterName.replace(Regex("[_-]"), " ").replaceFirstChar { it.titlecase() }
-                metadata.navPoints.add(createNavPoint(metadata.playOrder++, cleanChapterName, pageHref))
+                // Use current playOrder value and then increment it
+                metadata.navPoints.add(createNavPoint(metadata.playOrder, cleanChapterName, pageHref))
+                metadata.playOrder++
                 firstPageOfChapter = false
             }
         }

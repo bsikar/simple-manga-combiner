@@ -7,21 +7,33 @@ import nl.adaptivity.xmlutil.serialization.XML
 import java.io.File
 
 internal class CbzStructureGenerator(private val xmlSerializer: XML) {
+
     private fun String.isImageFile(): Boolean =
         substringAfterLast('.').lowercase() in ProcessorService.IMAGE_EXTENSIONS
 
     fun generateComicInfoXml(
         mangaTitle: String,
         bookmarks: List<Pair<Int, String>>,
-        totalPageCount: Int
+        totalPageCount: Int,
+        hasInfoPage: Boolean = false
     ): String {
         val pageInfos = (0 until totalPageCount).map { pageIndex ->
             val bookmark = bookmarks.firstOrNull { it.first == pageIndex }
             val isFirstPageOfChapter = bookmark != null
+            val isInfoPage = hasInfoPage && pageIndex == 0
+
             PageInfo(
                 image = pageIndex,
-                bookmark = bookmark?.second,
-                type = if (isFirstPageOfChapter) PageInfo.TYPE_STORY else null
+                bookmark = when {
+                    isInfoPage -> "Information"
+                    bookmark != null -> bookmark.second
+                    else -> null
+                },
+                type = when {
+                    isInfoPage -> PageInfo.TYPE_OTHER
+                    isFirstPageOfChapter -> PageInfo.TYPE_STORY
+                    else -> null
+                }
             )
         }
         val comicInfo = ComicInfo(
@@ -33,9 +45,16 @@ internal class CbzStructureGenerator(private val xmlSerializer: XML) {
         return xmlSerializer.encodeToString(ComicInfo.serializer(), comicInfo)
     }
 
-    fun createBookmarks(sortedFolders: List<File>): Pair<List<Pair<Int, String>>, Int> {
-        var totalPageCount = 0
+    fun createBookmarks(sortedFolders: List<File>, hasInfoPage: Boolean = false): Pair<List<Pair<Int, String>>, Int> {
+        // Start page count at 1 if info page exists (info page will be at index 0)
+        var totalPageCount = if (hasInfoPage) 1 else 0
         val bookmarks = mutableListOf<Pair<Int, String>>()
+
+        // Add info page bookmark if it exists
+        if (hasInfoPage) {
+            bookmarks.add(0 to "Information")
+        }
+
         sortedFolders.forEach { folder ->
             val pageCount = folder.listFiles()?.count { it.isFile && it.name.isImageFile() } ?: 0
             if (pageCount > 0) {

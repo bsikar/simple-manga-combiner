@@ -15,7 +15,6 @@ import java.io.File
  * @property useTrueDangerousMode A high-risk mode that modifies the source file in-place.
  * @property skipIfTargetExists If true, do not process the file if the output file already exists.
  * @property tempDirectory The directory to use for temporary files.
- * @property generateInfoPage If true, generate a dynamic informational first page.
  * @property dryRun If true, simulate the processing without creating files.
  */
 data class LocalFileOptions(
@@ -29,6 +28,5 @@ data class LocalFileOptions(
     val useTrueDangerousMode: Boolean,
     val skipIfTargetExists: Boolean,
     val tempDirectory: File,
-    val generateInfoPage: Boolean = false,
     val dryRun: Boolean = false
 )

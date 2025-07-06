@@ -13,18 +13,17 @@ class FileConverter {
         options: LocalFileOptions,
         mangaTitle: String,
         outputFile: File,
-        processor: ProcessorService,
-        infoPageFile: File? = null
+        processor: ProcessorService
     ): ProcessResult {
         return try {
             val inputFormat = options.inputFile.extension.lowercase()
             val finalOutputFormat = options.outputFormat.lowercase()
 
             when (inputFormat to finalOutputFormat) {
-                "cbz" to "epub" -> processCbzToEpub(options, mangaTitle, outputFile, processor, infoPageFile)
+                "cbz" to "epub" -> processCbzToEpub(options, mangaTitle, outputFile, processor)
                 "epub" to "cbz" -> processEpubToCbz(options)
-                "cbz" to "cbz" -> reprocessCbz(options, mangaTitle, outputFile, processor, infoPageFile)
-                "epub" to "epub" -> reprocessEpub(options, mangaTitle, outputFile, processor, infoPageFile)
+                "cbz" to "cbz" -> reprocessCbz(options, mangaTitle, outputFile, processor)
+                "epub" to "epub" -> reprocessEpub(options, mangaTitle, outputFile, processor)
                 else -> {
                     val message = "Conversion from .$inputFormat to .$finalOutputFormat is not supported."
                     println(message)
@@ -42,16 +41,15 @@ class FileConverter {
         options: LocalFileOptions,
         mangaTitle: String,
         outputFile: File,
-        processor: ProcessorService,
-        infoPageFile: File?
+        processor: ProcessorService
     ): ProcessResult {
         println("Re-processing to fix structure...")
         val tempDir = Files.createTempDirectory(options.tempDirectory.toPath(), "cbz-reprocess-").toFile()
         return try {
             processor.extractZip(options.inputFile, tempDir)
             val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
-            if (chapterFolders.isNotEmpty() || infoPageFile != null) {
-                processor.createCbzFromFolders(mangaTitle, chapterFolders, outputFile, infoPageFile)
+            if (chapterFolders.isNotEmpty()) {
+                processor.createCbzFromFolders(mangaTitle, chapterFolders, outputFile)
                 ProcessResult(true, outputFile)
             } else {
                 ProcessResult(false, error = "No chapter folders found in CBZ to reprocess.")
@@ -65,8 +63,7 @@ class FileConverter {
         options: LocalFileOptions,
         mangaTitle: String,
         outputFile: File,
-        processor: ProcessorService,
-        infoPageFile: File?
+        processor: ProcessorService
     ): ProcessResult {
         println("Re-processing EPUB to apply changes...")
         val tempDir = Files.createTempDirectory(options.tempDirectory.toPath(), "epub-reprocess-").toFile()
@@ -78,7 +75,7 @@ class FileConverter {
                 .filter { it.isFile && it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS }
                 .toList()
 
-            if (imageFiles.isEmpty() && infoPageFile == null) {
+            if (imageFiles.isEmpty()) {
                 return ProcessResult(false, error = "No images found in the source EPUB.")
             }
 
@@ -94,7 +91,7 @@ class FileConverter {
             // The list of "chapters" to rebuild from is now our single, consolidated folder
             val chapterFolders = listOf(consolidatedChapterDir)
 
-            processor.createEpubFromFolders(mangaTitle, chapterFolders, outputFile, infoPageFile)
+            processor.createEpubFromFolders(mangaTitle, chapterFolders, outputFile)
             ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
         } finally {
             tempDir.deleteRecursively()
@@ -105,16 +102,15 @@ class FileConverter {
         options: LocalFileOptions,
         mangaTitle: String,
         outputFile: File,
-        processor: ProcessorService,
-        infoPageFile: File?
+        processor: ProcessorService
     ): ProcessResult {
         println("Converting ${options.inputFile.name} to EPUB format...")
         val tempDir = Files.createTempDirectory(options.tempDirectory.toPath(), "cbz-to-epub-").toFile()
         return try {
             processor.extractZip(options.inputFile, tempDir)
             val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
-            if (chapterFolders.isNotEmpty() || infoPageFile != null) {
-                processor.createEpubFromFolders(mangaTitle, chapterFolders, outputFile, infoPageFile)
+            if (chapterFolders.isNotEmpty()) {
+                processor.createEpubFromFolders(mangaTitle, chapterFolders, outputFile)
                 ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
             } else {
                 ProcessResult(false, error = "No chapter folders found in CBZ for conversion.")

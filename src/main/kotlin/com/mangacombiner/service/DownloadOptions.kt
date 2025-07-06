@@ -13,7 +13,6 @@ import java.io.File
  * @property format The desired output format ("cbz" or "epub").
  * @property tempDir The directory to use for temporary files.
  * @property client The HttpClient to use for downloads.
- * @property generateInfoPage If true, generate a dynamic informational first page.
  * @property dryRun If true, simulate the download without creating files.
  */
 data class DownloadOptions(
@@ -24,6 +23,5 @@ data class DownloadOptions(
     val format: String,
     val tempDir: File,
     val client: HttpClient,
-    val generateInfoPage: Boolean = false,
     val dryRun: Boolean = false
 )
