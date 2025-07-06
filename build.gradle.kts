@@ -13,9 +13,8 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.plugin)
-    alias(libs.plugins.kotlin.serialization) // <-- THIS IS THE NEWLY ADDED PLUGIN
-    // Make the shadow plugin available but don't apply it to the root project yet.
-    alias(libs.plugins.shadow.jar) apply false
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.shadow.jar)
 }
 
 val mainClassName = "com.mangacombiner.desktop.DesktopAppKt"
@@ -30,16 +29,13 @@ kotlin {
     }
 
     jvm("desktop") {
-        // Now, apply the shadow plugin to this specific target.
-        plugins.apply("com.github.johnrengelman.shadow")
-
         compilations.all {
             kotlinOptions.jvmTarget = "17"
         }
 
-        // Configure the shadowJar task, which is now correctly in scope.
+        // Configure ShadowJar for CLI within the desktop target
         tasks.withType<ShadowJar>().configureEach {
-            archiveClassifier.set("cli-executable")
+            archiveClassifier.set("")
             manifest {
                 attributes["Main-Class"] = "com.mangacombiner.desktop.CliRunnerKt"
             }
@@ -47,75 +43,50 @@ kotlin {
         }
     }
 
-    // Define the source sets and their dependencies
     sourceSets {
         val commonMain by getting {
             dependencies {
-                // Koin for Dependency Injection
                 api(libs.koin.core)
-
-                // Kotlinx libraries
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.core)
                 implementation(libs.kotlinx.cli)
-
-                // Ktor for HTTP
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.plugins)
-
-                // Parsing & Serialization
                 implementation(libs.xmlutil.serialization)
                 implementation(libs.jsoup)
                 implementation(libs.zip4j)
             }
         }
-
         val commonTest by getting {
             dependencies {
                 implementation(kotlin("test"))
             }
         }
-
         val androidMain by getting {
             dependencies {
                 implementation("com.google.android.material:material:1.12.0")
                 implementation("androidx.appcompat:appcompat:1.6.1")
                 implementation("androidx.activity:activity-compose:1.9.0")
-
-                // Koin for Android
                 api(libs.koin.android)
-
-                // Ktor engine for Android
                 implementation(libs.ktor.client.cio)
-
-                // Compose UI dependencies for Android
                 implementation(compose.ui)
                 implementation(compose.uiTooling)
                 implementation(compose.foundation)
                 implementation(compose.material)
             }
         }
-
         val desktopMain by getting {
             dependencies {
-                // Compose for Desktop
                 implementation(compose.desktop.currentOs)
-
-                // Koin for JVM
                 api(libs.koin.jvm)
-
-                // Ktor engine for Desktop
                 implementation(libs.ktor.client.cio)
                 implementation(libs.ktor.io.jvm)
-
-                // ImageIO for WebP support
                 implementation(libs.imageio.webp)
             }
         }
     }
 }
 
-// Android-specific configuration
 android {
     namespace = "com.mangacombiner"
     compileSdk = 34
@@ -138,7 +109,6 @@ android {
     }
 }
 
-// Compose Desktop configuration for the GUI app
 compose.desktop {
     application {
         mainClass = mainClassName
@@ -150,4 +120,53 @@ compose.desktop {
             vendor = "MangaCombiner"
         }
     }
+}
+
+// Desktop JAR (plain classes)
+val desktopJarTask = tasks.named<org.gradle.jvm.tasks.Jar>("desktopJar")
+
+// CLI Fat JAR: includes desktop classes + dependencies
+tasks.register<ShadowJar>("cliJar") {
+    group = "build"
+    description = "Assembles the CLI fat JAR including desktop code and runtime dependencies"
+    archiveBaseName.set("manga-combiner-cli")
+    archiveVersion.set("1.0.0")
+    archiveClassifier.set("")
+    manifest {
+        attributes["Main-Class"] = "com.mangacombiner.desktop.CliRunnerKt"
+    }
+
+    // Include compiled desktop classes
+    from(desktopJarTask.map { zipTree(it.archiveFile.get().asFile) })
+
+    // Include runtime JARs from desktop
+    val runtimeClasspath = project.configurations.getByName("desktopRuntimeClasspath")
+    from(
+        runtimeClasspath.files
+            .filter { it.name.endsWith(".jar") }
+            .map { zipTree(it) }
+    )
+
+    mergeServiceFiles()
+}
+
+// Task to build both desktop and CLI jars
+tasks.register("allJars") {
+    group = "build"
+    description = "Builds both the desktop and CLI JARs"
+    dependsOn("desktopJar", "cliJar")
+}
+
+// Task to build Android debug APK
+tasks.register("apkDebug") {
+    group = "build"
+    description = "Assembles the Android debug APK"
+    dependsOn("assembleDebug")
+}
+
+// Task to build all artifacts (desktop JARs, CLI JAR, Android APK)
+tasks.register("allArtifacts") {
+    group = "build"
+    description = "Builds desktop JARs, CLI JAR, and Android debug APK"
+    dependsOn("desktopJar", "cliJar", "assembleDebug")
 }

@@ -24,7 +24,7 @@ fun main(args: Array<String>) {
 
     val parser = ArgParser("manga-combiner-cli")
     val source by parser.argument(ArgType.String, "source", "Source URL or local file path")
-    val format by parser.option(ArgType.String, "format", description = "Output format ('cbz' or 'epub')").default("cbz")
+    val format by parser.option(ArgType.String, "format", description = "Output format ('cbz' or 'epub')").default("epub")
     val title by parser.option(ArgType.String, "title", "t", "Custom output file title.")
     val force by parser.option(ArgType.Boolean, "force", "f", "Force overwrite of output file.").default(false)
     val deleteOriginal by parser.option(ArgType.Boolean, "delete-original", "Delete source on success.").default(false)
