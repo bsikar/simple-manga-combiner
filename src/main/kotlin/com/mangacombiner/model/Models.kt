@@ -9,70 +9,74 @@ import nl.adaptivity.xmlutil.serialization.XmlSerialName
  * Root element for ComicInfo.xml metadata used in CBZ files.
  * This format is widely supported by comic readers.
  *
- * @property Series The name of the manga series
- * @property Title The title of this specific volume/collection
- * @property PageCount Total number of pages in the archive
- * @property Pages Container for individual page metadata
+ * @property series The name of the manga series
+ * @property title The title of this specific volume/collection
+ * @property pageCount Total number of pages in the archive
+ * @property pages Container for individual page metadata
  */
 @Serializable
 @XmlSerialName("ComicInfo", "", "")
 data class ComicInfo(
     @XmlElement(true)
-    val Series: String,
+    @XmlSerialName("Series", "", "")
+    val series: String,
 
     @XmlElement(true)
-    val Title: String,
+    @XmlSerialName("Title", "", "")
+    val title: String,
 
     @XmlElement(true)
-    val PageCount: Int,
+    @XmlSerialName("PageCount", "", "")
+    val pageCount: Int,
 
     @XmlElement(true)
-    val Pages: Pages
+    @XmlSerialName("Pages", "", "")
+    val pages: Pages
 ) {
     init {
-        require(PageCount >= 0) { "PageCount must be non-negative" }
-        require(Series.isNotBlank()) { "Series name cannot be blank" }
-        require(Title.isNotBlank()) { "Title cannot be blank" }
+        require(pageCount >= 0) { "PageCount must be non-negative" }
+        require(series.isNotBlank()) { "Series name cannot be blank" }
+        require(title.isNotBlank()) { "Title cannot be blank" }
     }
 }
 
 /**
  * Container for page information in ComicInfo.xml.
  *
- * @property Page List of individual page metadata entries
+ * @property page List of individual page metadata entries
  */
 @Serializable
 @XmlSerialName("Pages", "", "")
 data class Pages(
     @SerialName("Page")
-    val Page: List<PageInfo>
+    val page: List<PageInfo>
 ) {
     init {
-        require(Page.isNotEmpty()) { "Pages list cannot be empty" }
+        require(page.isNotEmpty()) { "Pages list cannot be empty" }
     }
 }
 
 /**
  * Metadata for a single page in a comic archive.
  *
- * @property Image Zero-based index of the page
- * @property Bookmark Optional bookmark text (typically chapter name)
- * @property Type Optional page type (e.g., "FrontCover", "Story")
+ * @property image Zero-based index of the page
+ * @property bookmark Optional bookmark text (typically chapter name)
+ * @property type Optional page type (e.g., "FrontCover", "Story")
  */
 @Serializable
 @XmlSerialName("Page", "", "")
 data class PageInfo(
     @XmlSerialName("Image", "", "")
-    val Image: Int,
+    val image: Int,
 
     @XmlSerialName("Bookmark", "", "")
-    val Bookmark: String? = null,
+    val bookmark: String? = null,
 
     @XmlSerialName("Type", "", "")
-    val Type: String? = null
+    val type: String? = null
 ) {
     init {
-        require(Image >= 0) { "Image index must be non-negative" }
+        require(image >= 0) { "Image index must be non-negative" }
     }
 
     companion object {

@@ -10,6 +10,14 @@ plugins {
     alias(libs.plugins.spring.dependency.management)
     alias(libs.plugins.shadow.jar)
     application
+
+    id("io.gitlab.arturbosch.detekt") version "1.23.8"
+}
+
+// This block configures Detekt to use your custom settings.
+detekt {
+    config.setFrom(files("detekt.yml"))
+    buildUponDefaultConfig = true
 }
 
 group = "com.mangacombiner"
@@ -49,9 +57,15 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.plugins)
+    // FIX: Add the Ktor IO dependency
+    implementation(libs.ktor.io.jvm)
+
 
     // WebP image support
     implementation(libs.webp.imageio)
+
+    // Detekt Formatting Rules
+    detektPlugins(libs.detekt.formatting)
 
     // Testing
     testImplementation(libs.spring.boot.starter.test) {
@@ -66,7 +80,6 @@ java {
     }
 }
 
-// FIX: Use the modern compilerOptions DSL instead of the deprecated kotlinOptions
 tasks.withType<KotlinCompile>().configureEach {
     compilerOptions {
         freeCompilerArgs.add("-Xjsr305=strict")
@@ -82,7 +95,6 @@ application {
     mainClass.set("com.mangacombiner.MangaCombinerApplicationKt")
 }
 
-// Configure the shadow jar to be executable
 tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
     archiveClassifier.set("executable")
     manifest {

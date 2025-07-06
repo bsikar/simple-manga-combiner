@@ -1,10 +1,11 @@
 [versions]
 # Plugins
-kotlin = "2.0.0"
+kotlin = "2.0.21"
 springBoot = "3.3.1"
 springDependencyManagement = "1.1.6"
 shadow = "8.1.1"
 foojayResolver = "0.10.0"
+detekt = "1.23.8"
 
 # Dependencies
 kotlinxCli = "0.3.6"
@@ -33,10 +34,14 @@ webp-imageio = { module = "org.sejda.imageio:webp-imageio", version.ref = "webpI
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 ktor-client-plugins = { module = "io.ktor:ktor-client-plugins", version.ref = "ktor" }
+ktor-io-jvm = { module = "io.ktor:ktor-io-jvm", version.ref = "ktor" }
 
 # Spring Boot
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+
+# Detekt
+detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
 
 # Testing
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlinTest" }
