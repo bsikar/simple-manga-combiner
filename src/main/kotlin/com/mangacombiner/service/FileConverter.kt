@@ -1,10 +1,11 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.util.logError
+import com.mangacombiner.util.Logger
 import org.springframework.stereotype.Component
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.util.Locale
 
 @Component
 class FileConverter {
@@ -23,13 +24,7 @@ class FileConverter {
                 "cbz" to "epub" -> processCbzToEpub(options, mangaTitle, outputFile, processor, infoPageFile)
                 "epub" to "cbz" -> processEpubToCbz(options)
                 "cbz" to "cbz" -> reprocessCbz(options, mangaTitle, outputFile, processor, infoPageFile)
-                "epub" to "epub" -> {
-                    // Simple rename/move if names differ
-                    if (options.inputFile.canonicalPath != outputFile.canonicalPath) {
-                        Files.move(options.inputFile.toPath(), outputFile.toPath())
-                    }
-                    ProcessResult(true, outputFile)
-                }
+                "epub" to "epub" -> reprocessEpub(options, mangaTitle, outputFile, processor, infoPageFile)
                 else -> {
                     val message = "Conversion from .$inputFormat to .$finalOutputFormat is not supported."
                     println(message)
@@ -38,7 +33,7 @@ class FileConverter {
             }
         } catch (e: IOException) {
             val msg = "ERROR: A file failure occurred while processing ${options.inputFile.name}: ${e.message}"
-            logError(msg, e)
+            Logger.logError(msg, e)
             ProcessResult(false, error = msg)
         }
     }
@@ -61,6 +56,46 @@ class FileConverter {
             } else {
                 ProcessResult(false, error = "No chapter folders found in CBZ to reprocess.")
             }
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    private fun reprocessEpub(
+        options: LocalFileOptions,
+        mangaTitle: String,
+        outputFile: File,
+        processor: ProcessorService,
+        infoPageFile: File?
+    ): ProcessResult {
+        println("Re-processing EPUB to apply changes...")
+        val tempDir = Files.createTempDirectory(options.tempDirectory.toPath(), "epub-reprocess-").toFile()
+        return try {
+            processor.extractZip(options.inputFile, tempDir)
+
+            // Find all image files recursively within the extracted EPUB contents
+            val imageFiles = tempDir.walk()
+                .filter { it.isFile && it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS }
+                .toList()
+
+            if (imageFiles.isEmpty() && infoPageFile == null) {
+                return ProcessResult(false, error = "No images found in the source EPUB.")
+            }
+
+            // Create a single "chapter" folder to hold all the original images
+            val consolidatedChapterDir = File(tempDir, "Chapter-01-Combined").apply { mkdirs() }
+
+            // Copy all found images into the consolidated chapter, renaming them to ensure correct order
+            imageFiles.sorted().forEachIndexed { index, file ->
+                val newName = "page_${String.format(Locale.ROOT, "%04d", index + 1)}.${file.extension}"
+                file.copyTo(File(consolidatedChapterDir, newName))
+            }
+
+            // The list of "chapters" to rebuild from is now our single, consolidated folder
+            val chapterFolders = listOf(consolidatedChapterDir)
+
+            processor.createEpubFromFolders(mangaTitle, chapterFolders, outputFile, infoPageFile)
+            ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
         } finally {
             tempDir.deleteRecursively()
         }

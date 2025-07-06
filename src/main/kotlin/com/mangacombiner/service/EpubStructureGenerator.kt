@@ -1,6 +1,6 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.util.logDebug
+import com.mangacombiner.util.Logger
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionMethod
@@ -8,6 +8,7 @@ import java.io.File
 import java.io.IOException
 import java.util.UUID
 import javax.imageio.ImageIO
+import kotlin.text.Charsets
 
 internal class EpubStructureGenerator {
 
@@ -37,12 +38,12 @@ internal class EpubStructureGenerator {
             fileNameInZip = "mimetype"
             compressionMethod = CompressionMethod.STORE
         }
-        epubZip.addStream(MIMETYPE.byteInputStream(), mimetypeParams)
+        epubZip.addStream(MIMETYPE.byteInputStream(Charsets.UTF_8), mimetypeParams)
 
         val containerParams = ZipParameters().apply {
             fileNameInZip = "META-INF/container.xml"
         }
-        epubZip.addStream(createContainerXml().byteInputStream(), containerParams)
+        epubZip.addStream(createContainerXml().byteInputStream(Charsets.UTF_8), containerParams)
     }
 
     /**
@@ -53,7 +54,7 @@ internal class EpubStructureGenerator {
         val imageDim = try {
             ImageIO.read(infoPage)?.let { it.width to it.height } ?: (DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT)
         } catch (e: IOException) {
-            logDebug { "Could not read image dimensions for info page, using defaults. Error: ${e.message}" }
+            Logger.logDebug { "Could not read image dimensions for info page, using defaults. Error: ${e.message}" }
             DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT
         }
 
@@ -72,7 +73,7 @@ internal class EpubStructureGenerator {
         // Add the XHTML page that will display the image
         val xhtmlContent = createXhtmlPage("Info", 0, "../$imageHref", imageDim.first, imageDim.second)
         val pageParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$pageHref" }
-        epubZip.addStream(xhtmlContent.byteInputStream(), pageParams)
+        epubZip.addStream(xhtmlContent.byteInputStream(Charsets.UTF_8), pageParams)
         metadata.manifestItems.add("""<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>""")
 
         // Prepend to the spine to ensure it's the first page in the reading order
@@ -88,20 +89,24 @@ internal class EpubStructureGenerator {
     @Suppress("SwallowedException")
     fun addChapterToEpub(images: List<File>, chapterName: String, metadata: EpubMetadata, epubZip: ZipFile) {
         var firstPageOfChapter = true
+        // Sanitize chapter name to be valid for file paths and XML IDs
+        val safeChapterName = chapterName.replace(Regex("""\s+"""), "_").replace(Regex("""[^a-zA-Z0-9_-]"""), "")
+
         images.forEachIndexed { index, imageFile ->
             val pageIndex = metadata.totalPages + index + 1
             val imageDim = try {
                 ImageIO.read(imageFile)?.let { it.width to it.height } ?: (DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT)
             } catch (e: IOException) {
-                logDebug {
+                Logger.logDebug {
                     "Could not read image dimensions for ${imageFile.name}, using defaults. Error: ${e.message}"
                 }
                 DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT
             }
 
-            val imageId = "img_${chapterName}_$pageIndex"
+            // Use the sanitized chapter name for IDs and HREFs
+            val imageId = "img_${safeChapterName}_$pageIndex"
             val imageHref = "images/$imageId.${imageFile.extension}"
-            val pageId = "page_${chapterName}_$pageIndex"
+            val pageId = "page_${safeChapterName}_$pageIndex"
             val pageHref = "text/$pageId.xhtml"
 
             // Add image file
@@ -114,7 +119,7 @@ internal class EpubStructureGenerator {
             // Add XHTML page file
             val xhtmlContent = createXhtmlPage(chapterName, pageIndex, "../$imageHref", imageDim.first, imageDim.second)
             val pageParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$pageHref" }
-            epubZip.addStream(xhtmlContent.byteInputStream(), pageParams)
+            epubZip.addStream(xhtmlContent.byteInputStream(Charsets.UTF_8), pageParams)
             metadata.manifestItems.add("""<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>""")
             metadata.spineItems.add("""<itemref idref="$pageId"/>""")
 
@@ -137,16 +142,16 @@ internal class EpubStructureGenerator {
         // Add content.opf
         val opfContent = createContentOpf(title, bookId, metadata.manifestItems, metadata.spineItems)
         val opfParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/content.opf" }
-        epubZip.addStream(opfContent.byteInputStream(), opfParams)
+        epubZip.addStream(opfContent.byteInputStream(Charsets.UTF_8), opfParams)
 
         // Add toc.ncx
         val ncxContent = createTocNcx(title, bookId, metadata.navPoints)
         val ncxParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/toc.ncx" }
-        epubZip.addStream(ncxContent.byteInputStream(), ncxParams)
+        epubZip.addStream(ncxContent.byteInputStream(Charsets.UTF_8), ncxParams)
     }
 
-    fun createContainerXml(): String = """
-        <?xml version="1.0"?>
+    private fun createContainerXml(): String = """
+        <?xml version="1.0" encoding="UTF-8"?>
         <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
             <rootfiles>
                 <rootfile full-path="$OPF_BASE_PATH/content.opf" media-type="application/oebps-package+xml"/>
@@ -154,26 +159,31 @@ internal class EpubStructureGenerator {
         </container>
     """.trimIndent()
 
-    fun createXhtmlPage(title: String, pageIndex: Int, imageHref: String, w: Int, h: Int): String = """
+    private fun createXhtmlPage(title: String, pageIndex: Int, imageHref: String, w: Int, h: Int): String = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE html>
+        <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
         <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
             <head>
                 <title>$title - Page $pageIndex</title>
                 <meta name="viewport" content="width=$w, height=$h"/>
-                <style>body{margin:0;padding:0}img{width:100%;height:100%;object-fit:contain}</style>
+                <style type="text/css">
+                    body { margin: 0; padding: 0; }
+                    img { width: 100%; height: 100%; object-fit: contain; }
+                </style>
             </head>
-            <body><img src="$imageHref" alt="Page $pageIndex"/></body>
+            <body>
+                <div><img src="$imageHref" alt="Page $pageIndex"/></div>
+            </body>
         </html>
     """.trimIndent()
 
-    fun createContentOpf(
+    private fun createContentOpf(
         title: String,
         bookId: String,
         manifestItems: List<String>,
         spineItems: List<String>
     ): String = """
-        <?xml version="1.0"?>
+        <?xml version="1.0" encoding="UTF-8"?>
         <package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
                 <dc:title>$title</dc:title>
@@ -191,8 +201,7 @@ internal class EpubStructureGenerator {
         </package>
     """.trimIndent()
 
-    fun createTocNcx(title: String, bookId: String, navPoints: List<String>): String = """
-        <?xml version="1.0"?>
+    private fun createTocNcx(title: String, bookId: String, navPoints: List<String>): String = """
         <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
         <ncx version="2005-1" xmlns="http://www.daisy.org/z3986/2005/ncx/">
             <head>
@@ -205,7 +214,7 @@ internal class EpubStructureGenerator {
         </ncx>
     """.trimIndent()
 
-    fun createNavPoint(playOrder: Int, title: String, contentSrc: String): String = """
+    private fun createNavPoint(playOrder: Int, title: String, contentSrc: String): String = """
         <navPoint id="navPoint-$playOrder" playOrder="$playOrder">
             <navLabel><text>$title</text></navLabel>
             <content src="$contentSrc"/>

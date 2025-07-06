@@ -1,6 +1,6 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.util.logDebug
+import com.mangacombiner.util.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.ClientRequestException
@@ -26,14 +26,14 @@ class ScraperService {
      * @return A list of pairs, where each pair contains the chapter URL and its title, sorted from oldest to newest.
      */
     suspend fun findChapterUrlsAndTitles(client: HttpClient, seriesUrl: String): List<Pair<String, String>> {
-        logDebug { "Scraping series page for chapter URLs and titles: $seriesUrl" }
+        Logger.logDebug { "Scraping series page for chapter URLs and titles: $seriesUrl" }
         return try {
             val response: String = client.get(seriesUrl).body()
             val soup = Jsoup.parse(response, seriesUrl)
             val chapterLinks = soup.select("li.wp-manga-chapter a")
 
             if (chapterLinks.isEmpty()) {
-                logDebug { "No chapters found using selector 'li.wp-manga-chapter a'." }
+                Logger.logDebug { "No chapters found using selector 'li.wp-manga-chapter a'." }
                 return emptyList()
             }
             // Map to a Pair of (URL, Title) and reverse for correct order.
@@ -52,7 +52,7 @@ class ScraperService {
      * @return The text content of the last update element, or null if not found.
      */
     suspend fun findLastUpdateTime(client: HttpClient, seriesUrl: String): String? {
-        logDebug { "Scraping series page for last update time: $seriesUrl" }
+        Logger.logDebug { "Scraping series page for last update time: $seriesUrl" }
         return try {
             val response: String = client.get(seriesUrl).body()
             val soup = Jsoup.parse(response, seriesUrl)
@@ -73,14 +73,14 @@ class ScraperService {
      * @return A list of image URLs.
      */
     suspend fun findImageUrls(client: HttpClient, chapterUrl: String): List<String> {
-        logDebug { "Scraping chapter page for image URLs: $chapterUrl" }
+        Logger.logDebug { "Scraping chapter page for image URLs: $chapterUrl" }
         return try {
             val response: String = client.get(chapterUrl).body()
             val soup = Jsoup.parse(response, chapterUrl)
             val imageTags = soup.select("img.wp-manga-chapter-img")
 
             if (imageTags.isEmpty()) {
-                logDebug { "No images found using selector 'img.wp-manga-chapter-img'." }
+                Logger.logDebug { "No images found using selector 'img.wp-manga-chapter-img'." }
                 return emptyList()
             }
             imageTags.mapNotNull { it.absUrl("src").takeIf(String::isNotBlank) }

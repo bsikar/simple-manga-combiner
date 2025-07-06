@@ -1,6 +1,6 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.util.logError
+import com.mangacombiner.util.Logger
 import org.springframework.stereotype.Service
 import java.awt.Color
 import java.awt.Font
@@ -26,15 +26,6 @@ class InfoPageGeneratorService {
         const val DETAILS_VALUE_X_OFFSET = 400
         const val TITLE_SPACING_MULTIPLIER = 4
     }
-
-    data class InfoPageData(
-        val title: String,
-        val sourceUrl: String,
-        val lastUpdated: String?,
-        val chapterCount: Int,
-        val pageCount: Int,
-        val tempDir: File
-    )
 
     /**
      * Creates an image file with metadata about the manga.
@@ -85,7 +76,7 @@ class InfoPageGeneratorService {
             ImageIO.write(image, "png", tempFile)
             tempFile
         } catch (e: IOException) {
-            logError("Failed to create info page image", e)
+            Logger.logError("Failed to create info page image", e)
             null
         } finally {
             g2d.dispose()

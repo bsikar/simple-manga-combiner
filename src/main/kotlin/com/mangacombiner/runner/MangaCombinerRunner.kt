@@ -5,10 +5,8 @@ import com.mangacombiner.service.DownloadService
 import com.mangacombiner.service.LocalFileOptions
 import com.mangacombiner.service.ProcessorService
 import com.mangacombiner.service.SyncOptions
-import com.mangacombiner.util.expandGlobPath
-import com.mangacombiner.util.isDebugEnabled
-import com.mangacombiner.util.logDebug
-import com.mangacombiner.util.logError
+import com.mangacombiner.util.FileUtils
+import com.mangacombiner.util.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.ClientRequestException
@@ -16,9 +14,6 @@ import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.UserAgent
 import kotlinx.cli.ArgParser
-import kotlinx.cli.ArgType
-import kotlinx.cli.default
-import kotlinx.cli.multiple
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.coroutineScope
@@ -29,66 +24,6 @@ import org.springframework.stereotype.Component
 import java.io.File
 import java.io.IOException
 import kotlin.system.exitProcess
-
-private data class JobOptions(
-    val source: String,
-    val format: String,
-    val tempDirectory: File,
-    val storageMode: String,
-    val userAgent: String,
-    val workers: Int,
-    val batchWorkers: Int,
-    val force: Boolean,
-    val deleteOriginal: Boolean,
-    val skip: Boolean,
-    val debug: Boolean
-)
-
-private class CliArgs(parser: ArgParser) {
-    val source by parser.argument(ArgType.String, "source", "Source URL, local file, or glob pattern.")
-    val update by parser.option(ArgType.String, "update", description = "Path to local CBZ to update.")
-    val exclude by parser.option(ArgType.String, "exclude", "e", "Chapter URL slug to exclude.").multiple()
-    val workers by parser.option(ArgType.Int, "workers", "w", "Concurrent image download threads.")
-        .default(DEFAULT_IMAGE_WORKERS)
-    val title by parser.option(ArgType.String, "title", "t", "Custom output file title.")
-    val format by parser.option(ArgType.String, "format", description = "Output format ('cbz' or 'epub').")
-        .default(DEFAULT_FORMAT)
-    val force by parser.option(ArgType.Boolean, "force", "f", "Force overwrite of output file.")
-        .default(false)
-    val deleteOriginal by parser.option(ArgType.Boolean, "delete-original", "Delete source on success.")
-        .default(false)
-    val lowStorageMode by parser.option(ArgType.Boolean, "low-storage-mode", "Low RAM usage mode.")
-        .default(false)
-    val ultraLowStorageMode by parser.option(ArgType.Boolean, "ultra-low-storage-mode", "Aggressive low memory.")
-        .default(false)
-    val trueDangerousMode by parser.option(ArgType.Boolean, "true-dangerous-mode", "DANGER! Modifies source.")
-        .default(false)
-    val batchWorkers by parser.option(ArgType.Int, "batch-workers", "Concurrent local file processing.")
-        .default(DEFAULT_BATCH_WORKERS)
-    val debug by parser.option(ArgType.Boolean, "debug", description = "Enable debug logging.")
-        .default(false)
-    val skipIfTargetExists by parser.option(ArgType.Boolean, "skip-if-target-exists", "Skip if target exists.")
-        .default(false)
-    val updateMissing by parser.option(ArgType.Boolean, "update-missing", "Thoroughly check chapters.")
-        .default(false)
-    val tempIsDestination by parser.option(ArgType.Boolean, "temp-is-destination", "Use output dir for temp.")
-        .default(false)
-    val impersonateBrowser by parser.option(ArgType.Boolean, "impersonate-browser", "Use browser User-Agent.")
-        .default(false)
-    val generateInfoPage by parser.option(
-        ArgType.Boolean,
-        "generate-info-page",
-        "g",
-        "Generate an informational first page."
-    )
-        .default(false)
-
-    companion object {
-        const val DEFAULT_IMAGE_WORKERS = 2
-        const val DEFAULT_BATCH_WORKERS = 4
-        const val DEFAULT_FORMAT = "cbz"
-    }
-}
 
 @Component
 class MangaCombinerRunner(
@@ -117,6 +52,11 @@ class MangaCombinerRunner(
     }
 
     private fun handleOperationConfirmation(cliArgs: CliArgs): Boolean {
+        if (cliArgs.dryRun) {
+            println("--- DRY RUN MODE: No confirmation needed. ---")
+            return true
+        }
+
         var confirmed = true
         if (cliArgs.trueDangerousMode) {
             println("---")
@@ -156,12 +96,14 @@ class MangaCombinerRunner(
         println("User-Agent: ".padEnd(PADDING_WIDTH) + options.userAgent)
         println()
         println("--- Options ---")
+        println("Dry Run: ".padEnd(PADDING_WIDTH) + options.dryRun)
         println("Image Workers: ".padEnd(PADDING_WIDTH) + options.workers)
         println("Batch Workers: ".padEnd(PADDING_WIDTH) + options.batchWorkers)
         println("Force Overwrite: ".padEnd(PADDING_WIDTH) + options.force)
         println("Delete Original: ".padEnd(PADDING_WIDTH) + options.deleteOriginal)
         println("Skip if Target Exists: ".padEnd(PADDING_WIDTH) + options.skip)
         println("Debug Mode: ".padEnd(PADDING_WIDTH) + options.debug)
+        println("Generate Info Page: ".padEnd(PADDING_WIDTH) + options.generateInfoPage)
         println()
         println("--- Storage & Temp Files ---")
         println("Mode: ".padEnd(PADDING_WIDTH) + options.storageMode)
@@ -177,7 +119,7 @@ class MangaCombinerRunner(
             lowerFormat
         } catch (e: IllegalArgumentException) {
             println("Unsupported format: ${cliArgs.format}. Supported: ${SUPPORTED_FORMATS.joinToString()}")
-            logDebug { "Caught expected exception for unsupported format: ${e.message}" }
+            Logger.logDebug { "Caught expected exception for unsupported format: ${e.message}" }
             return null
         }
 
@@ -198,7 +140,9 @@ class MangaCombinerRunner(
             force = cliArgs.force,
             deleteOriginal = cliArgs.deleteOriginal || useStreaming || cliArgs.trueDangerousMode,
             skip = cliArgs.skipIfTargetExists,
-            debug = isDebugEnabled
+            debug = Logger.isDebugEnabled,
+            generateInfoPage = cliArgs.generateInfoPage,
+            dryRun = cliArgs.dryRun
         )
     }
 
@@ -223,9 +167,9 @@ class MangaCombinerRunner(
                 }
             }
         } catch (e: ClientRequestException) {
-            logError("A network error occurred: ${e.response.status}", e)
+            Logger.logError("A network error occurred: ${e.response.status}", e)
         } catch (e: IOException) {
-            logError("A file system error occurred", e)
+            Logger.logError("A file system error occurred", e)
         } finally {
             client.close()
         }
@@ -241,7 +185,8 @@ class MangaCombinerRunner(
                     exclude = cliArgs.exclude,
                     checkPageCounts = cliArgs.updateMissing,
                     tempDir = jobOptions.tempDirectory,
-                    client = client
+                    client = client,
+                    dryRun = jobOptions.dryRun
                 )
             )
         } else {
@@ -254,7 +199,8 @@ class MangaCombinerRunner(
                     format = jobOptions.format,
                     tempDir = jobOptions.tempDirectory,
                     client = client,
-                    generateInfoPage = cliArgs.generateInfoPage
+                    generateInfoPage = cliArgs.generateInfoPage,
+                    dryRun = jobOptions.dryRun
                 )
             )
         }
@@ -262,7 +208,7 @@ class MangaCombinerRunner(
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun handleGlobSource(jobOptions: JobOptions, cliArgs: CliArgs) {
-        val files = expandGlobPath(jobOptions.source)
+        val files = FileUtils.expandGlobPath(jobOptions.source)
         if (files.isEmpty()) {
             println("No files found matching pattern '${jobOptions.source}'.")
             return
@@ -296,7 +242,8 @@ class MangaCombinerRunner(
             useTrueDangerousMode = cliArgs.trueDangerousMode,
             skipIfTargetExists = jobOptions.skip,
             tempDirectory = jobOptions.tempDirectory,
-            generateInfoPage = cliArgs.generateInfoPage
+            generateInfoPage = cliArgs.generateInfoPage,
+            dryRun = jobOptions.dryRun
         )
     }
 
@@ -308,7 +255,6 @@ class MangaCombinerRunner(
         try {
             parser.parse(args.filterNotNull().toTypedArray())
         } catch (e: Exception) {
-            // FIX: Catch a generic Exception and check the type to work around the resolution issue.
             if (e::class.simpleName == "IllegalUsage") {
                 if (!args.contains("--help")) {
                     println("Error parsing arguments: ${e.message}")
@@ -320,10 +266,15 @@ class MangaCombinerRunner(
             }
         }
 
-        isDebugEnabled = cliArgs.debug || "true".equals(System.getenv("DEBUG"), ignoreCase = true)
+        Logger.isDebugEnabled = cliArgs.debug || "true".equals(System.getenv("DEBUG"), ignoreCase = true)
         val jobOptions = createJobOptions(cliArgs) ?: return
 
         printJobSummary(jobOptions)
+
+        if (jobOptions.dryRun) {
+            println("--- DRY RUN ENABLED: No files will be created, modified, or deleted. ---")
+            println()
+        }
 
         if (!handleOperationConfirmation(cliArgs)) {
             return
@@ -332,7 +283,7 @@ class MangaCombinerRunner(
         try {
             executeJob(jobOptions, cliArgs)
         } catch (e: Exception) {
-            logError("A fatal, unexpected error occurred", e)
+            Logger.logError("A fatal, unexpected error occurred", e)
         }
     }
 }

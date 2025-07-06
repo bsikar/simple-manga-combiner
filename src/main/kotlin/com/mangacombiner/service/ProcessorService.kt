@@ -1,10 +1,8 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.util.getChapterPageCountsFromEpub
-import com.mangacombiner.util.getChapterPageCountsFromZip
-import com.mangacombiner.util.logDebug
-import com.mangacombiner.util.logError
-import com.mangacombiner.util.parseChapterSlugsForSorting
+import com.mangacombiner.util.Logger
+import com.mangacombiner.util.SlugUtils
+import com.mangacombiner.util.ZipUtils
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import net.lingala.zip4j.model.ZipParameters
@@ -29,8 +27,8 @@ class ProcessorService(
         substringAfterLast('.').lowercase() in IMAGE_EXTENSIONS
 
     private val chapterComparator = Comparator<File> { f1, f2 ->
-        val parts1 = parseChapterSlugsForSorting(f1.name)
-        val parts2 = parseChapterSlugsForSorting(f2.name)
+        val parts1 = SlugUtils.parseChapterSlugsForSorting(f1.name)
+        val parts2 = SlugUtils.parseChapterSlugsForSorting(f2.name)
         if (parts1.isEmpty() || parts2.isEmpty()) return@Comparator f1.name.compareTo(f2.name)
         val maxIndex = minOf(parts1.size, parts2.size)
         for (i in 0 until maxIndex) {
@@ -93,7 +91,7 @@ class ProcessorService(
             }
             println("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
-            logError("Failed to create CBZ file ${outputFile.name}", e)
+            Logger.logError("Failed to create CBZ file ${outputFile.name}", e)
         }
     }
 
@@ -151,17 +149,17 @@ class ProcessorService(
             }
             println("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
-            logError("Failed to create EPUB file ${outputFile.name}", e)
+            Logger.logError("Failed to create EPUB file ${outputFile.name}", e)
         }
     }
 
     fun extractZip(zipFile: File, destination: File): Boolean {
         return try {
-            logDebug { "Extracting ${zipFile.name} to ${destination.absolutePath}" }
+            Logger.logDebug { "Extracting ${zipFile.name} to ${destination.absolutePath}" }
             ZipFile(zipFile).extractAll(destination.absolutePath)
             true
         } catch (e: ZipException) {
-            logError("Failed to extract zip file ${zipFile.name}", e)
+            Logger.logError("Failed to extract zip file ${zipFile.name}", e)
             false
         }
     }
@@ -169,24 +167,35 @@ class ProcessorService(
     fun processLocalFile(options: LocalFileOptions) {
         println("\nProcessing local file: ${options.inputFile.name}")
 
-        val mangaTitle = options.customTitle ?: options.inputFile.nameWithoutExtension
+        val mangaTitle = options.customTitle ?: options.inputFile.toPath().nameWithoutExtension
         val outputFile = File(options.inputFile.parent, "$mangaTitle.${options.outputFormat}")
 
         if (shouldSkipProcessing(options, outputFile)) {
             return
         }
 
+        if (options.dryRun) {
+            println("[DRY RUN] Would process ${options.inputFile.name} into ${outputFile.name}.")
+            if (options.generateInfoPage) {
+                println("[DRY RUN] Would generate and include an info page.")
+            }
+            if (options.deleteOriginal) {
+                println("[DRY RUN] Would delete original file: ${options.inputFile.name} on success.")
+            }
+            return
+        }
+
         var infoPageFile: File? = null
         if (options.generateInfoPage) {
             val chapterData = if (options.inputFile.extension.equals("epub", true)) {
-                getChapterPageCountsFromEpub(options.inputFile)
+                ZipUtils.getChapterPageCountsFromEpub(options.inputFile)
             } else {
-                getChapterPageCountsFromZip(options.inputFile)
+                ZipUtils.getChapterPageCountsFromZip(options.inputFile)
             }
             val pageCount = chapterData.values.sum()
 
             infoPageFile = infoPageGeneratorService.create(
-                InfoPageGeneratorService.InfoPageData(
+                InfoPageData(
                     title = mangaTitle,
                     sourceUrl = "Local File: ${options.inputFile.name}",
                     lastUpdated = null,

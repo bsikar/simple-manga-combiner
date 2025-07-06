@@ -57,7 +57,6 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.plugins)
-    // FIX: Add the Ktor IO dependency
     implementation(libs.ktor.io.jvm)
 
 
