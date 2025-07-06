@@ -14,6 +14,5 @@ internal data class JobOptions(
     val deleteOriginal: Boolean,
     val skip: Boolean,
     val debug: Boolean,
-    val dryRun: Boolean,
-    val interactive: Boolean
+    val dryRun: Boolean
 )

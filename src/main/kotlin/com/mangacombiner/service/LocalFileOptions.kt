@@ -16,7 +16,6 @@ import java.io.File
  * @property skipIfTargetExists If true, do not process the file if the output file already exists.
  * @property tempDirectory The directory to use for temporary files.
  * @property dryRun If true, simulate the processing without creating files.
- * @property interactive If true, enable interactive chapter selection.
  */
 data class LocalFileOptions(
     val inputFile: File,
@@ -29,6 +28,5 @@ data class LocalFileOptions(
     val useTrueDangerousMode: Boolean,
     val skipIfTargetExists: Boolean,
     val tempDirectory: File,
-    val dryRun: Boolean = false,
-    val interactive: Boolean = false
+    val dryRun: Boolean = false
 )

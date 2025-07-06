@@ -8,14 +8,7 @@ import java.nio.file.Files
 import java.util.Locale
 
 @Component
-class FileConverter(
-    private val interactiveSelector: InteractiveChapterSelector
-) {
-    data class ChapterSelectionResult(
-        val folders: List<File>?,
-        val error: String? = null
-    )
-
+class FileConverter {
     fun process(
         options: LocalFileOptions,
         mangaTitle: String,
@@ -44,31 +37,6 @@ class FileConverter(
         }
     }
 
-    private fun handleInteractiveChapterSelection(
-        options: LocalFileOptions,
-        chapterFolders: List<File>,
-        mangaTitle: String
-    ): ChapterSelectionResult {
-        if (!options.interactive || options.dryRun) {
-            return ChapterSelectionResult(chapterFolders)
-        }
-
-        val selectableChapters = interactiveSelector.createSelectableChaptersFromFolders(chapterFolders)
-        val selectedChapters = interactiveSelector.selectChapters(selectableChapters, mangaTitle)
-
-        return when {
-            selectedChapters == null -> ChapterSelectionResult(null, "Processing cancelled by user.")
-            selectedChapters.isEmpty() -> ChapterSelectionResult(emptyList(), "No chapters selected for processing.")
-            else -> {
-                val selectedFolders = chapterFolders.filter { folder ->
-                    selectedChapters.any { it.url == folder.absolutePath }
-                }
-                println("Proceeding with ${selectedFolders.size} selected chapters...")
-                ChapterSelectionResult(selectedFolders)
-            }
-        }
-    }
-
     private fun reprocessCbz(
         options: LocalFileOptions,
         mangaTitle: String,
@@ -79,22 +47,12 @@ class FileConverter(
         val tempDir = Files.createTempDirectory(options.tempDirectory.toPath(), "cbz-reprocess-").toFile()
         return try {
             processor.extractZip(options.inputFile, tempDir)
-            val initialChapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
-
-            if (initialChapterFolders.isEmpty()) {
-                return ProcessResult(false, error = "No chapter folders found in CBZ to reprocess.")
-            }
-
-            val selectionResult = handleInteractiveChapterSelection(options, initialChapterFolders, mangaTitle)
-            val chapterFolders = selectionResult.folders
-
-            when {
-                chapterFolders == null -> ProcessResult(false, error = selectionResult.error)
-                chapterFolders.isEmpty() -> ProcessResult(false, error = selectionResult.error)
-                else -> {
-                    processor.createCbzFromFolders(mangaTitle, chapterFolders, outputFile)
-                    ProcessResult(true, outputFile)
-                }
+            val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
+            if (chapterFolders.isNotEmpty()) {
+                processor.createCbzFromFolders(mangaTitle, chapterFolders, outputFile)
+                ProcessResult(true, outputFile)
+            } else {
+                ProcessResult(false, error = "No chapter folders found in CBZ to reprocess.")
             }
         } finally {
             tempDir.deleteRecursively()
@@ -150,30 +108,21 @@ class FileConverter(
         val tempDir = Files.createTempDirectory(options.tempDirectory.toPath(), "cbz-to-epub-").toFile()
         return try {
             processor.extractZip(options.inputFile, tempDir)
-            val initialChapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
-
-            if (initialChapterFolders.isEmpty()) {
-                return ProcessResult(false, error = "No chapter folders found in CBZ for conversion.")
-            }
-
-            val selectionResult = handleInteractiveChapterSelection(options, initialChapterFolders, mangaTitle)
-            val chapterFolders = selectionResult.folders
-
-            when {
-                chapterFolders == null -> ProcessResult(false, error = selectionResult.error)
-                chapterFolders.isEmpty() -> ProcessResult(false, error = selectionResult.error)
-                else -> {
-                    println("Converting ${chapterFolders.size} selected chapters to EPUB...")
-                    processor.createEpubFromFolders(mangaTitle, chapterFolders, outputFile)
-                    ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
-                }
+            val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
+            if (chapterFolders.isNotEmpty()) {
+                processor.createEpubFromFolders(mangaTitle, chapterFolders, outputFile)
+                ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
+            } else {
+                ProcessResult(false, error = "No chapter folders found in CBZ for conversion.")
             }
         } finally {
             tempDir.deleteRecursively()
         }
     }
 
-    private fun processEpubToCbz(options: LocalFileOptions): ProcessResult {
+    private fun processEpubToCbz(
+        options: LocalFileOptions,
+    ): ProcessResult {
         println("Converting ${options.inputFile.name} to CBZ format...")
         // This logic would need to be implemented, e.g., by extracting EPUB images
         // and using processor.createCbzFromFolders. For now, returning not supported.

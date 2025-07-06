@@ -38,12 +38,10 @@ internal class CliArgs(parser: ArgParser) {
         .default(false)
     val impersonateBrowser by parser.option(ArgType.Boolean, "impersonate-browser", "Use browser User-Agent.")
         .default(false)
-    val interactive by parser.option(ArgType.Boolean, "interactive", "i", "Interactive chapter selection mode.")
-        .default(false)
 
     companion object {
         const val DEFAULT_IMAGE_WORKERS = 2
         const val DEFAULT_BATCH_WORKERS = 4
-        const val DEFAULT_FORMAT = "epub"
+        const val DEFAULT_FORMAT = "cbz"
     }
 }
