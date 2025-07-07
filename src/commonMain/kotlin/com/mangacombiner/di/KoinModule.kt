@@ -4,13 +4,21 @@ import com.mangacombiner.service.DownloadService
 import com.mangacombiner.service.FileConverter
 import com.mangacombiner.service.ProcessorService
 import com.mangacombiner.service.ScraperService
+import com.mangacombiner.ui.viewmodel.MainViewModel
+import com.mangacombiner.util.getTmpDir
+import org.koin.core.module.dsl.factoryOf
 import org.koin.dsl.module
 
-// This module defines how to create instances of our services.
-// It's pure Kotlin and can be used on any platform.
 val appModule = module {
+    // Services
     single { ScraperService() }
     single { FileConverter() }
     single { ProcessorService(get()) }
     single { DownloadService(get(), get()) }
+
+    // Platform-specific dependencies
+    single { getTmpDir() }
+
+    // ViewModel - using factoryOf for concise constructor injection
+    factoryOf(::MainViewModel)
 }

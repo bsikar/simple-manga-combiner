@@ -5,7 +5,9 @@ import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadService
 import com.mangacombiner.service.LocalFileOptions
 import com.mangacombiner.service.ProcessorService
+import com.mangacombiner.service.ScraperService
 import com.mangacombiner.util.Logger
+import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.createHttpClient
 import com.mangacombiner.util.getTmpDir
 import kotlinx.cli.ArgParser
@@ -26,10 +28,14 @@ fun main(args: Array<String>) {
     val source by parser.argument(ArgType.String, "source", "Source URL or local file path")
     val format by parser.option(ArgType.String, "format", description = "Output format ('cbz' or 'epub')").default("epub")
     val title by parser.option(ArgType.String, "title", "t", "Custom output file title.")
+    val outputPath by parser.option(ArgType.String, "output", "o", "Directory to save the final file.").default("")
     val force by parser.option(ArgType.Boolean, "force", "f", "Force overwrite of output file.").default(false)
     val deleteOriginal by parser.option(ArgType.Boolean, "delete-original", "Delete source on success.").default(false)
     val debug by parser.option(ArgType.Boolean, "debug", description = "Enable debug logging.").default(false)
+    val dryRun by parser.option(ArgType.Boolean, "dry-run", description = "Simulate the operation without creating files.").default(false)
     val exclude by parser.option(ArgType.String, "exclude", "e", "Chapter URL slug to exclude.").multiple()
+    val workers by parser.option(ArgType.Int, "workers", "w", "Number of concurrent download workers.").default(4)
+
 
     try {
         parser.parse(args)
@@ -42,22 +48,41 @@ fun main(args: Array<String>) {
 
     val downloadService: DownloadService = get(DownloadService::class.java)
     val processorService: ProcessorService = get(ProcessorService::class.java)
+    val scraperService: ScraperService = get(ScraperService::class.java)
 
     runBlocking {
-        val client = createHttpClient()
+        // For CLI, we use a single client with a default user agent for fetching the initial chapter list
+        val defaultUserAgent = UserAgent.browsers["Chrome (Windows)"]!!
+        val listClient = createHttpClient(defaultUserAgent)
         val tempDir = File(getTmpDir())
         try {
             when {
                 source.startsWith("http", ignoreCase = true) -> {
+                    Logger.logInfo("Fetching chapter list from URL...")
+                    var chapters = scraperService.findChapterUrlsAndTitles(listClient, source)
+                    if (chapters.isEmpty()) {
+                        Logger.logError("No chapters found at the provided URL. Aborting.")
+                        return@runBlocking
+                    }
+
+                    if (exclude.isNotEmpty()) {
+                        chapters = chapters.filter { (url, _) ->
+                            url.trimEnd('/').substringAfterLast('/') !in exclude
+                        }
+                    }
+
                     downloadService.downloadNewSeries(
                         DownloadOptions(
                             seriesUrl = source,
+                            chaptersToDownload = chapters.toMap(),
                             cliTitle = title,
-                            imageWorkers = 2,
+                            imageWorkers = workers,
                             exclude = exclude,
                             format = format,
                             tempDir = tempDir,
-                            client = client
+                            userAgents = listOf(defaultUserAgent), // CLI uses a single agent
+                            outputPath = outputPath,
+                            dryRun = dryRun
                         )
                     )
                 }
@@ -73,7 +98,8 @@ fun main(args: Array<String>) {
                             useTrueStreaming = false,
                             useTrueDangerousMode = false,
                             skipIfTargetExists = !force,
-                            tempDirectory = getTmpDir()
+                            tempDirectory = getTmpDir(),
+                            dryRun = dryRun
                         )
                     )
                 }
@@ -82,7 +108,7 @@ fun main(args: Array<String>) {
         } catch (e: Exception) {
             Logger.logError("A fatal error occurred", e)
         } finally {
-            client.close()
+            listClient.close()
         }
     }
 }
