@@ -1,5 +1,6 @@
 package com.mangacombiner.service
 
+import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
@@ -21,6 +22,12 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.Locale
 
+enum class DownloadCompletionStatus {
+    SUCCESS,
+    FAILED,
+    CANCELLED
+}
+
 class DownloadService(
     private val scraperService: ScraperService,
     private val processorService: ProcessorService
@@ -31,7 +38,7 @@ class DownloadService(
         const val BUFFER_SIZE = 4096
     }
 
-    private fun String.toSlug(): String = this.lowercase()
+    fun String.toSlug(): String = this.lowercase()
         .replace(Regex("https?://(www\\.)?"), "") // Remove http/s and www
         .replace(Regex("[^a-z0-9]"), "-") // Replace non-alphanumeric with hyphen
         .replace(Regex("-+"), "-") // Replace multiple hyphens with one
@@ -72,16 +79,22 @@ class DownloadService(
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun downloadChapter(
+        options: DownloadOptions,
         chapterUrl: String,
         chapterTitle: String,
         baseDir: File,
-        imageWorkers: Int,
         client: HttpClient
     ): File? {
         val chapterDir = File(baseDir, FileUtils.sanitizeFilename(chapterTitle))
         if (!chapterDir.exists()) {
             chapterDir.mkdirs()
         }
+
+        // Check for pause/cancel before fetching image URLs
+        while (options.operationState.value == OperationState.PAUSED) {
+            delay(1000)
+        }
+        if (options.operationState.value != OperationState.RUNNING) return null
 
         val imageUrls = scraperService.findImageUrls(client, chapterUrl)
         if (imageUrls.isEmpty()) {
@@ -90,19 +103,26 @@ class DownloadService(
         }
 
         Logger.logInfo(" --> Found ${imageUrls.size} images for '$chapterTitle'. Starting download...")
-        val dispatcher = Dispatchers.IO.limitedParallelism(imageWorkers)
+        val dispatcher = Dispatchers.IO.limitedParallelism(options.imageWorkers)
         coroutineScope {
             imageUrls.mapIndexed { index, imageUrl ->
                 launch(dispatcher) {
-                    delay(IMAGE_DOWNLOAD_DELAY_MS)
-                    Logger.logDebug { "Downloading image ${index + 1}/${imageUrls.size}: $imageUrl" }
-                    val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
-                    val outputFile =
-                        File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
-                    downloadFile(client, imageUrl, outputFile)
+                    while (options.operationState.value == OperationState.PAUSED) {
+                        delay(500)
+                    }
+                    if (options.operationState.value == OperationState.RUNNING) {
+                        delay(IMAGE_DOWNLOAD_DELAY_MS)
+                        Logger.logDebug { "Downloading image ${index + 1}/${imageUrls.size}: $imageUrl" }
+                        val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
+                        val outputFile =
+                            File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
+                        downloadFile(client, imageUrl, outputFile)
+                    }
                 }
             }.joinAll()
         }
+
+        if (options.operationState.value != OperationState.RUNNING) return null
 
         val downloadedCount = chapterDir.listFiles()?.count { it.isFile } ?: 0
         return if (downloadedCount > 0) {
@@ -117,17 +137,25 @@ class DownloadService(
     private suspend fun downloadChapters(
         options: DownloadOptions,
         downloadDir: File
-    ): List<File> {
+    ): List<File>? {
         val chapterData = options.chaptersToDownload.toList()
         Logger.logInfo("Downloading ${chapterData.size} chapters...")
         val downloadedFolders = mutableListOf<File>()
-        chapterData.forEachIndexed { index, (url, title) ->
-            // Use a different user agent for each chapter in a round-robin fashion
-            val userAgent = options.userAgents[index % options.userAgents.size]
+        for ((url, title) in chapterData) {
+            // Check for pause/cancel before each chapter
+            while (options.operationState.value == OperationState.PAUSED) {
+                Logger.logDebug { "Operation is paused. Waiting..." }
+                delay(1000)
+            }
+            if (options.operationState.value != OperationState.RUNNING) {
+                return null // Cancelled
+            }
+
+            val userAgent = options.userAgents.random()
             val client = createHttpClient(userAgent)
             try {
-                Logger.logInfo("--> Processing chapter ${index + 1}/${chapterData.size}: $title")
-                downloadChapter(url, title, downloadDir, options.imageWorkers, client)?.let {
+                Logger.logInfo("--> Processing chapter ${downloadedFolders.size + 1}/${chapterData.size}: $title")
+                downloadChapter(options, url, title, downloadDir, client)?.let {
                     downloadedFolders.add(it)
                 }
                 delay(CHAPTER_DOWNLOAD_DELAY_MS)
@@ -138,7 +166,7 @@ class DownloadService(
         return downloadedFolders
     }
 
-    private suspend fun processDownloadedChapters(
+    private fun processDownloadedChapters(
         options: DownloadOptions,
         mangaTitle: String,
         downloadedFolders: List<File>,
@@ -162,8 +190,9 @@ class DownloadService(
         Logger.logInfo("\nDownload and packaging complete: ${outputFile.absolutePath}")
     }
 
-    suspend fun downloadNewSeries(options: DownloadOptions) {
-        Logger.logInfo("URL detected. Starting download process...")
+    suspend fun downloadNewSeries(options: DownloadOptions): DownloadCompletionStatus {
+        if (options.operationState.value != OperationState.RUNNING) return DownloadCompletionStatus.CANCELLED
+
         val mangaTitle = options.cliTitle ?: options.seriesUrl.substringAfterLast("/manga/", "")
             .substringBefore('/')
             .replace('-', ' ')
@@ -173,33 +202,47 @@ class DownloadService(
 
         if (options.chaptersToDownload.isEmpty()) {
             Logger.logInfo("Could not find any chapters at the provided URL or none were selected.")
-        } else {
-            if (options.dryRun) {
-                Logger.logInfo("[DRY RUN] Would download ${options.chaptersToDownload.size} chapters for series '$mangaTitle'.")
-                val outputFile = File(".", "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
-                Logger.logInfo("[DRY RUN] Would create output file: ${outputFile.name}")
-            } else {
-                val seriesSlug = options.seriesUrl.toSlug()
-                val downloadDir = File(options.tempDir, "manga-dl-$seriesSlug")
-                if (downloadDir.exists()) {
-                    Logger.logInfo("Reusing existing temporary directory: ${downloadDir.name}")
-                }
-                downloadDir.mkdirs()
+            return DownloadCompletionStatus.SUCCESS
+        }
 
-                try {
-                    val downloadedFolders = downloadChapters(options, downloadDir)
-                    processDownloadedChapters(options, mangaTitle, downloadedFolders)
-                    // On success, clean up the temporary directory.
-                    Logger.logInfo("Cleaning up temporary files...")
-                    if (downloadDir.deleteRecursively()) {
-                        Logger.logInfo("Cleanup successful.")
-                    } else {
-                        Logger.logError("Failed to clean up temporary directory: ${downloadDir.absolutePath}")
-                    }
-                } catch (e: Exception) {
-                    Logger.logError("Operation failed. Temporary files have been kept for a future resume.", e)
-                }
+        if (options.dryRun) {
+            Logger.logInfo("[DRY RUN] Would download ${options.chaptersToDownload.size} chapters for series '$mangaTitle'.")
+            val outputFile = File(".", "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
+            Logger.logInfo("[DRY RUN] Would create output file: ${outputFile.name}")
+            return DownloadCompletionStatus.SUCCESS
+        }
+
+        val seriesSlug = options.seriesUrl.toSlug()
+        val downloadDir = File(options.tempDir, "manga-dl-$seriesSlug")
+        if (downloadDir.exists()) {
+            Logger.logInfo("Reusing existing temporary directory: ${downloadDir.name}")
+        }
+        downloadDir.mkdirs()
+
+        try {
+            val downloadedFolders = downloadChapters(options, downloadDir)
+
+            // If the operation state changed from RUNNING, it was cancelled.
+            if (options.operationState.value != OperationState.RUNNING) {
+                return DownloadCompletionStatus.CANCELLED
             }
+
+            // downloadChapters returns null if cancelled, or a list (even if empty) otherwise.
+            if (downloadedFolders != null) {
+                processDownloadedChapters(options, mangaTitle, downloadedFolders)
+                Logger.logInfo("Cleaning up temporary files...")
+                if (downloadDir.deleteRecursively()) {
+                    Logger.logInfo("Cleanup successful.")
+                } else {
+                    Logger.logError("Failed to clean up temporary directory: ${downloadDir.absolutePath}")
+                }
+                return DownloadCompletionStatus.SUCCESS
+            } else {
+                return DownloadCompletionStatus.CANCELLED
+            }
+        } catch (e: Exception) {
+            Logger.logError("Operation failed. Temporary files have been kept for a future resume.", e)
+            return DownloadCompletionStatus.FAILED
         }
     }
 }

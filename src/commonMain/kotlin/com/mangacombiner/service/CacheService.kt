@@ -2,64 +2,104 @@ package com.mangacombiner.service
 
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.getTmpDir
+import com.mangacombiner.util.titlecase
 import java.io.File
+import java.io.FileFilter
+
+data class CachedChapter(
+    val name: String,
+    val path: String,
+    val sizeFormatted: String,
+    val pageCount: Int,
+    val parentPath: String
+)
+
+data class CachedSeries(
+    val seriesName: String,
+    val path: String,
+    val chapters: List<CachedChapter>,
+    val totalSizeFormatted: String
+)
 
 /**
- * A service object for managing the application's cache.
+ * A service object for managing the application's cache of partial downloads.
  */
 object CacheService {
 
-    /**
-     * A list of directory prefixes used by the application for temporary storage.
-     * This helps in identifying which folders in the system's temp directory belong to this app.
-     */
-    private val appDirPrefixes = listOf(
-        "manga-dl-",
-        "cbz-reprocess-",
-        "epub-reprocess-",
-        "cbz-to-epub-",
-        "epub-to-cbz-"
-    )
+    private const val APP_DIR_PREFIX = "manga-dl-"
+
+    private fun formatSize(bytes: Long): String {
+        return when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "%.2f KB".format(bytes / 1024.0)
+            else -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
+        }
+    }
 
     /**
-     * Scans the system's temporary directory for folders created by this application and deletes them.
-     * It logs the result, including the amount of space freed.
+     * Scans the temporary directory and returns a structured list of cached series and their chapters.
      */
-    fun clearAppCache() {
-        Logger.logInfo("Clearing application cache...")
-        try {
-            val temp = File(getTmpDir())
-            if (!temp.exists() || !temp.isDirectory) {
-                Logger.logError("Temporary directory does not exist: ${getTmpDir()}")
-                return
-            }
+    fun getCacheContents(): List<CachedSeries> {
+        val temp = File(getTmpDir())
+        if (!temp.exists() || !temp.isDirectory) return emptyList()
 
-            // Find all directories in the temp folder that match the app's known prefixes
-            val dirsToDelete = temp.listFiles { file ->
-                file.isDirectory && appDirPrefixes.any { prefix -> file.name.startsWith(prefix) }
-            } ?: emptyArray()
+        return temp.listFiles(FileFilter { file ->
+            file.isDirectory && file.name.startsWith(APP_DIR_PREFIX)
+        })?.map { seriesDir ->
+            val chapters = seriesDir.listFiles(FileFilter { it.isDirectory })?.map { chapterDir ->
+                val files = chapterDir.walk().filter { it.isFile }
+                CachedChapter(
+                    name = chapterDir.name,
+                    path = chapterDir.absolutePath,
+                    sizeFormatted = formatSize(files.sumOf { it.length() }),
+                    pageCount = files.count(),
+                    parentPath = seriesDir.absolutePath
+                )
+            }?.sortedBy { it.name } ?: emptyList()
 
-            if (dirsToDelete.isEmpty()) {
-                Logger.logInfo("No cache directories found to clear.")
-                return
-            }
+            CachedSeries(
+                seriesName = seriesDir.name.removePrefix(APP_DIR_PREFIX).replace('-', ' ').titlecase(),
+                path = seriesDir.absolutePath,
+                chapters = chapters,
+                totalSizeFormatted = formatSize(seriesDir.walk().sumOf { it.length() })
+            )
+        } ?: emptyList()
+    }
 
-            var totalDeletedBytes = 0L
-            dirsToDelete.forEach { dir ->
-                val size = dir.walk().map { it.length() }.sum()
-                if (dir.deleteRecursively()) {
-                    Logger.logDebug { "Deleted cache directory: ${dir.name}" }
-                    totalDeletedBytes += size
+    /**
+     * Deletes a list of specified files or directories.
+     */
+    fun deleteCacheItems(pathsToDelete: List<String>) {
+        if (pathsToDelete.isEmpty()) {
+            Logger.logInfo("No cache items selected for deletion.")
+            return
+        }
+        Logger.logInfo("Deleting ${pathsToDelete.size} selected cache item(s)...")
+        var successCount = 0
+        pathsToDelete.forEach { path ->
+            val file = File(path)
+            if (file.exists()) {
+                if (file.deleteRecursively()) {
+                    Logger.logDebug { "Deleted: $path" }
+                    successCount++
                 } else {
-                    Logger.logError("Failed to delete directory: ${dir.absolutePath}")
+                    Logger.logError("Failed to delete: $path")
                 }
             }
-            // Format the total bytes into a human-readable MB string
-            val deletedMB = "%.2f".format(totalDeletedBytes / (1024.0 * 1024.0))
-            Logger.logInfo("Cache cleared successfully. Freed approximately $deletedMB MB.")
-
-        } catch (e: Exception) {
-            Logger.logError("An error occurred while clearing the cache.", e)
         }
+        Logger.logInfo("Successfully deleted $successCount item(s).")
+    }
+
+    /**
+     * Deletes all temporary application data.
+     */
+    fun clearAllAppCache() {
+        Logger.logInfo("Clearing all application cache...")
+        val allSeries = getCacheContents()
+        if (allSeries.isEmpty()) {
+            Logger.logInfo("No cache directories found to clear.")
+            return
+        }
+        deleteCacheItems(allSeries.map { it.path })
     }
 }

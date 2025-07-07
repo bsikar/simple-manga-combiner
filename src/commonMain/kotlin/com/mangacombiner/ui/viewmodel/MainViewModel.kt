@@ -1,6 +1,8 @@
 package com.mangacombiner.ui.viewmodel
 
 import com.mangacombiner.service.CacheService
+import com.mangacombiner.service.CachedSeries
+import com.mangacombiner.service.DownloadCompletionStatus
 import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadService
 import com.mangacombiner.service.ScraperService
@@ -21,8 +23,8 @@ import kotlin.random.Random
 
 enum class Screen {
     DOWNLOAD,
-    SYNC,
-    SETTINGS
+    SETTINGS,
+    CACHE_VIEWER
 }
 
 data class Chapter(
@@ -47,12 +49,16 @@ data class UiState(
     val perWorkerUserAgent: Boolean = false,
     val debugLog: Boolean = false,
     val dryRun: Boolean = false,
-    val isBusy: Boolean = false,
+    val operationState: OperationState = OperationState.IDLE,
     val isFetchingChapters: Boolean = false,
     val fetchedChapters: List<Chapter> = emptyList(),
     val showChapterDialog: Boolean = false,
     val localFilePath: String = "",
-    val showClearCacheDialog: Boolean = false
+    val showClearCacheDialog: Boolean = false,
+    val showCancelDialog: Boolean = false,
+    val showDeleteCacheConfirmationDialog: Boolean = false,
+    val cacheContents: List<CachedSeries> = emptyList(),
+    val cacheItemsToDelete: Set<String> = emptySet()
 )
 
 class MainViewModel(
@@ -65,12 +71,19 @@ class MainViewModel(
     private val _state = MutableStateFlow(UiState())
     val state = _state.asStateFlow()
 
+    private val _operationState = MutableStateFlow(OperationState.IDLE)
+
     private val _logs = MutableStateFlow(listOf("Welcome to Manga Combiner!"))
     val logs = _logs.asStateFlow()
 
     init {
         Logger.addListener { logMessage ->
             _logs.update { it + logMessage }
+        }
+        viewModelScope.launch {
+            _operationState.collect {
+                _state.update { uiState -> uiState.copy(operationState = it) }
+            }
         }
     }
 
@@ -88,6 +101,9 @@ class MainViewModel(
         data class UpdateTheme(val theme: AppTheme) : Event()
         data class ToggleChapterSelection(val chapterUrl: String, val isSelected: Boolean) : Event()
         data class UpdateChapterRange(val start: Int, val end: Int, val action: RangeAction) : Event()
+        data class ToggleCacheItemForDeletion(val path: String) : Event()
+        data class UpdateCachedChapterRange(val seriesPath: String, val start: Int, val end: Int, val action: RangeAction) : Event()
+        data class SelectAllCachedChapters(val seriesPath: String, val select: Boolean) : Event()
         object CopyLogsToClipboard : Event()
         object ClearLogs : Event()
         object FetchChapters : Event()
@@ -96,14 +112,28 @@ class MainViewModel(
         object SelectAllChapters : Event()
         object DeselectAllChapters : Event()
         object StartOperation : Event()
-        object RequestClearCache : Event()
-        object ConfirmClearCache : Event()
-        object CancelClearCache : Event()
+        object PauseOperation : Event()
+        object ResumeOperation : Event()
+        object RequestCancelOperation : Event()
+        object ConfirmCancelOperation : Event()
+        object AbortCancelOperation : Event()
+        object RequestClearAllCache : Event()
+        object ConfirmClearAllCache : Event()
+        object CancelClearAllCache : Event()
+        object RefreshCacheView : Event()
+        object RequestDeleteSelectedCacheItems : Event()
+        object ConfirmDeleteSelectedCacheItems : Event()
+        object CancelDeleteSelectedCacheItems : Event()
     }
 
     fun onEvent(event: Event) {
         when (event) {
-            is Event.Navigate -> _state.update { it.copy(currentScreen = event.screen) }
+            is Event.Navigate -> {
+                _state.update { it.copy(currentScreen = event.screen) }
+                if (event.screen == Screen.CACHE_VIEWER) {
+                    onEvent(Event.RefreshCacheView)
+                }
+            }
             is Event.UpdateUrl -> _state.update { it.copy(seriesUrl = event.url) }
             is Event.UpdateCustomTitle -> _state.update { it.copy(customTitle = event.title) }
             is Event.UpdateOutputPath -> _state.update { it.copy(outputPath = event.path) }
@@ -134,12 +164,70 @@ class MainViewModel(
             Event.SelectAllChapters -> setAllChaptersSelected(true)
             Event.DeselectAllChapters -> setAllChaptersSelected(false)
             Event.StartOperation -> startDownloadOperation()
-            Event.RequestClearCache -> _state.update { it.copy(showClearCacheDialog = true) }
-            Event.CancelClearCache -> _state.update { it.copy(showClearCacheDialog = false) }
-            Event.ConfirmClearCache -> {
+            Event.PauseOperation -> _operationState.value = OperationState.PAUSED
+            Event.ResumeOperation -> _operationState.value = OperationState.RUNNING
+            Event.RequestCancelOperation -> _state.update { it.copy(showCancelDialog = true) }
+            Event.AbortCancelOperation -> _state.update { it.copy(showCancelDialog = false) }
+            Event.ConfirmCancelOperation -> {
+                _state.update { it.copy(showCancelDialog = false) }
+                _operationState.value = OperationState.CANCELLING
+            }
+            Event.RequestClearAllCache -> _state.update { it.copy(showClearCacheDialog = true) }
+            Event.CancelClearAllCache -> _state.update { it.copy(showClearCacheDialog = false) }
+            Event.ConfirmClearAllCache -> {
                 _state.update { it.copy(showClearCacheDialog = false) }
                 viewModelScope.launch(Dispatchers.IO) {
-                    CacheService.clearAppCache()
+                    CacheService.clearAllAppCache()
+                    onEvent(Event.RefreshCacheView)
+                }
+            }
+            Event.RefreshCacheView -> {
+                viewModelScope.launch(Dispatchers.IO) {
+                    _state.update { it.copy(cacheContents = CacheService.getCacheContents()) }
+                }
+            }
+            is Event.ToggleCacheItemForDeletion -> {
+                _state.update {
+                    val newSet = it.cacheItemsToDelete.toMutableSet()
+                    if (newSet.contains(event.path)) newSet.remove(event.path) else newSet.add(event.path)
+                    it.copy(cacheItemsToDelete = newSet)
+                }
+            }
+            Event.RequestDeleteSelectedCacheItems -> _state.update { it.copy(showDeleteCacheConfirmationDialog = true) }
+            Event.CancelDeleteSelectedCacheItems -> _state.update { it.copy(showDeleteCacheConfirmationDialog = false) }
+            Event.ConfirmDeleteSelectedCacheItems -> {
+                viewModelScope.launch(Dispatchers.IO) {
+                    CacheService.deleteCacheItems(_state.value.cacheItemsToDelete.toList())
+                    _state.update { it.copy(cacheItemsToDelete = emptySet(), showDeleteCacheConfirmationDialog = false) }
+                    onEvent(Event.RefreshCacheView)
+                }
+            }
+            is Event.SelectAllCachedChapters -> {
+                _state.update { uiState ->
+                    val series = uiState.cacheContents.find { it.path == event.seriesPath } ?: return@update uiState
+                    val chapterPaths = series.chapters.map { it.path }
+                    val currentSelection = uiState.cacheItemsToDelete.toMutableSet()
+                    if (event.select) {
+                        currentSelection.addAll(chapterPaths)
+                    } else {
+                        currentSelection.removeAll(chapterPaths.toSet())
+                    }
+                    uiState.copy(cacheItemsToDelete = currentSelection)
+                }
+            }
+            is Event.UpdateCachedChapterRange -> {
+                _state.update { uiState ->
+                    val series = uiState.cacheContents.find { it.path == event.seriesPath } ?: return@update uiState
+                    val chaptersToUpdate = series.chapters.slice((event.start - 1) until event.end).map { it.path }
+                    val currentSelection = uiState.cacheItemsToDelete.toMutableSet()
+                    when (event.action) {
+                        RangeAction.SELECT -> currentSelection.addAll(chaptersToUpdate)
+                        RangeAction.DESELECT -> currentSelection.removeAll(chaptersToUpdate.toSet())
+                        RangeAction.TOGGLE -> chaptersToUpdate.forEach { path ->
+                            if (currentSelection.contains(path)) currentSelection.remove(path) else currentSelection.add(path)
+                        }
+                    }
+                    uiState.copy(cacheItemsToDelete = currentSelection)
                 }
             }
         }
@@ -198,27 +286,21 @@ class MainViewModel(
     }
 
     private fun startDownloadOperation() {
-        viewModelScope.launch {
-            _state.update { it.copy(isBusy = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            _operationState.value = OperationState.RUNNING
             val currentState = _state.value
             val chaptersToDownload = currentState.fetchedChapters.filter { it.isSelected }
 
             if (chaptersToDownload.isEmpty()) {
                 Logger.logError("No chapters selected for download.")
-                _state.update { it.copy(isBusy = false) }
+                _operationState.value = OperationState.IDLE
                 return@launch
             }
 
             val userAgents = when {
-                currentState.perWorkerUserAgent -> {
-                    List(currentState.workers) { UserAgent.browsers.values.random(Random) }
-                }
-                currentState.userAgentName == "Random" -> {
-                    listOf(UserAgent.browsers.values.random(Random))
-                }
-                else -> {
-                    listOf(UserAgent.browsers[currentState.userAgentName] ?: UserAgent.browsers.values.first())
-                }
+                currentState.perWorkerUserAgent -> List(currentState.workers) { UserAgent.browsers.values.random(Random) }
+                currentState.userAgentName == "Random" -> listOf(UserAgent.browsers.values.random(Random))
+                else -> listOf(UserAgent.browsers[currentState.userAgentName] ?: UserAgent.browsers.values.first())
             }
 
             val downloadOptions = DownloadOptions(
@@ -231,36 +313,50 @@ class MainViewModel(
                 tempDir = File(getTmpDir()),
                 userAgents = userAgents,
                 outputPath = currentState.outputPath,
+                operationState = _operationState,
                 dryRun = currentState.dryRun
             )
 
-            // Log operation details before starting
-            Logger.logInfo("--- Starting New Download Operation ---")
-            if (currentState.dryRun) {
-                Logger.logInfo("Mode:               Dry Run (no files will be downloaded or created)")
-            }
-            Logger.logInfo("Series URL:         ${downloadOptions.seriesUrl}")
-            if (!downloadOptions.cliTitle.isNullOrBlank()) {
-                Logger.logInfo("Custom Title:       ${downloadOptions.cliTitle}")
-            }
-            if (downloadOptions.outputPath.isNotBlank()) {
-                Logger.logInfo("Output Location:    ${downloadOptions.outputPath}")
-            }
-            Logger.logInfo("Output Format:      ${downloadOptions.format.uppercase()}")
-            Logger.logInfo("Chapters to get:    ${chaptersToDownload.size}")
-            Logger.logInfo("Download Workers:   ${downloadOptions.imageWorkers}")
+            logOperationStart(downloadOptions, chaptersToDownload.size)
 
-            val userAgentMessage = when {
-                currentState.perWorkerUserAgent -> "Randomized per worker"
-                else -> currentState.userAgentName
+            val status = downloadService.downloadNewSeries(downloadOptions)
+
+            if (status == DownloadCompletionStatus.CANCELLED) {
+                Logger.logInfo("Operation was cancelled. Cleaning up temporary files...")
+                val seriesSlug = downloadService.String.toSlug(downloadOptions.seriesUrl)
+                val downloadDir = File(downloadOptions.tempDir, "manga-dl-$seriesSlug")
+                if (downloadDir.exists()) {
+                    downloadDir.deleteRecursively()
+                }
+                Logger.logInfo("Cleanup complete for cancelled job.")
             }
-            Logger.logInfo("Browser Profile:    $userAgentMessage")
-            Logger.logDebug { "Full User-Agent string(s) used: ${downloadOptions.userAgents.joinToString(", ")}" }
-            Logger.logInfo("---------------------------------------")
 
-
-            downloadService.downloadNewSeries(downloadOptions)
-            _state.update { it.copy(isBusy = false) }
+            _operationState.value = OperationState.IDLE
         }
+    }
+
+    private fun logOperationStart(options: DownloadOptions, chapterCount: Int) {
+        Logger.logInfo("--- Starting New Download Operation ---")
+        if (options.dryRun) {
+            Logger.logInfo("Mode:               Dry Run (no files will be downloaded or created)")
+        }
+        Logger.logInfo("Series URL:         ${options.seriesUrl}")
+        if (!options.cliTitle.isNullOrBlank()) {
+            Logger.logInfo("Custom Title:       ${options.cliTitle}")
+        }
+        if (options.outputPath.isNotBlank()) {
+            Logger.logInfo("Output Location:    ${options.outputPath}")
+        }
+        Logger.logInfo("Output Format:      ${options.format.uppercase()}")
+        Logger.logInfo("Chapters to get:    $chapterCount")
+        Logger.logInfo("Download Workers:   ${options.imageWorkers}")
+
+        val userAgentMessage = when {
+            _state.value.perWorkerUserAgent -> "Randomized per worker"
+            else -> _state.value.userAgentName
+        }
+        Logger.logInfo("Browser Profile:    $userAgentMessage")
+        Logger.logDebug { "Full User-Agent string(s) used: ${options.userAgents.joinToString(", ")}" }
+        Logger.logInfo("---------------------------------------")
     }
 }

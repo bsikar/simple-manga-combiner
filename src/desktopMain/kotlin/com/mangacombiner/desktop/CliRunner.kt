@@ -6,6 +6,7 @@ import com.mangacombiner.service.DownloadService
 import com.mangacombiner.service.LocalFileOptions
 import com.mangacombiner.service.ProcessorService
 import com.mangacombiner.service.ScraperService
+import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.createHttpClient
@@ -14,6 +15,7 @@ import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
 import kotlinx.cli.multiple
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
@@ -71,6 +73,9 @@ fun main(args: Array<String>) {
                         }
                     }
 
+                    // CLI operations are always 'RUNNING' and not interactively pausable
+                    val cliOperationState = MutableStateFlow(OperationState.RUNNING)
+
                     downloadService.downloadNewSeries(
                         DownloadOptions(
                             seriesUrl = source,
@@ -80,8 +85,9 @@ fun main(args: Array<String>) {
                             exclude = exclude,
                             format = format,
                             tempDir = tempDir,
-                            userAgents = listOf(defaultUserAgent), // CLI uses a single agent
+                            userAgents = listOf(defaultUserAgent),
                             outputPath = outputPath,
+                            operationState = cliOperationState,
                             dryRun = dryRun
                         )
                     )

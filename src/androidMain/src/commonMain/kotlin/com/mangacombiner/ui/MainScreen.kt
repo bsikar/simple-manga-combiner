@@ -26,6 +26,7 @@ import com.mangacombiner.ui.widget.ChapterSelectionDialog
 import com.mangacombiner.ui.widget.DownloadScreen
 import com.mangacombiner.ui.widget.PlatformTooltip
 import com.mangacombiner.ui.widget.SettingsScreen
+import com.mangacombiner.ui.widget.SyncScreen
 import com.mangacombiner.ui.widget.VerticalSplitter
 import com.mangacombiner.ui.widget.rememberSplitterState
 
@@ -155,19 +156,19 @@ fun MainScreen(viewModel: MainViewModel) {
         }
         if (state.showCancelDialog) {
             AlertDialog(
-                onDismissRequest = { viewModel.onEvent(MainViewModel.Event.AbortCancelOperation) },
+                onDismissRequest = { onEvent(MainViewModel.Event.AbortCancelOperation) },
                 title = { Text("Confirm Cancel") },
                 text = { Text("Are you sure you want to cancel the current operation? All temporary files for this job will be deleted.") },
                 confirmButton = {
                     Button(
-                        onClick = { viewModel.onEvent(MainViewModel.Event.ConfirmCancelOperation) },
+                        onClick = { onEvent(MainViewModel.Event.ConfirmCancelOperation) },
                         colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
                     ) {
                         Text("Cancel Operation")
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { viewModel.onEvent(MainViewModel.Event.AbortCancelOperation) }) {
+                    TextButton(onClick = { onEvent(MainViewModel.Event.AbortCancelOperation) }) {
                         Text("Don't Cancel")
                     }
                 }

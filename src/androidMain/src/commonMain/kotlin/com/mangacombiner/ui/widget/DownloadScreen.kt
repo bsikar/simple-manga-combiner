@@ -24,6 +24,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         val isIdle = state.operationState == OperationState.IDLE
         val isPaused = state.operationState == OperationState.PAUSED
+        val isRunning = state.operationState == OperationState.RUNNING
 
         Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
@@ -245,8 +246,6 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Cancelling...")
-                        Spacer(Modifier.width(8.dp))
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
                     }
                 }
             }
