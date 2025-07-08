@@ -101,11 +101,11 @@ internal class EpubStructureGenerator {
     /**
      * Adds the final metadata files (content.opf, toc.ncx) using the collected metadata.
      */
-    fun addEpubMetadataFiles(epubZip: ZipFile, title: String, metadata: EpubMetadata) {
+    fun addEpubMetadataFiles(epubZip: ZipFile, title: String, seriesUrl: String?, metadata: EpubMetadata) {
         val bookId = UUID.randomUUID().toString()
 
         // Add content.opf
-        val opfContent = createContentOpf(title, bookId, metadata.manifestItems, metadata.spineItems)
+        val opfContent = createContentOpf(title, bookId, seriesUrl, metadata.manifestItems, metadata.spineItems)
         val opfParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/content.opf" }
         epubZip.addStream(opfContent.byteInputStream(Charsets.UTF_8), opfParams)
 
@@ -145,9 +145,12 @@ internal class EpubStructureGenerator {
     private fun createContentOpf(
         title: String,
         bookId: String,
+        seriesUrl: String?,
         manifestItems: List<String>,
         spineItems: List<String>
-    ): String = """
+    ): String {
+        val sourceTag = if (seriesUrl != null) "        <dc:source>$seriesUrl</dc:source>" else ""
+        return """
         <?xml version="1.0" encoding="UTF-8"?>
         <package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
@@ -155,16 +158,18 @@ internal class EpubStructureGenerator {
                 <dc:creator opf:role="aut">MangaCombiner</dc:creator>
                 <dc:language>en</dc:language>
                 <dc:identifier id="BookId" opf:scheme="UUID">$bookId</dc:identifier>
+$sourceTag
             </metadata>
             <manifest>
                 <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                ${manifestItems.joinToString("\n        ")}
+                ${manifestItems.joinToString("\n                ")}
             </manifest>
             <spine toc="ncx">
-                ${spineItems.joinToString("\n        ")}
+                ${spineItems.joinToString("\n                ")}
             </spine>
         </package>
-    """.trimIndent()
+        """.trimIndent()
+    }
 
     private fun createTocNcx(title: String, bookId: String, navPoints: List<String>): String = """
         <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">

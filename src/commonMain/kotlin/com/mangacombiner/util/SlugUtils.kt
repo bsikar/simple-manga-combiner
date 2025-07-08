@@ -4,6 +4,23 @@ object SlugUtils {
     private val numberRegex = "\\d+".toRegex()
     private const val CHAPTER_NUMBER_PADDING = 4
 
+    /**
+     * Creates a simplified, comparable key from a chapter title or slug.
+     * It relies on extracting all numbers from the string.
+     * e.g., "Chapter 10.5" and "chapter-10-5" both become "10-5".
+     * If no numbers are found, it falls back to a letter-only key.
+     */
+    fun toComparableKey(text: String): String {
+        val numbers = numberRegex.findAll(text).toList()
+        if (numbers.isEmpty()) {
+            // Fallback for non-numbered chapters like "Omake" or "Extra"
+            return text.filter { it.isLetter() }.lowercase()
+        }
+        return numbers
+            .map { it.value.toInt() } // Convert to Int to remove leading zeros (e.g., 01 -> 1)
+            .joinToString("-")
+    }
+
     fun parseChapterSlugsForSorting(slug: String): List<Int> {
         return numberRegex.findAll(slug).mapNotNull { it.value.toIntOrNull() }.toList()
     }

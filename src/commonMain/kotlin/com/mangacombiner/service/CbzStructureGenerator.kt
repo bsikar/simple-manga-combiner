@@ -15,6 +15,7 @@ internal class CbzStructureGenerator(private val xmlSerializer: XML) {
         mangaTitle: String,
         bookmarks: List<Pair<Int, String>>,
         totalPageCount: Int,
+        seriesUrl: String? = null,
         hasInfoPage: Boolean = false
     ): String {
         val pageInfos = (0 until totalPageCount).map { pageIndex ->
@@ -39,6 +40,7 @@ internal class CbzStructureGenerator(private val xmlSerializer: XML) {
         val comicInfo = ComicInfo(
             series = mangaTitle,
             title = mangaTitle,
+            web = seriesUrl,
             pageCount = totalPageCount,
             pages = Pages(pageInfos)
         )

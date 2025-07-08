@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -15,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.Button
 import androidx.compose.material.Checkbox
 import androidx.compose.material.Divider
+import androidx.compose.material.Icon
 import androidx.compose.material.LocalContentColor
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.OutlinedTextField
@@ -22,6 +24,9 @@ import androidx.compose.material.Surface
 import androidx.compose.material.Switch
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +47,8 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
     var rangeStart by remember { mutableStateOf("") }
     var rangeEnd by remember { mutableStateOf("") }
     val hasCachedChapters = state.fetchedChapters.any { it.isCached }
+    val hasLocalChapters = state.fetchedChapters.any { it.isLocal }
+    val isSyncMode = state.sourceFilePath != null
 
     Dialog(onDismissRequest = { onEvent(MainViewModel.Event.CancelChapterSelection) }) {
         Surface(
@@ -59,6 +66,19 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                         }
                         Button(onClick = { onEvent(MainViewModel.Event.DeselectAllChapters) }) {
                             Text("Deselect All")
+                        }
+                    }
+                    if (hasLocalChapters) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onEvent(MainViewModel.Event.SelectAllLocal) }) {
+                                Text("Select All (Local)")
+                            }
+                            Button(onClick = { onEvent(MainViewModel.Event.DeselectAllLocal) }) {
+                                Text("Deselect All (Local)")
+                            }
+                            Button(onClick = { onEvent(MainViewModel.Event.ToggleAllLocal) }) {
+                                Text("Toggle All (Local)")
+                            }
                         }
                     }
                     if (hasCachedChapters) {
@@ -141,17 +161,61 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
                                 checked = chapter.isSelected,
-                                onCheckedChange = { onEvent(MainViewModel.Event.ToggleChapterSelection(chapter.url, !chapter.isSelected)) }
+                                onCheckedChange = { onEvent(MainViewModel.Event.ToggleChapterSelection(chapter.url, !chapter.isSelected)) },
                             )
+                            val statusColor = when {
+                                chapter.isLocal && chapter.isCached -> MaterialTheme.colors.secondary
+                                chapter.isLocal -> MaterialTheme.colors.primary
+                                chapter.isCached -> MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                                else -> LocalContentColor.current
+                            }
                             Text(
-                                text = chapter.title,
+                                text = "${index + 1}. ${chapter.title}",
                                 style = MaterialTheme.typography.body1,
                                 modifier = Modifier.weight(1f),
-                                color = if (chapter.isCached) MaterialTheme.colors.primary else LocalContentColor.current
+                                color = statusColor
                             )
-                            if (chapter.isCached) {
-                                Text("(Cached)", style = MaterialTheme.typography.body2, color = MaterialTheme.colors.primary)
+
+                            if (chapter.isLocal && chapter.isCached) {
+                                Icon(
+                                    Icons.Default.Save,
+                                    contentDescription = "Local",
+                                    tint = statusColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                Icon(
+                                    Icons.Default.Cloud,
+                                    contentDescription = "Cached",
+                                    tint = statusColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text("(Local & Cached)", style = MaterialTheme.typography.body2, color = statusColor)
                                 Spacer(Modifier.width(8.dp))
+                            } else if (chapter.isLocal) {
+                                Icon(
+                                    Icons.Default.Save,
+                                    contentDescription = "Local",
+                                    tint = statusColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text("(Local)", style = MaterialTheme.typography.body2, color = statusColor)
+                                Spacer(Modifier.width(8.dp))
+                            } else if (chapter.isCached) {
+                                Icon(
+                                    Icons.Default.Cloud,
+                                    contentDescription = "Cached",
+                                    tint = statusColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text("(Cached)", style = MaterialTheme.typography.body2, color = statusColor)
+                                Spacer(Modifier.width(8.dp))
+                            }
+
+                            if (chapter.isLocal || chapter.isCached) {
                                 Text("Re-download:", style = MaterialTheme.typography.body2)
                                 Spacer(Modifier.width(4.dp))
                                 Switch(
@@ -182,7 +246,8 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                         onClick = { onEvent(MainViewModel.Event.ConfirmChapterSelection) },
                         enabled = selectedCount > 0
                     ) {
-                        Text("Confirm ($selectedCount Selected)")
+                        val buttonText = if (isSyncMode) "Confirm Selections" else "Confirm ($selectedCount Selected)"
+                        Text(buttonText)
                     }
                 }
             }

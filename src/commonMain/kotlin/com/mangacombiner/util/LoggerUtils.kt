@@ -7,14 +7,18 @@ fun logOperationSettings(
     chapterCount: Int,
     userAgentName: String,
     perWorkerUserAgent: Boolean,
-    isResuming: Boolean = false
+    isResuming: Boolean = false,
+    localCount: Int = 0,
+    cacheCount: Int = 0,
 ) {
-    val title = if (isResuming) "--- Resuming Download Operation ---" else "--- Starting New Download Operation ---"
+    val title = if (isResuming) "--- Resuming Operation ---" else "--- Starting New Operation ---"
     Logger.logInfo(title)
     if (options.dryRun && !isResuming) {
         Logger.logInfo("Mode:              Dry Run (no files will be downloaded or created)")
     }
-    Logger.logInfo("Series URL:        ${options.seriesUrl}")
+    if (options.seriesUrl.isNotBlank()) {
+        Logger.logInfo("Series URL:        ${options.seriesUrl}")
+    }
     if (!options.cliTitle.isNullOrBlank()) {
         Logger.logInfo("Custom Title:      ${options.cliTitle}")
     }
@@ -22,7 +26,15 @@ fun logOperationSettings(
         Logger.logInfo("Output Location:   ${options.outputPath}")
     }
     Logger.logInfo("Output Format:     ${options.format.uppercase()}")
-    Logger.logInfo("Chapters to get:   $chapterCount")
+    if (localCount > 0) {
+        Logger.logInfo("From Local File:   $localCount chapters")
+    }
+    if (cacheCount > 0) {
+        Logger.logInfo("From Cache:        $cacheCount chapters")
+    }
+    if (chapterCount > 0) {
+        Logger.logInfo("From Web:          $chapterCount chapters")
+    }
     Logger.logInfo("Download Workers:  ${options.getWorkers()}")
 
     val userAgentMessage = when {

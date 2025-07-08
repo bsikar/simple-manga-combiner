@@ -1,5 +1,6 @@
 package com.mangacombiner.ui.widget
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.material.Button
 import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Card
 import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.Divider
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
 import androidx.compose.material.Icon
@@ -61,8 +63,9 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
         ) {
             Card(elevation = 4.dp) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Download Options", style = MaterialTheme.typography.h6)
+                    Text("Download & Sync Options", style = MaterialTheme.typography.h6)
                     Spacer(Modifier.height(8.dp))
+
                     OutlinedTextField(
                         value = state.seriesUrl,
                         onValueChange = { onEvent(MainViewModel.Event.UpdateUrl(it)) },
@@ -71,25 +74,46 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         singleLine = true,
                         enabled = isIdle
                     )
-
-                    Button(
-                        onClick = { onEvent(MainViewModel.Event.FetchChapters) },
-                        enabled = state.seriesUrl.isNotBlank() && !state.isFetchingChapters && isIdle,
-                        modifier = Modifier.align(Alignment.End)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (state.isFetchingChapters) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Fetching...")
-                        } else {
-                            Text("Fetch Chapters")
+                        OutlinedButton(
+                            onClick = { onEvent(MainViewModel.Event.PickLocalFile) },
+                            enabled = isIdle
+                        ) {
+                            Text("Update Local File...")
+                        }
+
+                        Button(
+                            onClick = { onEvent(MainViewModel.Event.FetchChapters) },
+                            enabled = state.seriesUrl.isNotBlank() && !state.isFetchingChapters && isIdle,
+                        ) {
+                            if (state.isFetchingChapters) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Fetching...")
+                            } else {
+                                Text("Fetch Chapters")
+                            }
                         }
                     }
+
+                    if (state.isAnalyzingFile) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Analyzing file...")
+                        }
+                    }
+
+                    Divider()
 
                     OutlinedTextField(
                         value = state.customTitle,
                         onValueChange = { onEvent(MainViewModel.Event.UpdateCustomTitle(it)) },
-                        label = { Text("Custom Title (Optional)") },
+                        label = { Text("Output Filename (without extension)") },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = isProcessing
                     )
@@ -97,7 +121,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                     OutlinedTextField(
                         value = state.outputPath,
                         onValueChange = { onEvent(MainViewModel.Event.UpdateOutputPath(it)) },
-                        label = { Text("Output Directory (Optional)") },
+                        label = { Text("Output Directory") },
                         placeholder = { Text("Default: Your Downloads folder") },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = isProcessing
@@ -149,6 +173,21 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     Text("Advanced Options", style = MaterialTheme.typography.h6)
                     Spacer(Modifier.height(16.dp))
+
+                    AnimatedVisibility(visible = state.sourceFilePath != null) {
+                        FormControlLabel(
+                            onClick = { onEvent(MainViewModel.Event.ToggleReplaceOriginalFile(!state.replaceOriginalFile)) },
+                            enabled = isProcessing,
+                            control = {
+                                Switch(
+                                    checked = state.replaceOriginalFile,
+                                    onCheckedChange = { onEvent(MainViewModel.Event.ToggleReplaceOriginalFile(it)) },
+                                    enabled = isProcessing
+                                )
+                            },
+                            label = { Text("Replace original file on update") }
+                        )
+                    }
 
                     FormControlLabel(
                         onClick = { onEvent(MainViewModel.Event.ToggleDebugLog(!state.debugLog)) },
@@ -252,12 +291,13 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
         ) {
             when (state.operationState) {
                 OperationState.IDLE -> {
+                    val buttonText = if (state.sourceFilePath != null) "Sync & Update File" else "Start Download"
                     Button(
                         onClick = { onEvent(MainViewModel.Event.StartOperation) },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = state.fetchedChapters.any { it.isSelected }
                     ) {
-                        Text("Start Operation")
+                        Text(buttonText)
                     }
                 }
                 OperationState.RUNNING -> {

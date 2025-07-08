@@ -198,9 +198,9 @@ class DownloadService(
 
         val outputFile = File(outputDir, "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
         if (options.format == "cbz") {
-            processorService.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile, options.operationState)
+            processorService.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile, options.seriesUrl, options.operationState)
         } else {
-            processorService.createEpubFromFolders(mangaTitle, downloadedFolders, outputFile, options.operationState)
+            processorService.createEpubFromFolders(mangaTitle, downloadedFolders, outputFile, options.seriesUrl, options.operationState)
         }
 
         if (options.operationState.value != OperationState.CANCELLING) {

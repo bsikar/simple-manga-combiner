@@ -1,5 +1,7 @@
 package com.mangacombiner.util
 
+import com.mangacombiner.model.ComicInfo
+import nl.adaptivity.xmlutil.serialization.XML
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import java.io.File
@@ -36,6 +38,48 @@ object ZipUtils {
         } catch (e: ZipException) {
             Logger.logError("Error reading EPUB ${epubFile.name} to infer chapter slugs", e)
             emptySet()
+        }
+    }
+
+    /**
+     * Extracts and returns the content of the <Web> tag from ComicInfo.xml in a CBZ file.
+     */
+    fun getSourceUrlFromCbz(cbzFile: File, xml: XML): String? {
+        if (!cbzFile.exists()) return null
+        return try {
+            ZipFile(cbzFile).use { zipFile ->
+                val comicInfoFile = zipFile.getFileHeader("ComicInfo.xml")
+                if (comicInfoFile != null) {
+                    zipFile.getInputStream(comicInfoFile).use {
+                        xml.decodeFromString(ComicInfo.serializer(), it.reader().readText()).web
+                    }
+                } else null
+            }
+        } catch (e: Exception) {
+            Logger.logError("Could not read ComicInfo.xml from ${cbzFile.name}", e)
+            null
+        }
+    }
+
+    /**
+     * Extracts and returns the content of the <dc:source> tag from content.opf in an EPUB file.
+     */
+    fun getSourceUrlFromEpub(epubFile: File): String? {
+        if (!epubFile.exists()) return null
+        return try {
+            ZipFile(epubFile).use { zipFile ->
+                val opfFileHeader = zipFile.fileHeaders.find { it.fileName.endsWith("content.opf") }
+                if (opfFileHeader != null) {
+                    zipFile.getInputStream(opfFileHeader).use {
+                        val content = it.reader().readText()
+                        // Simple regex is more robust than full XML parsing for this one tag
+                        Regex("""<dc:source>(.*?)</dc:source>""").find(content)?.groupValues?.get(1)
+                    }
+                } else null
+            }
+        } catch (e: Exception) {
+            Logger.logError("Could not read content.opf from ${epubFile.name}", e)
+            null
         }
     }
 
@@ -100,7 +144,7 @@ object ZipUtils {
 
     fun getChapterPageCountsFromEpub(epubFile: File): Map<String, Int> {
         return getPageCountsFromZip(epubFile) { paths ->
-            val slugRegex = Regex("""^(.*?)_page_\d+\..*$""")
+            val slugRegex = Regex("""^img_(.+)_\d+\..*""")
             paths
                 .filter { it.contains("images/") }
                 .mapNotNull { slugRegex.find(it.substringAfterLast('/'))?.groupValues?.get(1) }
@@ -113,7 +157,7 @@ object ZipUtils {
      * Infers a chapter slug from a single image file path within an EPUB.
      */
     private fun inferChapterSlugsFromEpubPath(path: String): String? {
-        val slugRegex = Regex("""^(.*?)_page_\d+\..*$""")
+        val slugRegex = Regex("""^img_(.+)_\d+\..*""")
         return slugRegex.find(path.substringAfterLast('/'))?.groupValues?.get(1)
     }
 }

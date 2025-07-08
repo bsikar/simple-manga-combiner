@@ -10,6 +10,7 @@ import nl.adaptivity.xmlutil.serialization.XmlSerialName
  *
  * @property series The name of the manga series
  * @property title The title of this specific volume/collection
+ * @property web The source URL for the series
  * @property pageCount Total number of pages in the archive
  * @property pages Container for individual page metadata
  */
@@ -23,6 +24,10 @@ data class ComicInfo(
     @XmlElement(true)
     @XmlSerialName("Title", "", "")
     val title: String,
+
+    @XmlElement(true)
+    @XmlSerialName("Web", "", "")
+    val web: String? = null,
 
     @XmlElement(true)
     @XmlSerialName("PageCount", "", "")

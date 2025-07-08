@@ -1,10 +1,11 @@
 package com.mangacombiner.service
 
+import com.mangacombiner.model.ComicInfo
 import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.Logger
-import com.mangacombiner.util.naturalSortComparator
 import com.mangacombiner.util.SlugUtils
 import com.mangacombiner.util.ZipUtils
+import com.mangacombiner.util.naturalSortComparator
 import kotlinx.coroutines.flow.StateFlow
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
@@ -60,6 +61,7 @@ class ProcessorService(
         zipFile: ZipFile,
         mangaTitle: String,
         sortedFolders: List<File>,
+        seriesUrl: String?,
         operationState: StateFlow<OperationState>?
     ) {
         val cbzGenerator = CbzStructureGenerator(xmlSerializer)
@@ -70,7 +72,7 @@ class ProcessorService(
             return
         }
 
-        val comicInfoXml = cbzGenerator.generateComicInfoXml(mangaTitle, bookmarks, totalPageCount)
+        val comicInfoXml = cbzGenerator.generateComicInfoXml(mangaTitle, bookmarks, totalPageCount, seriesUrl)
         val params = ZipParameters().apply { fileNameInZip = COMIC_INFO_FILE }
         zipFile.addStream(comicInfoXml.byteInputStream(), params)
         addChaptersToCbz(zipFile, sortedFolders, operationState)
@@ -80,11 +82,12 @@ class ProcessorService(
         outputFile: File,
         mangaTitle: String,
         sortedFolders: List<File>,
+        seriesUrl: String?,
         operationState: StateFlow<OperationState>?
     ) {
         try {
             ZipFile(outputFile).use { zipFile ->
-                populateCbzFile(zipFile, mangaTitle, sortedFolders, operationState)
+                populateCbzFile(zipFile, mangaTitle, sortedFolders, seriesUrl, operationState)
             }
             if (operationState?.value == OperationState.CANCELLING) {
                 Logger.logInfo("CBZ creation cancelled. Deleting partial file.")
@@ -101,6 +104,7 @@ class ProcessorService(
         mangaTitle: String,
         chapterFolders: List<File>,
         outputFile: File,
+        seriesUrl: String? = null,
         operationState: StateFlow<OperationState>? = null
     ) {
         if (outputFile.exists()) outputFile.delete()
@@ -108,7 +112,7 @@ class ProcessorService(
 
         val sortedFolders = sortChapterFolders(chapterFolders)
         Logger.logInfo("Creating CBZ archive: ${outputFile.name}...")
-        buildCbz(outputFile, mangaTitle, sortedFolders, operationState)
+        buildCbz(outputFile, mangaTitle, sortedFolders, seriesUrl, operationState)
     }
 
     private fun addChaptersToEpub(
@@ -131,6 +135,7 @@ class ProcessorService(
         mangaTitle: String,
         chapterFolders: List<File>,
         outputFile: File,
+        seriesUrl: String? = null,
         operationState: StateFlow<OperationState>? = null
     ) {
         if (outputFile.exists()) outputFile.delete()
@@ -149,7 +154,7 @@ class ProcessorService(
                 if (operationState?.value == OperationState.CANCELLING) {
                     Logger.logInfo("EPUB creation cancelled. Deleting partial file.")
                 } else {
-                    epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, metadata)
+                    epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, seriesUrl, metadata)
                 }
             }
             if (operationState?.value == OperationState.CANCELLING) {
@@ -162,18 +167,54 @@ class ProcessorService(
         }
     }
 
-    fun getChaptersFromFile(file: File): List<String> {
-        if (!file.exists() || !file.isFile) return emptyList()
+    /**
+     * Reads a file and returns its chapter names and, if available, the embedded source URL.
+     * @return A Pair containing the list of chapter names and the source URL (or null).
+     */
+    fun getChaptersAndInfoFromFile(file: File): Pair<List<String>, String?> {
+        if (!file.exists() || !file.isFile) return emptyList<String>() to null
 
-        val slugs = when (file.extension.lowercase()) {
-            "cbz" -> ZipUtils.inferChapterSlugsFromZip(file)
-            "epub" -> ZipUtils.inferChapterSlugsFromEpub(file)
+        val (slugs, url) = when (file.extension.lowercase()) {
+            "cbz" -> {
+                val chapters = ZipUtils.inferChapterSlugsFromZip(file)
+                val sourceUrl = ZipUtils.getSourceUrlFromCbz(file, xmlSerializer)
+                chapters to sourceUrl
+            }
+            "epub" -> {
+                val chapters = ZipUtils.inferChapterSlugsFromEpub(file)
+                val sourceUrl = ZipUtils.getSourceUrlFromEpub(file)
+                chapters to sourceUrl
+            }
             else -> {
                 Logger.logError("Unsupported file type for chapter analysis: ${file.extension}")
-                emptySet()
+                emptySet<String>() to null
             }
         }
-        return slugs.sortedWith(naturalSortComparator)
+        return slugs.sortedWith(naturalSortComparator) to url
+    }
+
+    /**
+     * Extracts a specific list of chapters from a zip file into a target directory.
+     * @return A list of the File objects for the created chapter directories.
+     */
+    fun extractChaptersToDirectory(zipFile: File, chaptersToKeep: List<String>, outDir: File): List<File> {
+        val chapterSet = chaptersToKeep.toSet()
+        try {
+            ZipFile(zipFile).use { zip ->
+                zip.fileHeaders.forEach { header ->
+                    if (!header.isDirectory) {
+                        val chapterName = File(header.fileName).parent ?: return@forEach
+                        if (chapterName in chapterSet) {
+                            zip.extractFile(header, outDir.absolutePath)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Logger.logError("Failed during chapter extraction: ${e.message}", e)
+            return emptyList()
+        }
+        return outDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
     }
 
     fun updateLocalFile(
@@ -219,8 +260,8 @@ class ProcessorService(
             onProgressUpdate(0.7f, "Repackaging as $extension...")
 
             when (extension.lowercase()) {
-                "cbz" -> createCbzFromFolders(mangaTitle, sourceFolders, outputFile, null)
-                "epub" -> createEpubFromFolders(mangaTitle, sourceFolders, outputFile, null)
+                "cbz" -> createCbzFromFolders(mangaTitle, sourceFolders, outputFile, null, null)
+                "epub" -> createEpubFromFolders(mangaTitle, sourceFolders, outputFile, null, null)
             }
 
             onProgressUpdate(1.0f, "Update complete!")

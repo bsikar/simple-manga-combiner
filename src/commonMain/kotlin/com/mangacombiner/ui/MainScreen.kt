@@ -31,7 +31,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restore
@@ -49,7 +48,6 @@ import com.mangacombiner.ui.viewmodel.Screen
 import com.mangacombiner.ui.widget.CacheViewerScreen
 import com.mangacombiner.ui.widget.ChapterSelectionDialog
 import com.mangacombiner.ui.widget.DownloadScreen
-import com.mangacombiner.ui.widget.FileUpdaterScreen
 import com.mangacombiner.ui.widget.FormControlLabel
 import com.mangacombiner.ui.widget.PlatformTooltip
 import com.mangacombiner.ui.widget.SettingsScreen
@@ -85,15 +83,6 @@ fun MainScreen(viewModel: MainViewModel) {
                         alwaysShowLabel = false
                     )
                 }
-                PlatformTooltip("File Updater") {
-                    NavigationRailItem(
-                        selected = state.currentScreen == Screen.FILE_UPDATER,
-                        onClick = { viewModel.onEvent(MainViewModel.Event.Navigate(Screen.FILE_UPDATER)) },
-                        icon = { Icon(Icons.Filled.FolderZip, contentDescription = "File Updater") },
-                        label = if (showNavLabels) { { Text("Update") } } else null,
-                        alwaysShowLabel = false
-                    )
-                }
                 PlatformTooltip("Settings") {
                     NavigationRailItem(
                         selected = state.currentScreen == Screen.SETTINGS || state.currentScreen == Screen.CACHE_VIEWER,
@@ -112,7 +101,6 @@ fun MainScreen(viewModel: MainViewModel) {
                     Box(modifier = Modifier.padding(16.dp)) {
                         when (state.currentScreen) {
                             Screen.DOWNLOAD -> DownloadScreen(state, viewModel::onEvent)
-                            Screen.FILE_UPDATER -> FileUpdaterScreen(state, viewModel::onEvent)
                             Screen.SETTINGS -> SettingsScreen(state, viewModel::onEvent)
                             Screen.CACHE_VIEWER -> CacheViewerScreen(state, viewModel::onEvent)
                         }
@@ -121,7 +109,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 bottomContent = {
                     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Logs", style = MaterialTheme.typography.h6)
+                            Text("Logs", style = MaterialTheme.typography.h6, color = MaterialTheme.colors.onBackground)
                             Spacer(Modifier.weight(1f))
                             PlatformTooltip(if (state.logAutoscrollEnabled) "Disable Auto-scroll" else "Enable Auto-scroll") {
                                 IconButton(onClick = { viewModel.onEvent(MainViewModel.Event.ToggleLogAutoscroll) }) {
