@@ -41,13 +41,16 @@ enum class Screen {
     CACHE_VIEWER
 }
 
+enum class ChapterSource {
+    LOCAL, CACHE, WEB
+}
+
 data class Chapter(
     val url: String,
     val title: String,
-    var isSelected: Boolean = true,
-    val isLocal: Boolean,
-    val localSlug: String?,
-    val isCached: Boolean
+    val availableSources: Set<ChapterSource>,
+    var selectedSource: ChapterSource?, // null means ignore/deselect
+    val localSlug: String?
 )
 
 enum class RangeAction {
@@ -87,7 +90,6 @@ data class UiState(
     val localChaptersForSync: Map<String, String> = emptyMap(),
     val sourceFilePath: String? = null,
     val replaceOriginalFile: Boolean = false,
-    val chapterCacheOverrides: Set<String> = emptySet(),
     val showChapterDialog: Boolean = false,
     val showClearCacheDialog: Boolean = false,
     val showCancelDialog: Boolean = false,
@@ -219,7 +221,9 @@ class MainViewModel(
         data class UpdateUserAgent(val name: String) : Event()
         data class TogglePerWorkerUserAgent(val isEnabled: Boolean) : Event()
         data class UpdateTheme(val theme: AppTheme) : Event()
-        data class ToggleChapterSelection(val chapterUrl: String, val isSelected: Boolean) : Event()
+        data class UpdateChapterSource(val chapterUrl: String, val source: ChapterSource?) : Event()
+        data class ToggleChapterSelection(val chapterUrl: String, val select: Boolean) : Event()
+        data class ToggleChapterRedownload(val chapterUrl: String) : Event()
         data class UpdateChapterRange(val start: Int, val end: Int, val action: RangeAction) : Event()
         data class ToggleCacheItemForDeletion(val path: String) : Event()
         data class UpdateCachedChapterRange(val seriesPath: String, val start: Int, val end: Int, val action: RangeAction) : Event()
@@ -228,7 +232,6 @@ class MainViewModel(
         data class UpdateDefaultOutputLocation(val location: String) : Event()
         data class SetCacheSort(val seriesPath: String, val sortState: CacheSortState?) : Event()
         data class ToggleCacheSeries(val seriesPath: String) : Event()
-        data class ToggleChapterCacheOverride(val chapterUrl: String) : Event()
         data class UpdateFontSizePreset(val preset: String) : Event()
         data class UpdateSystemLightTheme(val theme: AppTheme) : Event()
         data class UpdateSystemDarkTheme(val theme: AppTheme) : Event()
@@ -244,9 +247,12 @@ class MainViewModel(
         object CancelChapterSelection : Event()
         object SelectAllChapters : Event()
         object DeselectAllChapters : Event()
-        object SelectAllLocal : Event()
-        object DeselectAllLocal : Event()
-        object ToggleAllLocal : Event()
+        object UseAllLocal : Event()
+        object IgnoreAllLocal : Event()
+        object RedownloadAllLocal : Event()
+        object UseAllCached : Event()
+        object IgnoreAllCached : Event()
+        object RedownloadAllCached : Event()
         object StartOperation : Event()
         object PauseOperation : Event()
         object ResumeOperation : Event()
@@ -262,9 +268,6 @@ class MainViewModel(
         object CancelDeleteSelectedCacheItems : Event()
         object SelectAllCache : Event()
         object DeselectAllCache : Event()
-        object SelectAllCacheOverrides : Event()
-        object DeselectAllCacheOverrides : Event()
-        object ToggleAllCacheOverrides : Event()
         object OpenSettingsLocation : Event()
         object ZoomIn : Event()
         object ZoomOut : Event()
@@ -273,6 +276,14 @@ class MainViewModel(
         object ConfirmRestoreDefaults : Event()
         object CancelRestoreDefaults : Event()
         object PickLocalFile : Event()
+    }
+
+    private fun getChapterDefaultSource(chapter: Chapter): ChapterSource {
+        return when {
+            chapter.availableSources.contains(ChapterSource.LOCAL) -> ChapterSource.LOCAL
+            chapter.availableSources.contains(ChapterSource.CACHE) -> ChapterSource.CACHE
+            else -> ChapterSource.WEB
+        }
     }
 
     fun onEvent(event: Event) {
@@ -374,9 +385,39 @@ class MainViewModel(
             is Event.ToggleChapterSelection -> {
                 _state.update {
                     val updatedChapters = it.fetchedChapters.map { chapter ->
-                        if (chapter.url == event.chapterUrl) chapter.copy(isSelected = event.isSelected) else chapter
+                        if (chapter.url == event.chapterUrl) {
+                            val newSource = if (event.select) getChapterDefaultSource(chapter) else null
+                            chapter.copy(selectedSource = newSource)
+                        } else {
+                            chapter
+                        }
                     }
                     it.copy(fetchedChapters = updatedChapters)
+                }
+            }
+            is Event.ToggleChapterRedownload -> {
+                _state.update {
+                    val updatedChapters = it.fetchedChapters.map { chapter ->
+                        if (chapter.url == event.chapterUrl) {
+                            val newSource = if (chapter.selectedSource == ChapterSource.WEB) {
+                                getChapterDefaultSource(chapter)
+                            } else {
+                                ChapterSource.WEB
+                            }
+                            chapter.copy(selectedSource = newSource)
+                        } else {
+                            chapter
+                        }
+                    }
+                    it.copy(fetchedChapters = updatedChapters)
+                }
+            }
+            is Event.UpdateChapterSource -> {
+                _state.update {
+                    val updated = it.fetchedChapters.map { ch ->
+                        if (ch.url == event.chapterUrl) ch.copy(selectedSource = event.source) else ch
+                    }
+                    it.copy(fetchedChapters = updated)
                 }
             }
             is Event.UpdateChapterRange -> updateChapterRange(event.start, event.end, event.action)
@@ -387,13 +428,44 @@ class MainViewModel(
                 _state.update { it.copy(showChapterDialog = false) }
             }
             Event.CancelChapterSelection -> {
-                _state.update { it.copy(showChapterDialog = false, fetchedChapters = emptyList(), chapterCacheOverrides = emptySet()) }
+                _state.update { it.copy(showChapterDialog = false, fetchedChapters = emptyList()) }
             }
-            Event.SelectAllChapters -> setAllChaptersSelected(true)
-            Event.DeselectAllChapters -> setAllChaptersSelected(false)
-            Event.SelectAllLocal -> setAllLocalChaptersSelected(true)
-            Event.DeselectAllLocal -> setAllLocalChaptersSelected(false)
-            Event.ToggleAllLocal -> toggleAllLocalChaptersSelected()
+            Event.SelectAllChapters -> _state.update {
+                it.copy(fetchedChapters = it.fetchedChapters.map { ch -> ch.copy(selectedSource = getChapterDefaultSource(ch)) })
+            }
+            Event.DeselectAllChapters -> _state.update {
+                it.copy(fetchedChapters = it.fetchedChapters.map { ch -> ch.copy(selectedSource = null) })
+            }
+            Event.UseAllLocal -> _state.update {
+                it.copy(fetchedChapters = it.fetchedChapters.map { ch ->
+                    if (ch.availableSources.contains(ChapterSource.LOCAL)) ch.copy(selectedSource = ChapterSource.LOCAL) else ch
+                })
+            }
+            Event.IgnoreAllLocal -> _state.update {
+                it.copy(fetchedChapters = it.fetchedChapters.map { ch ->
+                    if (ch.availableSources.contains(ChapterSource.LOCAL)) ch.copy(selectedSource = null) else ch
+                })
+            }
+            Event.RedownloadAllLocal -> _state.update {
+                it.copy(fetchedChapters = it.fetchedChapters.map { ch ->
+                    if (ch.availableSources.contains(ChapterSource.LOCAL)) ch.copy(selectedSource = ChapterSource.WEB) else ch
+                })
+            }
+            Event.UseAllCached -> _state.update {
+                it.copy(fetchedChapters = it.fetchedChapters.map { ch ->
+                    if (ch.availableSources.contains(ChapterSource.CACHE)) ch.copy(selectedSource = ChapterSource.CACHE) else ch
+                })
+            }
+            Event.IgnoreAllCached -> _state.update {
+                it.copy(fetchedChapters = it.fetchedChapters.map { ch ->
+                    if (ch.availableSources.contains(ChapterSource.CACHE)) ch.copy(selectedSource = null) else ch
+                })
+            }
+            Event.RedownloadAllCached -> _state.update {
+                it.copy(fetchedChapters = it.fetchedChapters.map { ch ->
+                    if (ch.availableSources.contains(ChapterSource.CACHE)) ch.copy(selectedSource = ChapterSource.WEB) else ch
+                })
+            }
             Event.StartOperation -> startOperation()
             Event.PauseOperation -> _operationState.value = OperationState.PAUSED
             Event.ResumeOperation -> {
@@ -503,34 +575,6 @@ class MainViewModel(
                     uiState.copy(expandedCacheSeries = newSet)
                 }
             }
-            is Event.ToggleChapterCacheOverride -> {
-                _state.update { uiState ->
-                    val newSet = uiState.chapterCacheOverrides.toMutableSet()
-                    if (newSet.contains(event.chapterUrl)) {
-                        newSet.remove(event.chapterUrl)
-                    } else {
-                        newSet.add(event.chapterUrl)
-                    }
-                    uiState.copy(chapterCacheOverrides = newSet)
-                }
-            }
-            Event.SelectAllCacheOverrides -> {
-                _state.update { uiState ->
-                    val allCachedUrls = uiState.fetchedChapters.filter { it.isCached }.map { it.url }.toSet()
-                    uiState.copy(chapterCacheOverrides = allCachedUrls)
-                }
-            }
-            Event.DeselectAllCacheOverrides -> {
-                _state.update { it.copy(chapterCacheOverrides = emptySet()) }
-            }
-            Event.ToggleAllCacheOverrides -> {
-                _state.update { uiState ->
-                    val allCachedUrls = uiState.fetchedChapters.filter { it.isCached }.map { it.url }.toSet()
-                    val currentOverrides = uiState.chapterCacheOverrides
-                    val newOverrides = allCachedUrls.filter { it !in currentOverrides }.toSet()
-                    uiState.copy(chapterCacheOverrides = newOverrides)
-                }
-            }
             Event.PickLocalFile -> {
                 showFilePicker { path ->
                     if (path != null) {
@@ -552,7 +596,7 @@ class MainViewModel(
             val tempUpdateDir = File(tempDir, "manga-update-${System.currentTimeMillis()}").apply { mkdirs() }
 
             try {
-                val selectedChapters = s.fetchedChapters.filter { it.isSelected }
+                val selectedChapters = s.fetchedChapters.filter { it.selectedSource != null }
                 if (selectedChapters.isEmpty()) {
                     Logger.logError("No chapters selected for operation. Aborting.")
                     _operationState.value = OperationState.IDLE
@@ -560,9 +604,9 @@ class MainViewModel(
                 }
 
                 // --- Categorize and Log the Plan ---
-                val chaptersFromLocal = selectedChapters.filter { it.isLocal }
-                val chaptersFromCache = selectedChapters.filter { it.isCached && !it.isLocal && it.url !in s.chapterCacheOverrides }
-                val chaptersToDownload = selectedChapters.filter { !it.isLocal && !it.isCached || (it.url in s.chapterCacheOverrides) }
+                val chaptersToExtract = selectedChapters.filter { it.selectedSource == ChapterSource.LOCAL }
+                val chaptersFromCache = selectedChapters.filter { it.selectedSource == ChapterSource.CACHE }
+                val chaptersToDownload = selectedChapters.filter { it.selectedSource == ChapterSource.WEB }
 
                 val downloadOptions = createDownloadOptions(s, s.seriesUrl, chaptersToDownload)
                 _state.update { it.copy(activeDownloadOptions = downloadOptions) }
@@ -571,18 +615,18 @@ class MainViewModel(
                     chaptersToDownload.size,
                     s.userAgentName,
                     s.perWorkerUserAgent,
-                    localCount = chaptersFromLocal.size,
+                    localCount = chaptersToExtract.size,
                     cacheCount = chaptersFromCache.size
                 )
 
                 val allChapterFolders = mutableListOf<File>()
 
                 // --- SOURCE 1: Local File ---
-                if (s.sourceFilePath != null && chaptersFromLocal.isNotEmpty()) {
+                if (s.sourceFilePath != null && chaptersToExtract.isNotEmpty()) {
                     _state.update { it.copy(progress = 0.1f, progressStatusText = "Extracting local chapters...") }
                     val extracted = downloadService.processorService.extractChaptersToDirectory(
                         File(s.sourceFilePath),
-                        chaptersFromLocal.mapNotNull { it.localSlug },
+                        chaptersToExtract.mapNotNull { it.localSlug },
                         tempUpdateDir
                     )
                     allChapterFolders.addAll(extracted)
@@ -640,7 +684,6 @@ class MainViewModel(
                     it.copy(
                         activeDownloadOptions = null,
                         deleteCacheOnCancel = false,
-                        chapterCacheOverrides = emptySet(),
                         progress = 0f,
                         progressStatusText = "",
                         sourceFilePath = null,
@@ -712,13 +755,22 @@ class MainViewModel(
                     val isLocal = originalLocalSlug != null
                     val isCached = sanitizedTitle in cachedChapterNames
 
+                    val sources = mutableSetOf(ChapterSource.WEB)
+                    if (isLocal) sources.add(ChapterSource.LOCAL)
+                    if (isCached) sources.add(ChapterSource.CACHE)
+
+                    val defaultSource = when {
+                        isLocal -> ChapterSource.LOCAL
+                        isCached -> ChapterSource.CACHE
+                        else -> ChapterSource.WEB
+                    }
+
                     Chapter(
                         url = chapUrl,
                         title = title,
-                        isLocal = isLocal,
-                        localSlug = originalLocalSlug,
-                        isCached = isCached,
-                        isSelected = true // By default, select all available chapters (local, cached, and new)
+                        availableSources = sources,
+                        selectedSource = defaultSource,
+                        localSlug = originalLocalSlug
                     )
                 }.sortedWith(compareBy(naturalSortComparator) { it.title })
 
@@ -770,47 +822,12 @@ class MainViewModel(
             val updatedChapters = it.fetchedChapters.mapIndexed { index, chapter ->
                 if (index + 1 in start..end) {
                     when (action) {
-                        RangeAction.SELECT -> chapter.copy(isSelected = true)
-                        RangeAction.DESELECT -> chapter.copy(isSelected = false)
-                        RangeAction.TOGGLE -> chapter.copy(isSelected = !chapter.isSelected)
+                        RangeAction.SELECT -> chapter.copy(selectedSource = getChapterDefaultSource(chapter))
+                        RangeAction.DESELECT -> chapter.copy(selectedSource = null)
+                        RangeAction.TOGGLE -> chapter.copy(
+                            selectedSource = if (chapter.selectedSource == null) getChapterDefaultSource(chapter) else null
+                        )
                     }
-                } else {
-                    chapter
-                }
-            }
-            it.copy(fetchedChapters = updatedChapters)
-        }
-    }
-
-    private fun setAllChaptersSelected(isSelected: Boolean) {
-        _state.update {
-            val updatedChapters = it.fetchedChapters.map { chapter ->
-                chapter.copy(isSelected = isSelected)
-            }
-            it.copy(fetchedChapters = updatedChapters)
-        }
-    }
-
-    private fun setAllLocalChaptersSelected(isSelected: Boolean) {
-        _state.update {
-            val updatedChapters = it.fetchedChapters.map { chapter ->
-                if (chapter.isLocal) {
-                    chapter.copy(isSelected = isSelected)
-                } else {
-                    chapter
-                }
-            }
-            it.copy(fetchedChapters = updatedChapters)
-        }
-    }
-
-    private fun toggleAllLocalChaptersSelected() {
-        _state.update {
-            // If not all local chapters are selected, the action is to select them all. Otherwise, deselect them.
-            val shouldSelectAll = !it.fetchedChapters.filter { c -> c.isLocal }.all { c -> c.isSelected }
-            val updatedChapters = it.fetchedChapters.map { chapter ->
-                if (chapter.isLocal) {
-                    chapter.copy(isSelected = shouldSelectAll)
                 } else {
                     chapter
                 }

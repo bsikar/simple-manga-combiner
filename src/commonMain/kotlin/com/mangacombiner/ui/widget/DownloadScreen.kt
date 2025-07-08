@@ -295,7 +295,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                     Button(
                         onClick = { onEvent(MainViewModel.Event.StartOperation) },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = state.fetchedChapters.any { it.isSelected }
+                        enabled = state.fetchedChapters.any { it.selectedSource != null }
                     ) {
                         Text(buttonText)
                     }

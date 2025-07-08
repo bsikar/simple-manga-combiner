@@ -37,17 +37,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.mangacombiner.ui.viewmodel.ChapterSource
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.RangeAction
 import com.mangacombiner.ui.viewmodel.UiState
 
 @Composable
 fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
-    val selectedCount = state.fetchedChapters.count { it.isSelected }
+    val selectedCount = state.fetchedChapters.count { it.selectedSource != null }
     var rangeStart by remember { mutableStateOf("") }
     var rangeEnd by remember { mutableStateOf("") }
-    val hasCachedChapters = state.fetchedChapters.any { it.isCached }
-    val hasLocalChapters = state.fetchedChapters.any { it.isLocal }
+    val hasCachedChapters = state.fetchedChapters.any { it.availableSources.contains(ChapterSource.CACHE) }
+    val hasLocalChapters = state.fetchedChapters.any { it.availableSources.contains(ChapterSource.LOCAL) }
     val isSyncMode = state.sourceFilePath != null
 
     Dialog(onDismissRequest = { onEvent(MainViewModel.Event.CancelChapterSelection) }) {
@@ -70,27 +71,27 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                     }
                     if (hasLocalChapters) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { onEvent(MainViewModel.Event.SelectAllLocal) }) {
-                                Text("Select All (Local)")
+                            Button(onClick = { onEvent(MainViewModel.Event.UseAllLocal) }) {
+                                Text("Use All (Local)")
                             }
-                            Button(onClick = { onEvent(MainViewModel.Event.DeselectAllLocal) }) {
-                                Text("Deselect All (Local)")
+                            Button(onClick = { onEvent(MainViewModel.Event.IgnoreAllLocal) }) {
+                                Text("Ignore All (Local)")
                             }
-                            Button(onClick = { onEvent(MainViewModel.Event.ToggleAllLocal) }) {
-                                Text("Toggle All (Local)")
+                            Button(onClick = { onEvent(MainViewModel.Event.RedownloadAllLocal) }) {
+                                Text("Re-download All (Local)")
                             }
                         }
                     }
                     if (hasCachedChapters) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { onEvent(MainViewModel.Event.SelectAllCacheOverrides) }) {
-                                Text("Re-download All (Cached)")
-                            }
-                            Button(onClick = { onEvent(MainViewModel.Event.DeselectAllCacheOverrides) }) {
+                            Button(onClick = { onEvent(MainViewModel.Event.UseAllCached) }) {
                                 Text("Use All (Cached)")
                             }
-                            Button(onClick = { onEvent(MainViewModel.Event.ToggleAllCacheOverrides) }) {
-                                Text("Toggle All (Cached)")
+                            Button(onClick = { onEvent(MainViewModel.Event.IgnoreAllCached) }) {
+                                Text("Ignore All (Cached)")
+                            }
+                            Button(onClick = { onEvent(MainViewModel.Event.RedownloadAllCached) }) {
+                                Text("Re-download All (Cached)")
                             }
                         }
                     }
@@ -160,67 +161,54 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                     itemsIndexed(state.fetchedChapters, key = { _, chapter -> chapter.url }) { index, chapter ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
-                                checked = chapter.isSelected,
-                                onCheckedChange = { onEvent(MainViewModel.Event.ToggleChapterSelection(chapter.url, !chapter.isSelected)) },
+                                checked = chapter.selectedSource != null,
+                                onCheckedChange = { isChecked ->
+                                    onEvent(MainViewModel.Event.ToggleChapterSelection(chapter.url, isChecked))
+                                },
                             )
+                            val isLocal = chapter.availableSources.contains(ChapterSource.LOCAL)
+                            val isCached = chapter.availableSources.contains(ChapterSource.CACHE)
+
                             val statusColor = when {
-                                chapter.isLocal && chapter.isCached -> MaterialTheme.colors.secondary
-                                chapter.isLocal -> MaterialTheme.colors.primary
-                                chapter.isCached -> MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                                isLocal && isCached -> MaterialTheme.colors.secondary
+                                isLocal -> MaterialTheme.colors.primary
+                                isCached -> MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                                 else -> LocalContentColor.current
                             }
+
                             Text(
                                 text = "${index + 1}. ${chapter.title}",
                                 style = MaterialTheme.typography.body1,
                                 modifier = Modifier.weight(1f),
-                                color = statusColor
+                                color = if (chapter.selectedSource != null) statusColor else LocalContentColor.current.copy(alpha = 0.38f)
                             )
 
-                            if (chapter.isLocal && chapter.isCached) {
-                                Icon(
-                                    Icons.Default.Save,
-                                    contentDescription = "Local",
-                                    tint = statusColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                            if (isLocal && isCached) {
+                                Icon(Icons.Default.Save, "Local", tint = statusColor, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(2.dp))
-                                Icon(
-                                    Icons.Default.Cloud,
-                                    contentDescription = "Cached",
-                                    tint = statusColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                Icon(Icons.Default.Cloud, "Cached", tint = statusColor, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("(Local & Cached)", style = MaterialTheme.typography.body2, color = statusColor)
                                 Spacer(Modifier.width(8.dp))
-                            } else if (chapter.isLocal) {
-                                Icon(
-                                    Icons.Default.Save,
-                                    contentDescription = "Local",
-                                    tint = statusColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                            } else if (isLocal) {
+                                Icon(Icons.Default.Save, "Local", tint = statusColor, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("(Local)", style = MaterialTheme.typography.body2, color = statusColor)
                                 Spacer(Modifier.width(8.dp))
-                            } else if (chapter.isCached) {
-                                Icon(
-                                    Icons.Default.Cloud,
-                                    contentDescription = "Cached",
-                                    tint = statusColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                            } else if (isCached) {
+                                Icon(Icons.Default.Cloud, "Cached", tint = statusColor, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("(Cached)", style = MaterialTheme.typography.body2, color = statusColor)
                                 Spacer(Modifier.width(8.dp))
                             }
 
-                            if (chapter.isLocal || chapter.isCached) {
+                            if (isLocal || isCached) {
                                 Text("Re-download:", style = MaterialTheme.typography.body2)
                                 Spacer(Modifier.width(4.dp))
                                 Switch(
-                                    checked = chapter.url in state.chapterCacheOverrides,
-                                    onCheckedChange = { onEvent(MainViewModel.Event.ToggleChapterCacheOverride(chapter.url)) }
+                                    checked = chapter.selectedSource == ChapterSource.WEB,
+                                    onCheckedChange = { onEvent(MainViewModel.Event.ToggleChapterRedownload(chapter.url)) },
+                                    enabled = chapter.selectedSource != null
                                 )
                             }
                         }
