@@ -1,12 +1,41 @@
 package com.mangacombiner.ui.widget
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.*
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
+import androidx.compose.material.Card
+import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.Icon
+import androidx.compose.material.LinearProgressIndicator
+import androidx.compose.material.LocalContentColor
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.OutlinedButton
+import androidx.compose.material.OutlinedTextField
+import androidx.compose.material.Switch
+import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -23,6 +52,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
 
     Column(modifier = Modifier.fillMaxSize()) {
         val isIdle = state.operationState == OperationState.IDLE
+        val isRunning = state.operationState == OperationState.RUNNING || state.operationState == OperationState.PAUSED
         val isProcessing = state.operationState != OperationState.CANCELLING
 
         Column(
@@ -196,7 +226,26 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
+
+        if (isRunning) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                LinearProgressIndicator(
+                    progress = state.progress,
+                    modifier = Modifier.fillMaxWidth().height(8.dp)
+                )
+                Text(
+                    text = state.progressStatusText,
+                    style = MaterialTheme.typography.caption
+                )
+            }
+        } else {
+            Spacer(Modifier.height(16.dp))
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth().height(48.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -205,7 +254,8 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 OperationState.IDLE -> {
                     Button(
                         onClick = { onEvent(MainViewModel.Event.StartOperation) },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = state.fetchedChapters.any { it.isSelected }
                     ) {
                         Text("Start Operation")
                     }

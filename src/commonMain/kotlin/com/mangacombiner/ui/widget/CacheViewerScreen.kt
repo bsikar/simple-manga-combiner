@@ -109,10 +109,25 @@ fun CacheViewerScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 }
             }
             Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Button(
+                    onClick = { onEvent(MainViewModel.Event.SelectAllCache) },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Select All") }
+                Button(
+                    onClick = { onEvent(MainViewModel.Event.DeselectAllCache) },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Deselect All") }
+            }
+            Spacer(Modifier.height(8.dp))
             Button(
                 onClick = { onEvent(MainViewModel.Event.RequestDeleteSelectedCacheItems) },
                 enabled = state.cacheItemsToDelete.isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
@@ -157,7 +172,6 @@ private fun CacheSeriesItem(
 
     Card(elevation = 4.dp) {
         Column {
-            // Series Header
             Row(
                 modifier = Modifier
                     .clickable { onEvent(MainViewModel.Event.ToggleCacheSeries(series.path)) }
@@ -165,7 +179,7 @@ private fun CacheSeriesItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val chapterPaths = remember(series.chapters) { series.chapters.map { it.path }.toSet() }
-                val isSeriesSelected = selectedPaths.containsAll(chapterPaths) && chapterPaths.isNotEmpty()
+                val isSeriesSelected = chapterPaths.isNotEmpty() && selectedPaths.containsAll(chapterPaths)
                 Checkbox(
                     checked = isSeriesSelected,
                     onCheckedChange = { onEvent(MainViewModel.Event.SelectAllCachedChapters(series.path, !isSeriesSelected)) }
@@ -217,10 +231,8 @@ private fun CacheSeriesItem(
                 }
             }
 
-            // Collapsible Content
             AnimatedVisibility(visible = isExpanded) {
                 Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
-                    // Selection Controls
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 16.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { onEvent(MainViewModel.Event.SelectAllCachedChapters(series.path, true)) }) { Text("Select All") }
@@ -264,7 +276,6 @@ private fun CacheSeriesItem(
                         }
                     }
 
-                    // Chapter List
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
 
                     val chaptersToDisplay = remember(series.chapters, sortState) {

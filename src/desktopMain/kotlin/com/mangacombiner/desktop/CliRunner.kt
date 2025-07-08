@@ -59,7 +59,6 @@ fun main(args: Array<String>) {
         return
     }
 
-    // Manually validate the userAgentName input
     val allowedUserAgents = UserAgent.browsers.keys + "Random"
     if (userAgentName !in allowedUserAgents) {
         println("Error: '$userAgentName' is not a valid user agent. Please choose from: ${allowedUserAgents.joinToString(", ")}")
@@ -113,12 +112,20 @@ fun main(args: Array<String>) {
                         },
                         outputPath = outputPath,
                         operationState = cliOperationState,
-                        dryRun = dryRun
+                        dryRun = dryRun,
+                        onProgressUpdate = { progress, status ->
+                            val percentage = (progress * 100).toInt()
+                            val barWidth = 20
+                            val doneWidth = (barWidth * progress).toInt()
+                            val bar = "[${"#".repeat(doneWidth)}${"-".repeat(barWidth - doneWidth)}]"
+                            print("\r$bar $percentage% - $status      ") // Use carriage return and padding
+                        }
                     )
 
                     logOperationSettings(downloadOptions, chapters.size, userAgentName, perWorkerUserAgent)
 
                     downloadService.downloadNewSeries(downloadOptions)
+                    println() // Move to the next line after the progress bar is done
                 }
 
                 File(source).exists() -> {

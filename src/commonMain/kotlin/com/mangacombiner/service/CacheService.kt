@@ -73,6 +73,16 @@ class CacheService(private val platformProvider: PlatformProvider) {
         }?.sortedBy { it.seriesName } ?: emptyList()
     }
 
+    fun getCachedChapterNamesForSeries(seriesSlug: String): Set<String> {
+        val seriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
+        if (!seriesDir.exists() || !seriesDir.isDirectory) {
+            return emptySet()
+        }
+        return seriesDir.listFiles(FileFilter { it.isDirectory })
+            ?.map { it.name }
+            ?.toSet() ?: emptySet()
+    }
+
     /**
      * Deletes a list of specified files or directories.
      */
@@ -83,6 +93,8 @@ class CacheService(private val platformProvider: PlatformProvider) {
         }
         Logger.logInfo("Deleting ${pathsToDelete.size} selected cache item(s)...")
         var successCount = 0
+        val parentDirs = pathsToDelete.mapNotNull { File(it).parent }.toSet()
+
         pathsToDelete.forEach { path ->
             val file = File(path)
             if (file.exists()) {
@@ -94,6 +106,15 @@ class CacheService(private val platformProvider: PlatformProvider) {
                 }
             }
         }
+
+        parentDirs.forEach { dirPath ->
+            val dir = File(dirPath)
+            if (dir.exists() && dir.isDirectory && (dir.listFiles()?.isEmpty() == true)) {
+                Logger.logDebug { "Cleaning up empty parent directory: ${dir.name}" }
+                dir.delete()
+            }
+        }
+
         Logger.logInfo("Successfully deleted $successCount item(s).")
     }
 
@@ -107,6 +128,6 @@ class CacheService(private val platformProvider: PlatformProvider) {
             Logger.logInfo("No cache directories found to clear.")
             return
         }
-        deleteCacheItems(allSeries.map { it.path })
+        deleteCacheItems(allSeries.flatMap { series -> series.chapters.map { chapter -> chapter.path } })
     }
 }

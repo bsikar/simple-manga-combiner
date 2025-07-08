@@ -147,7 +147,8 @@ class DownloadService(
         val client = createHttpClient("")
 
         try {
-            for ((url, title) in chapterData) {
+            for ((index, chapter) in chapterData.withIndex()) {
+                val (url, title) = chapter
                 while (options.operationState.value == OperationState.PAUSED) {
                     Logger.logDebug { "Operation is paused. Waiting..." }
                     delay(1000)
@@ -160,6 +161,11 @@ class DownloadService(
                 downloadChapter(options, url, title, downloadDir, client)?.let {
                     downloadedFolders.add(it)
                 }
+
+                val progress = (index + 1).toFloat() / chapterData.size
+                val statusText = "Downloading... (${index + 1} of ${chapterData.size})"
+                options.onProgressUpdate(progress, statusText)
+
                 delay(CHAPTER_DOWNLOAD_DELAY_MS)
             }
         } finally {
@@ -188,6 +194,8 @@ class DownloadService(
             outputDir.mkdirs()
         }
 
+        options.onProgressUpdate(1.0f, "Processing ${downloadedFolders.size} chapters...")
+
         val outputFile = File(outputDir, "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
         if (options.format == "cbz") {
             processorService.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile, options.operationState)
@@ -197,6 +205,7 @@ class DownloadService(
 
         if (options.operationState.value != OperationState.CANCELLING) {
             Logger.logInfo("\nDownload and packaging complete: ${outputFile.absolutePath}")
+            options.onProgressUpdate(1.0f, "Packaging complete!")
         }
     }
 

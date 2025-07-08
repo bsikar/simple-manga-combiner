@@ -15,5 +15,6 @@ data class DownloadOptions(
     val getUserAgents: () -> List<String>,
     val outputPath: String,
     val operationState: StateFlow<OperationState>,
-    val dryRun: Boolean = false
+    val dryRun: Boolean = false,
+    val onProgressUpdate: (progress: Float, status: String) -> Unit
 )
