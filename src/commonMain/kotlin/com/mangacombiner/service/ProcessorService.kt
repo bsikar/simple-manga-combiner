@@ -1,7 +1,9 @@
 package com.mangacombiner.service
 
+import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.SlugUtils
+import kotlinx.coroutines.flow.StateFlow
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import net.lingala.zip4j.model.ZipParameters
@@ -41,9 +43,11 @@ class ProcessorService(
         zipFile.addFile(imageFile, zipParams)
     }
 
-    private fun addChaptersToCbz(zipFile: ZipFile, sortedFolders: List<File>) {
-        sortedFolders.forEach { folder ->
+    private fun addChaptersToCbz(zipFile: ZipFile, sortedFolders: List<File>, operationState: StateFlow<OperationState>?) {
+        for (folder in sortedFolders) {
+            if (operationState?.value == OperationState.CANCELLING) return
             folder.listFiles()?.filter { it.isFile && it.name.isImageFile() }?.sorted()?.forEach { imageFile ->
+                if (operationState?.value == OperationState.CANCELLING) return
                 addImageToCbz(zipFile, folder, imageFile)
             }
         }
@@ -52,7 +56,8 @@ class ProcessorService(
     private fun populateCbzFile(
         zipFile: ZipFile,
         mangaTitle: String,
-        sortedFolders: List<File>
+        sortedFolders: List<File>,
+        operationState: StateFlow<OperationState>?
     ) {
         val cbzGenerator = CbzStructureGenerator(xmlSerializer)
         val (bookmarks, totalPageCount) = cbzGenerator.createBookmarks(sortedFolders)
@@ -63,21 +68,25 @@ class ProcessorService(
         }
 
         val comicInfoXml = cbzGenerator.generateComicInfoXml(mangaTitle, bookmarks, totalPageCount)
-
         val params = ZipParameters().apply { fileNameInZip = COMIC_INFO_FILE }
         zipFile.addStream(comicInfoXml.byteInputStream(), params)
-
-        addChaptersToCbz(zipFile, sortedFolders)
+        addChaptersToCbz(zipFile, sortedFolders, operationState)
     }
 
     private fun buildCbz(
         outputFile: File,
         mangaTitle: String,
-        sortedFolders: List<File>
+        sortedFolders: List<File>,
+        operationState: StateFlow<OperationState>?
     ) {
         try {
             ZipFile(outputFile).use { zipFile ->
-                populateCbzFile(zipFile, mangaTitle, sortedFolders)
+                populateCbzFile(zipFile, mangaTitle, sortedFolders, operationState)
+            }
+            if (operationState?.value == OperationState.CANCELLING) {
+                Logger.logInfo("CBZ creation cancelled. Deleting partial file.")
+                outputFile.delete()
+                return
             }
             Logger.logInfo("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
@@ -88,24 +97,26 @@ class ProcessorService(
     fun createCbzFromFolders(
         mangaTitle: String,
         chapterFolders: List<File>,
-        outputFile: File
+        outputFile: File,
+        operationState: StateFlow<OperationState>? = null
     ) {
         if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
 
         val sortedFolders = sortChapterFolders(chapterFolders)
         Logger.logInfo("Creating CBZ archive: ${outputFile.name}...")
-
-        buildCbz(outputFile, mangaTitle, sortedFolders)
+        buildCbz(outputFile, mangaTitle, sortedFolders, operationState)
     }
 
     private fun addChaptersToEpub(
         epubZip: ZipFile,
         sortedFolders: List<File>,
         epubGenerator: EpubStructureGenerator,
-        metadata: EpubStructureGenerator.EpubMetadata
+        metadata: EpubStructureGenerator.EpubMetadata,
+        operationState: StateFlow<OperationState>?
     ) {
-        sortedFolders.forEach { folder ->
+        for (folder in sortedFolders) {
+            if (operationState?.value == OperationState.CANCELLING) return
             val images = folder.listFiles()?.filter { it.isFile && it.name.isImageFile() }?.sorted()
             if (!images.isNullOrEmpty()) {
                 epubGenerator.addChapterToEpub(images, folder.name, metadata, epubZip)
@@ -116,7 +127,8 @@ class ProcessorService(
     fun createEpubFromFolders(
         mangaTitle: String,
         chapterFolders: List<File>,
-        outputFile: File
+        outputFile: File,
+        operationState: StateFlow<OperationState>? = null
     ) {
         if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
@@ -129,8 +141,17 @@ class ProcessorService(
         try {
             ZipFile(outputFile).use { epubZip ->
                 epubGenerator.addEpubCoreFiles(epubZip)
-                addChaptersToEpub(epubZip, sortedFolders, epubGenerator, metadata)
-                epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, metadata)
+                addChaptersToEpub(epubZip, sortedFolders, epubGenerator, metadata, operationState)
+
+                if (operationState?.value == OperationState.CANCELLING) {
+                    Logger.logInfo("EPUB creation cancelled. Deleting partial file.")
+                } else {
+                    epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, metadata)
+                }
+            }
+            if (operationState?.value == OperationState.CANCELLING) {
+                outputFile.delete()
+                return
             }
             Logger.logInfo("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
@@ -168,7 +189,6 @@ class ProcessorService(
         }
 
         val result = fileConverter.process(options, mangaTitle, outputFile, this)
-
         handlePostProcessing(options.inputFile, result, options.deleteOriginal, options.useTrueDangerousMode)
     }
 

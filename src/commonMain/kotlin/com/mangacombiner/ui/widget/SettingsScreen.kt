@@ -1,14 +1,35 @@
 package com.mangacombiner.ui.widget
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.*
+import androidx.compose.material.AlertDialog
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
+import androidx.compose.material.Card
+import androidx.compose.material.ContentAlpha
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.Icon
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.OutlinedButton
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.MainViewModel
@@ -18,15 +39,19 @@ import com.mangacombiner.ui.viewmodel.UiState
 @Composable
 fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
     var themeDropdownExpanded by remember { mutableStateOf(false) }
+    var outputDropdownExpanded by remember { mutableStateOf(false) }
+    val outputLocations = listOf("Downloads", "Documents", "Desktop", "Custom").filter {
+        // Simple way to hide "Desktop" on Android, which returns null for it
+        !(it == "Desktop" && System.getProperty("java.runtime.name")?.contains("Android") == true)
+    }
 
     Column(
-        modifier = Modifier.verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Card(elevation = 4.dp) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Appearance", style = MaterialTheme.typography.h6)
-                Spacer(Modifier.height(16.dp))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -49,6 +74,56 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                                     themeDropdownExpanded = false
                                 }) { Text(theme.name.lowercase().replaceFirstChar { it.titlecase() }) }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        Card(elevation = 4.dp) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Output Settings", style = MaterialTheme.typography.h6)
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Default Location:", style = MaterialTheme.typography.body1)
+                    Box {
+                        OutlinedButton(onClick = { outputDropdownExpanded = true }) {
+                            Text(state.defaultOutputLocation)
+                            Icon(Icons.Default.ArrowDropDown, "Default Location")
+                        }
+                        DropdownMenu(
+                            expanded = outputDropdownExpanded,
+                            onDismissRequest = { outputDropdownExpanded = false }
+                        ) {
+                            outputLocations.forEach { location ->
+                                DropdownMenuItem(onClick = {
+                                    onEvent(MainViewModel.Event.UpdateDefaultOutputLocation(location))
+                                    outputDropdownExpanded = false
+                                }) { Text(location) }
+                            }
+                        }
+                    }
+                }
+
+                if (state.defaultOutputLocation == "Custom") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Path: ${state.customDefaultOutputPath}",
+                            style = MaterialTheme.typography.body2,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Button(onClick = { onEvent(MainViewModel.Event.PickCustomDefaultPath) }) {
+                            Text("Browse...")
                         }
                     }
                 }

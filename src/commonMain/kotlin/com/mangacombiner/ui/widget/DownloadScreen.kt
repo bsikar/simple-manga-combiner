@@ -23,7 +23,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
 
     Column(modifier = Modifier.fillMaxSize()) {
         val isIdle = state.operationState == OperationState.IDLE
-        val isPaused = state.operationState == OperationState.PAUSED
+        val isProcessing = state.operationState != OperationState.CANCELLING
 
         Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
@@ -61,16 +61,16 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         onValueChange = { onEvent(MainViewModel.Event.UpdateCustomTitle(it)) },
                         label = { Text("Custom Title (Optional)") },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = isIdle || isPaused
+                        enabled = isProcessing
                     )
 
                     OutlinedTextField(
                         value = state.outputPath,
                         onValueChange = { onEvent(MainViewModel.Event.UpdateOutputPath(it)) },
                         label = { Text("Output Directory (Optional)") },
-                        placeholder = { Text("Default: Same folder as the app") },
+                        placeholder = { Text("Default: Your Downloads folder") },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = isIdle || isPaused
+                        enabled = isProcessing
                     )
 
                     Row(
@@ -89,7 +89,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                             OutlinedButton(
                                 onClick = { formatDropdownExpanded = true },
                                 modifier = Modifier.fillMaxWidth(),
-                                enabled = isIdle || isPaused
+                                enabled = isProcessing
                             ) {
                                 Text("Format: ${state.outputFormat.uppercase()}")
                                 Icon(Icons.Default.ArrowDropDown, "Format")
@@ -119,12 +119,12 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
 
                     FormControlLabel(
                         onClick = { onEvent(MainViewModel.Event.ToggleDebugLog(!state.debugLog)) },
-                        enabled = isIdle,
+                        enabled = true,
                         control = {
                             Switch(
                                 checked = state.debugLog,
                                 onCheckedChange = { onEvent(MainViewModel.Event.ToggleDebugLog(it)) },
-                                enabled = isIdle
+                                enabled = true
                             )
                         },
                         label = { Text("Enable Debug Logging") }

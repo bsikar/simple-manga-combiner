@@ -6,4 +6,7 @@ package com.mangacombiner.util
  */
 interface PlatformProvider {
     fun getTmpDir(): String
+    fun getUserDownloadsDir(): String?
+    fun getUserDocumentsDir(): String?
+    fun getUserDesktopDir(): String?
 }

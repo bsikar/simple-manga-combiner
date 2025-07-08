@@ -1,7 +1,7 @@
 package com.mangacombiner.service
 
 import com.mangacombiner.util.Logger
-import com.mangacombiner.util.getTmpDir
+import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.titlecase
 import java.io.File
 import java.io.FileFilter
@@ -22,11 +22,9 @@ data class CachedSeries(
 )
 
 /**
- * A service object for managing the application's cache of partial downloads.
+ * A service class for managing the application's cache of partial downloads.
  */
-object CacheService {
-
-    private const val APP_DIR_PREFIX = "manga-dl-"
+class CacheService(private val platformProvider: PlatformProvider) {
 
     private fun formatSize(bytes: Long): String {
         return when {
@@ -40,11 +38,11 @@ object CacheService {
      * Scans the temporary directory and returns a structured list of cached series and their chapters.
      */
     fun getCacheContents(): List<CachedSeries> {
-        val temp = File(getTmpDir())
+        val temp = File(platformProvider.getTmpDir())
         if (!temp.exists() || !temp.isDirectory) return emptyList()
 
         return temp.listFiles(FileFilter { file ->
-            file.isDirectory && file.name.startsWith(APP_DIR_PREFIX)
+            file.isDirectory && file.name.startsWith("manga-dl-")
         })?.map { seriesDir ->
             val chapters = seriesDir.listFiles(FileFilter { it.isDirectory })?.map { chapterDir ->
                 val files = chapterDir.walk().filter { it.isFile }
@@ -58,12 +56,12 @@ object CacheService {
             }?.sortedBy { it.name } ?: emptyList()
 
             CachedSeries(
-                seriesName = seriesDir.name.removePrefix(APP_DIR_PREFIX).replace('-', ' ').titlecase(),
+                seriesName = seriesDir.name.removePrefix("manga-dl-").replace('-', ' ').titlecase(),
                 path = seriesDir.absolutePath,
                 chapters = chapters,
                 totalSizeFormatted = formatSize(seriesDir.walk().sumOf { it.length() })
             )
-        } ?: emptyList()
+        }?.sortedBy { it.seriesName } ?: emptyList()
     }
 
     /**

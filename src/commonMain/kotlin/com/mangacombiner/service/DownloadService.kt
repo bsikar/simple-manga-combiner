@@ -31,8 +31,8 @@ enum class DownloadCompletionStatus {
 }
 
 class DownloadService(
-    private val scraperService: ScraperService,
-    private val processorService: ProcessorService
+    val processorService: ProcessorService,
+    private val scraperService: ScraperService
 ) {
     private companion object {
         const val IMAGE_DOWNLOAD_DELAY_MS = 500L
@@ -43,7 +43,6 @@ class DownloadService(
     private suspend fun writeChannelToFile(channel: ByteReadChannel, file: File) {
         file.outputStream().use { output ->
             while (!channel.isClosedForRead) {
-                // readRemaining suspends until data is available or the channel is closed
                 val packet = channel.readRemaining(BUFFER_SIZE.toLong())
                 while (packet.isNotEmpty) {
                     val bytes = packet.readBytes()
@@ -55,7 +54,7 @@ class DownloadService(
 
     private suspend fun downloadFile(client: HttpClient, url: String, outputFile: File): Boolean {
         if (outputFile.exists()) {
-            Logger.logInfo("File already exists, skipping: ${outputFile.name}")
+            Logger.logDebug { "File already exists, skipping: ${outputFile.name}" }
             return true
         }
 
@@ -88,7 +87,6 @@ class DownloadService(
             chapterDir.mkdirs()
         }
 
-        // Check for pause/cancel before fetching image URLs
         while (options.operationState.value == OperationState.PAUSED) {
             delay(1000)
         }
@@ -140,36 +138,33 @@ class DownloadService(
         Logger.logInfo("Downloading ${chapterData.size} chapters...")
         val downloadedFolders = mutableListOf<File>()
 
-        // Get a list of user agents once, based on settings.
-        // A new client will be created per chapter to cycle through user agents if needed.
-        val userAgents = options.getUserAgents()
+        val client = createHttpClient(options.getUserAgents().random())
 
-        for ((url, title) in chapterData) {
-            // Check for pause/cancel before each chapter
-            while (options.operationState.value == OperationState.PAUSED) {
-                Logger.logDebug { "Operation is paused. Waiting..." }
-                delay(1000)
-            }
-            if (options.operationState.value != OperationState.RUNNING) {
-                return null // Cancelled
-            }
+        try {
+            for ((url, title) in chapterData) {
+                while (options.operationState.value == OperationState.PAUSED) {
+                    Logger.logDebug { "Operation is paused. Waiting..." }
+                    delay(1000)
+                }
+                if (options.operationState.value != OperationState.RUNNING) {
+                    return null // Cancelled
+                }
 
-            // Create ONE client per chapter, using a random user agent from the pre-generated list.
-            // This is a trade-off for performance vs. creating a client per image download.
-            val client = createHttpClient(userAgents.random())
-            try {
                 Logger.logInfo("--> Processing chapter ${downloadedFolders.size + 1}/${chapterData.size}: $title")
                 downloadChapter(options, url, title, downloadDir, client)?.let {
                     downloadedFolders.add(it)
                 }
-                // Add delay between starting to download chapters to avoid rate-limiting
                 delay(CHAPTER_DOWNLOAD_DELAY_MS)
-            } finally {
-                // Close the client after each chapter is fully processed
-                client.close()
             }
+        } finally {
+            client.close()
         }
+
         return downloadedFolders
+    }
+
+    suspend fun downloadChaptersOnly(options: DownloadOptions, downloadDir: File): List<File>? {
+        return downloadChapters(options, downloadDir)
     }
 
     private fun processDownloadedChapters(
@@ -189,11 +184,14 @@ class DownloadService(
 
         val outputFile = File(outputDir, "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
         if (options.format == "cbz") {
-            processorService.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile)
+            processorService.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile, options.operationState)
         } else {
-            processorService.createEpubFromFolders(mangaTitle, downloadedFolders, outputFile)
+            processorService.createEpubFromFolders(mangaTitle, downloadedFolders, outputFile, options.operationState)
         }
-        Logger.logInfo("\nDownload and packaging complete: ${outputFile.absolutePath}")
+
+        if (options.operationState.value != OperationState.CANCELLING) {
+            Logger.logInfo("\nDownload and packaging complete: ${outputFile.absolutePath}")
+        }
     }
 
     suspend fun downloadNewSeries(options: DownloadOptions): DownloadCompletionStatus {
@@ -228,14 +226,17 @@ class DownloadService(
         try {
             val downloadedFolders = downloadChapters(options, downloadDir)
 
-            // If the operation state changed from RUNNING, it was cancelled.
             if (options.operationState.value != OperationState.RUNNING) {
                 return DownloadCompletionStatus.CANCELLED
             }
 
-            // downloadChapters returns null if cancelled, or a list (even if empty) otherwise.
             if (downloadedFolders != null) {
                 processDownloadedChapters(options, mangaTitle, downloadedFolders)
+
+                if (options.operationState.value == OperationState.CANCELLING) {
+                    return DownloadCompletionStatus.CANCELLED
+                }
+
                 Logger.logInfo("Cleaning up temporary files...")
                 if (downloadDir.deleteRecursively()) {
                     Logger.logInfo("Cleanup successful.")
