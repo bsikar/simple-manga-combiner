@@ -93,14 +93,17 @@ class CacheService(private val platformProvider: PlatformProvider) {
         }
         Logger.logInfo("Deleting ${pathsToDelete.size} selected cache item(s)...")
         var successCount = 0
+        var spaceFreed = 0L
         val parentDirs = pathsToDelete.mapNotNull { File(it).parent }.toSet()
 
         pathsToDelete.forEach { path ->
             val file = File(path)
             if (file.exists()) {
+                val sizeOfFile = file.walk().sumOf { it.length() }
                 if (file.deleteRecursively()) {
                     Logger.logDebug { "Deleted: $path" }
                     successCount++
+                    spaceFreed += sizeOfFile
                 } else {
                     Logger.logError("Failed to delete: $path")
                 }
@@ -115,7 +118,7 @@ class CacheService(private val platformProvider: PlatformProvider) {
             }
         }
 
-        Logger.logInfo("Successfully deleted $successCount item(s).")
+        Logger.logInfo("Successfully deleted $successCount item(s), freeing up ${formatSize(spaceFreed)} of space.")
     }
 
     /**

@@ -89,7 +89,14 @@ data class UiState(
     val cacheSortState: Map<String, CacheSortState?> = emptyMap(),
     val expandedCacheSeries: Set<String> = emptySet(),
     val logAutoscrollEnabled: Boolean = true,
-    val activeDownloadOptions: DownloadOptions? = null
+    val activeDownloadOptions: DownloadOptions? = null,
+    val settingsLocationDescription: String = "",
+    val isSettingsLocationOpenable: Boolean = false,
+    val zoomFactor: Float = 1.0f,
+    val fontSizePreset: String = "Medium",
+    val systemLightTheme: AppTheme = AppTheme.LIGHT,
+    val systemDarkTheme: AppTheme = AppTheme.DARK,
+    val showRestoreDefaultsDialog: Boolean = false
 )
 
 /**
@@ -104,7 +111,11 @@ private fun UiState.toAppSettings() = AppSettings(
     userAgentName = this.userAgentName,
     perWorkerUserAgent = this.perWorkerUserAgent,
     debugLog = this.debugLog,
-    logAutoscrollEnabled = this.logAutoscrollEnabled
+    logAutoscrollEnabled = this.logAutoscrollEnabled,
+    zoomFactor = this.zoomFactor,
+    fontSizePreset = this.fontSizePreset,
+    systemLightTheme = this.systemLightTheme,
+    systemDarkTheme = this.systemDarkTheme
 )
 
 @OptIn(FlowPreview::class)
@@ -138,7 +149,13 @@ class MainViewModel(
                 userAgentName = savedSettings.userAgentName,
                 perWorkerUserAgent = savedSettings.perWorkerUserAgent,
                 debugLog = savedSettings.debugLog,
-                logAutoscrollEnabled = savedSettings.logAutoscrollEnabled
+                logAutoscrollEnabled = savedSettings.logAutoscrollEnabled,
+                settingsLocationDescription = platformProvider.getSettingsLocationDescription(),
+                isSettingsLocationOpenable = platformProvider.isSettingsLocationOpenable(),
+                zoomFactor = savedSettings.zoomFactor,
+                fontSizePreset = savedSettings.fontSizePreset,
+                systemLightTheme = savedSettings.systemLightTheme,
+                systemDarkTheme = savedSettings.systemDarkTheme
             )
         )
         state = _state.asStateFlow()
@@ -204,6 +221,9 @@ class MainViewModel(
         data class SetCacheSort(val seriesPath: String, val sortState: CacheSortState?) : Event()
         data class ToggleCacheSeries(val seriesPath: String) : Event()
         data class ToggleChapterCacheOverride(val chapterUrl: String) : Event()
+        data class UpdateFontSizePreset(val preset: String) : Event()
+        data class UpdateSystemLightTheme(val theme: AppTheme) : Event()
+        data class UpdateSystemDarkTheme(val theme: AppTheme) : Event()
         object PickCustomDefaultPath : Event()
         object PickOutputPath : Event()
         object ToggleLogAutoscroll : Event()
@@ -232,6 +252,13 @@ class MainViewModel(
         object SelectAllCacheOverrides : Event()
         object DeselectAllCacheOverrides : Event()
         object ToggleAllCacheOverrides : Event()
+        object OpenSettingsLocation : Event()
+        object ZoomIn : Event()
+        object ZoomOut : Event()
+        object ZoomReset : Event()
+        object RequestRestoreDefaults : Event()
+        object ConfirmRestoreDefaults : Event()
+        object CancelRestoreDefaults : Event()
     }
 
     fun onEvent(event: Event) {
@@ -259,6 +286,55 @@ class MainViewModel(
                         _state.update { it.copy(outputPath = path) }
                     }
                 }
+            }
+            Event.OpenSettingsLocation -> {
+                viewModelScope.launch(Dispatchers.IO) {
+                    platformProvider.openSettingsLocation()
+                }
+            }
+            Event.ZoomIn -> {
+                _state.update { it.copy(zoomFactor = (it.zoomFactor + 0.1f).coerceIn(0.5f, 2.0f)) }
+            }
+            Event.ZoomOut -> {
+                _state.update { it.copy(zoomFactor = (it.zoomFactor - 0.1f).coerceIn(0.5f, 2.0f)) }
+            }
+            Event.ZoomReset -> {
+                _state.update { it.copy(zoomFactor = 1.0f) }
+            }
+            is Event.UpdateFontSizePreset -> _state.update { it.copy(fontSizePreset = event.preset) }
+            is Event.UpdateSystemLightTheme -> {
+                if (event.theme != AppTheme.SYSTEM) {
+                    _state.update { it.copy(systemLightTheme = event.theme) }
+                }
+            }
+            is Event.UpdateSystemDarkTheme -> {
+                if (event.theme != AppTheme.SYSTEM) {
+                    _state.update { it.copy(systemDarkTheme = event.theme) }
+                }
+            }
+            Event.RequestRestoreDefaults -> _state.update { it.copy(showRestoreDefaultsDialog = true) }
+            Event.CancelRestoreDefaults -> _state.update { it.copy(showRestoreDefaultsDialog = false) }
+            Event.ConfirmRestoreDefaults -> {
+                val defaultSettings = AppSettings()
+                _state.update {
+                    it.copy(
+                        showRestoreDefaultsDialog = false,
+                        theme = defaultSettings.theme,
+                        defaultOutputLocation = defaultSettings.defaultOutputLocation,
+                        customDefaultOutputPath = defaultSettings.customDefaultOutputPath,
+                        workers = defaultSettings.workers,
+                        outputFormat = defaultSettings.outputFormat,
+                        userAgentName = defaultSettings.userAgentName,
+                        perWorkerUserAgent = defaultSettings.perWorkerUserAgent,
+                        debugLog = defaultSettings.debugLog,
+                        logAutoscrollEnabled = defaultSettings.logAutoscrollEnabled,
+                        zoomFactor = defaultSettings.zoomFactor,
+                        fontSizePreset = defaultSettings.fontSizePreset,
+                        systemLightTheme = defaultSettings.systemLightTheme,
+                        systemDarkTheme = defaultSettings.systemDarkTheme
+                    )
+                }
+                Logger.logInfo("All settings restored to default values.")
             }
             is Event.UpdateOutputPath -> _state.update { it.copy(outputPath = event.path) }
             is Event.Navigate -> {

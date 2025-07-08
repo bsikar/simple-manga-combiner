@@ -9,4 +9,7 @@ interface PlatformProvider {
     fun getUserDownloadsDir(): String?
     fun getUserDocumentsDir(): String?
     fun getUserDesktopDir(): String?
+    fun getSettingsLocationDescription(): String
+    fun isSettingsLocationOpenable(): Boolean
+    fun openSettingsLocation()
 }

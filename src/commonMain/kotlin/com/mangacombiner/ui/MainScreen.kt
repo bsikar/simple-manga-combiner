@@ -46,6 +46,7 @@ fun MainScreen(viewModel: MainViewModel) {
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colors.background)) {
         Row(modifier = Modifier.fillMaxSize()) {
+            val showNavLabels = state.fontSizePreset != "Large"
             NavigationRail(
                 modifier = Modifier.fillMaxHeight(),
                 backgroundColor = MaterialTheme.colors.surface
@@ -55,7 +56,7 @@ fun MainScreen(viewModel: MainViewModel) {
                         selected = state.currentScreen == Screen.DOWNLOAD,
                         onClick = { viewModel.onEvent(MainViewModel.Event.Navigate(Screen.DOWNLOAD)) },
                         icon = { Icon(Icons.Default.Download, contentDescription = "Download") },
-                        label = { Text("Download") },
+                        label = if (showNavLabels) { { Text("Download") } } else null,
                         alwaysShowLabel = false
                     )
                 }
@@ -64,7 +65,7 @@ fun MainScreen(viewModel: MainViewModel) {
                         selected = state.currentScreen == Screen.SETTINGS || state.currentScreen == Screen.CACHE_VIEWER,
                         onClick = { viewModel.onEvent(MainViewModel.Event.Navigate(Screen.SETTINGS)) },
                         icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                        label = { Text("Settings") },
+                        label = if (showNavLabels) { { Text("Settings") } } else null,
                         alwaysShowLabel = false
                     )
                 }

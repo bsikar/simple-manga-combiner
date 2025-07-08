@@ -17,6 +17,10 @@ actual class SettingsRepository(private val context: Context) {
         private const val PER_WORKER_USER_AGENT = "per_worker_user_agent"
         private const val DEBUG_LOG = "debug_log"
         private const val LOG_AUTOSCROLL = "log_autoscroll"
+        private const val ZOOM_FACTOR = "zoom_factor"
+        private const val FONT_SIZE_PRESET = "font_size_preset"
+        private const val SYSTEM_LIGHT_THEME = "system_light_theme"
+        private const val SYSTEM_DARK_THEME = "system_dark_theme"
     }
 
     actual fun saveSettings(settings: AppSettings) {
@@ -30,6 +34,10 @@ actual class SettingsRepository(private val context: Context) {
             putBoolean(PER_WORKER_USER_AGENT, settings.perWorkerUserAgent)
             putBoolean(DEBUG_LOG, settings.debugLog)
             putBoolean(LOG_AUTOSCROLL, settings.logAutoscrollEnabled)
+            putFloat(ZOOM_FACTOR, settings.zoomFactor)
+            putString(FONT_SIZE_PRESET, settings.fontSizePreset)
+            putString(SYSTEM_LIGHT_THEME, settings.systemLightTheme.name)
+            putString(SYSTEM_DARK_THEME, settings.systemDarkTheme.name)
             apply()
         }
     }
@@ -44,7 +52,11 @@ actual class SettingsRepository(private val context: Context) {
             userAgentName = prefs.getString(USER_AGENT_NAME, "Chrome (Windows)") ?: "Chrome (Windows)",
             perWorkerUserAgent = prefs.getBoolean(PER_WORKER_USER_AGENT, false),
             debugLog = prefs.getBoolean(DEBUG_LOG, false),
-            logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, true)
+            logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, true),
+            zoomFactor = prefs.getFloat(ZOOM_FACTOR, 1.0f),
+            fontSizePreset = prefs.getString(FONT_SIZE_PRESET, "Medium") ?: "Medium",
+            systemLightTheme = AppTheme.valueOf(prefs.getString(SYSTEM_LIGHT_THEME, AppTheme.LIGHT.name) ?: AppTheme.LIGHT.name),
+            systemDarkTheme = AppTheme.valueOf(prefs.getString(SYSTEM_DARK_THEME, AppTheme.DARK.name) ?: AppTheme.DARK.name)
         )
     }
 }
