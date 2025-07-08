@@ -7,10 +7,12 @@ import com.mangacombiner.service.LocalFileOptions
 import com.mangacombiner.service.ProcessorService
 import com.mangacombiner.service.ScraperService
 import com.mangacombiner.ui.viewmodel.OperationState
+import com.mangacombiner.ui.viewmodel.UiState
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.createHttpClient
 import com.mangacombiner.util.getTmpDir
+import com.mangacombiner.util.logOperationSettings
 import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
@@ -76,21 +78,28 @@ fun main(args: Array<String>) {
                     // CLI operations are always 'RUNNING' and not interactively pausable
                     val cliOperationState = MutableStateFlow(OperationState.RUNNING)
 
-                    downloadService.downloadNewSeries(
-                        DownloadOptions(
-                            seriesUrl = source,
-                            chaptersToDownload = chapters.toMap(),
-                            cliTitle = title,
-                            imageWorkers = workers,
-                            exclude = exclude,
-                            format = format,
-                            tempDir = tempDir,
-                            userAgents = listOf(defaultUserAgent),
-                            outputPath = outputPath,
-                            operationState = cliOperationState,
-                            dryRun = dryRun
-                        )
+                    val downloadOptions = DownloadOptions(
+                        seriesUrl = source,
+                        chaptersToDownload = chapters.toMap(),
+                        cliTitle = title,
+                        imageWorkers = workers,
+                        exclude = exclude,
+                        format = format,
+                        tempDir = tempDir,
+                        getUserAgents = { listOf(defaultUserAgent) },
+                        outputPath = outputPath,
+                        operationState = cliOperationState,
+                        dryRun = dryRun
                     )
+
+                    // Create a synthetic UiState for logging purposes
+                    val cliUiState = UiState(
+                        userAgentName = "Chrome (Windows)", // The one we are using
+                        perWorkerUserAgent = false
+                    )
+                    logOperationSettings(downloadOptions, chapters.size, cliUiState)
+
+                    downloadService.downloadNewSeries(downloadOptions)
                 }
                 File(source).exists() -> {
                     processorService.processLocalFile(

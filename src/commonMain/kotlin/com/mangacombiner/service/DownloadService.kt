@@ -5,12 +5,15 @@ import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
 import com.mangacombiner.util.titlecase
+import com.mangacombiner.util.toSlug
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.core.isNotEmpty
+import io.ktor.utils.io.core.readBytes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.coroutineScope
@@ -19,7 +22,6 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
-import java.nio.ByteBuffer
 import java.util.Locale
 
 enum class DownloadCompletionStatus {
@@ -38,26 +40,22 @@ class DownloadService(
         const val BUFFER_SIZE = 4096
     }
 
-    fun String.toSlug(): String = this.lowercase()
-        .replace(Regex("https?://(www\\.)?"), "") // Remove http/s and www
-        .replace(Regex("[^a-z0-9]"), "-") // Replace non-alphanumeric with hyphen
-        .replace(Regex("-+"), "-") // Replace multiple hyphens with one
-        .trim('-')
-
     private suspend fun writeChannelToFile(channel: ByteReadChannel, file: File) {
         file.outputStream().use { output ->
-            val buffer = ByteBuffer.allocate(BUFFER_SIZE)
-            while (channel.readAvailable(buffer) != -1) {
-                buffer.flip()
-                output.write(buffer.array(), buffer.arrayOffset(), buffer.limit())
-                buffer.clear()
+            while (!channel.isClosedForRead) {
+                // readRemaining suspends until data is available or the channel is closed
+                val packet = channel.readRemaining(BUFFER_SIZE.toLong())
+                while (packet.isNotEmpty) {
+                    val bytes = packet.readBytes()
+                    output.write(bytes)
+                }
             }
         }
     }
 
     private suspend fun downloadFile(client: HttpClient, url: String, outputFile: File): Boolean {
         if (outputFile.exists()) {
-            Logger.logDebug { "File already exists, skipping: ${outputFile.name}" }
+            Logger.logInfo("File already exists, skipping: ${outputFile.name}")
             return true
         }
 
@@ -141,6 +139,11 @@ class DownloadService(
         val chapterData = options.chaptersToDownload.toList()
         Logger.logInfo("Downloading ${chapterData.size} chapters...")
         val downloadedFolders = mutableListOf<File>()
+
+        // Get a list of user agents once, based on settings.
+        // A new client will be created per chapter to cycle through user agents if needed.
+        val userAgents = options.getUserAgents()
+
         for ((url, title) in chapterData) {
             // Check for pause/cancel before each chapter
             while (options.operationState.value == OperationState.PAUSED) {
@@ -151,15 +154,18 @@ class DownloadService(
                 return null // Cancelled
             }
 
-            val userAgent = options.userAgents.random()
-            val client = createHttpClient(userAgent)
+            // Create ONE client per chapter, using a random user agent from the pre-generated list.
+            // This is a trade-off for performance vs. creating a client per image download.
+            val client = createHttpClient(userAgents.random())
             try {
                 Logger.logInfo("--> Processing chapter ${downloadedFolders.size + 1}/${chapterData.size}: $title")
                 downloadChapter(options, url, title, downloadDir, client)?.let {
                     downloadedFolders.add(it)
                 }
+                // Add delay between starting to download chapters to avoid rate-limiting
                 delay(CHAPTER_DOWNLOAD_DELAY_MS)
             } finally {
+                // Close the client after each chapter is fully processed
                 client.close()
             }
         }

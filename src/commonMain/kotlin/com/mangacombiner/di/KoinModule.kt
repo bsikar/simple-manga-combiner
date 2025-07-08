@@ -19,6 +19,5 @@ val appModule = module {
     // Platform-specific dependencies
     single { getTmpDir() }
 
-    // ViewModel - using factoryOf for concise constructor injection
-    factoryOf(::MainViewModel)
+    // ViewModel is now defined in platform-specific modules
 }

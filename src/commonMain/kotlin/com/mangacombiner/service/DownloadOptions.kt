@@ -12,7 +12,7 @@ data class DownloadOptions(
     val exclude: List<String>,
     val format: String,
     val tempDir: File,
-    val userAgents: List<String>,
+    val getUserAgents: () -> List<String>,
     val outputPath: String,
     val operationState: StateFlow<OperationState>,
     val dryRun: Boolean = false

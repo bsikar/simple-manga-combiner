@@ -117,9 +117,9 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                     Text("Advanced Options", style = MaterialTheme.typography.h6)
                     Spacer(Modifier.height(16.dp))
 
-                    val onToggleDebug: () -> Unit = { onEvent(MainViewModel.Event.ToggleDebugLog(!state.debugLog)) }
                     FormControlLabel(
-                        onClick = onToggleDebug,
+                        onClick = { onEvent(MainViewModel.Event.ToggleDebugLog(!state.debugLog)) },
+                        enabled = isIdle,
                         control = {
                             Switch(
                                 checked = state.debugLog,
@@ -130,9 +130,9 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         label = { Text("Enable Debug Logging") }
                     )
 
-                    val onToggleDryRun: () -> Unit = { onEvent(MainViewModel.Event.ToggleDryRun(!state.dryRun)) }
                     FormControlLabel(
-                        onClick = onToggleDryRun,
+                        onClick = { onEvent(MainViewModel.Event.ToggleDryRun(!state.dryRun)) },
+                        enabled = isIdle,
                         control = {
                             Switch(
                                 checked = state.dryRun,
@@ -143,10 +143,9 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         label = { Text("Dry Run (Simulate Only)") }
                     )
 
-                    val onTogglePerWorker: () -> Unit =
-                        { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(!state.perWorkerUserAgent)) }
                     FormControlLabel(
-                        onClick = onTogglePerWorker,
+                        onClick = { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(!state.perWorkerUserAgent)) },
+                        enabled = isIdle,
                         control = {
                             Switch(
                                 checked = state.perWorkerUserAgent,

@@ -27,7 +27,7 @@ import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
@@ -54,7 +54,7 @@ fun CacheViewerScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = { onEvent(MainViewModel.Event.Navigate(Screen.SETTINGS)) }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back to Settings")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Settings")
             }
             Text("Cached Downloads", style = MaterialTheme.typography.h5, modifier = Modifier.weight(1f))
             IconButton(onClick = { onEvent(MainViewModel.Event.RefreshCacheView) }) {

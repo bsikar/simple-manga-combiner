@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +25,7 @@ import com.mangacombiner.ui.viewmodel.Screen
 import com.mangacombiner.ui.widget.CacheViewerScreen
 import com.mangacombiner.ui.widget.ChapterSelectionDialog
 import com.mangacombiner.ui.widget.DownloadScreen
+import com.mangacombiner.ui.widget.FormControlLabel
 import com.mangacombiner.ui.widget.PlatformTooltip
 import com.mangacombiner.ui.widget.SettingsScreen
 import com.mangacombiner.ui.widget.VerticalSplitter
@@ -36,8 +38,8 @@ fun MainScreen(viewModel: MainViewModel) {
     val listState = rememberLazyListState()
     val splitterState = rememberSplitterState()
 
-    LaunchedEffect(logs.size) {
-        if (logs.isNotEmpty()) {
+    LaunchedEffect(logs.size, state.logAutoscrollEnabled) {
+        if (state.logAutoscrollEnabled && logs.isNotEmpty()) {
             listState.animateScrollToItem(logs.lastIndex)
         }
     }
@@ -85,6 +87,17 @@ fun MainScreen(viewModel: MainViewModel) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Logs", style = MaterialTheme.typography.h6)
                             Spacer(Modifier.weight(1f))
+                            PlatformTooltip(if (state.logAutoscrollEnabled) "Disable Auto-scroll" else "Enable Auto-scroll") {
+                                IconButton(onClick = { viewModel.onEvent(MainViewModel.Event.ToggleLogAutoscroll) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.VerticalAlignBottom,
+                                        contentDescription = "Toggle Auto-scroll",
+                                        tint = if (state.logAutoscrollEnabled) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(
+                                            alpha = ContentAlpha.disabled
+                                        )
+                                    )
+                                }
+                            }
                             PlatformTooltip("Toggle Logs Panel") {
                                 IconButton(onClick = { splitterState.toggle() }) {
                                     Icon(
@@ -157,7 +170,17 @@ fun MainScreen(viewModel: MainViewModel) {
             AlertDialog(
                 onDismissRequest = { viewModel.onEvent(MainViewModel.Event.AbortCancelOperation) },
                 title = { Text("Confirm Cancel") },
-                text = { Text("Are you sure you want to cancel the current operation? All temporary files for this job will be deleted.") },
+                text = {
+                    Column {
+                        Text("Are you sure you want to cancel the current operation?")
+                        Spacer(Modifier.height(16.dp))
+                        FormControlLabel(
+                            onClick = { viewModel.onEvent(MainViewModel.Event.ToggleDeleteCacheOnCancel(!state.deleteCacheOnCancel)) },
+                            control = { Checkbox(checked = state.deleteCacheOnCancel, onCheckedChange = null) },
+                            label = { Text("Delete temporary files for this job") }
+                        )
+                    }
+                },
                 confirmButton = {
                     Button(
                         onClick = { viewModel.onEvent(MainViewModel.Event.ConfirmCancelOperation) },
