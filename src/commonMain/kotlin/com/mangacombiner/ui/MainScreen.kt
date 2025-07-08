@@ -1,22 +1,46 @@
 package com.mangacombiner.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.*
+import androidx.compose.material.AlertDialog
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
+import androidx.compose.material.Checkbox
+import androidx.compose.material.Divider
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.NavigationRail
+import androidx.compose.material.NavigationRailItem
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VerticalAlignBottom
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -25,6 +49,7 @@ import com.mangacombiner.ui.viewmodel.Screen
 import com.mangacombiner.ui.widget.CacheViewerScreen
 import com.mangacombiner.ui.widget.ChapterSelectionDialog
 import com.mangacombiner.ui.widget.DownloadScreen
+import com.mangacombiner.ui.widget.FileUpdaterScreen
 import com.mangacombiner.ui.widget.FormControlLabel
 import com.mangacombiner.ui.widget.PlatformTooltip
 import com.mangacombiner.ui.widget.SettingsScreen
@@ -60,6 +85,15 @@ fun MainScreen(viewModel: MainViewModel) {
                         alwaysShowLabel = false
                     )
                 }
+                PlatformTooltip("File Updater") {
+                    NavigationRailItem(
+                        selected = state.currentScreen == Screen.FILE_UPDATER,
+                        onClick = { viewModel.onEvent(MainViewModel.Event.Navigate(Screen.FILE_UPDATER)) },
+                        icon = { Icon(Icons.Filled.FolderZip, contentDescription = "File Updater") },
+                        label = if (showNavLabels) { { Text("Update") } } else null,
+                        alwaysShowLabel = false
+                    )
+                }
                 PlatformTooltip("Settings") {
                     NavigationRailItem(
                         selected = state.currentScreen == Screen.SETTINGS || state.currentScreen == Screen.CACHE_VIEWER,
@@ -78,6 +112,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     Box(modifier = Modifier.padding(16.dp)) {
                         when (state.currentScreen) {
                             Screen.DOWNLOAD -> DownloadScreen(state, viewModel::onEvent)
+                            Screen.FILE_UPDATER -> FileUpdaterScreen(state, viewModel::onEvent)
                             Screen.SETTINGS -> SettingsScreen(state, viewModel::onEvent)
                             Screen.CACHE_VIEWER -> CacheViewerScreen(state, viewModel::onEvent)
                         }
@@ -94,7 +129,7 @@ fun MainScreen(viewModel: MainViewModel) {
                                         imageVector = Icons.Default.VerticalAlignBottom,
                                         contentDescription = "Toggle Auto-scroll",
                                         tint = if (state.logAutoscrollEnabled) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(
-                                            alpha = ContentAlpha.disabled
+                                            alpha = 0.6f
                                         )
                                     )
                                 }

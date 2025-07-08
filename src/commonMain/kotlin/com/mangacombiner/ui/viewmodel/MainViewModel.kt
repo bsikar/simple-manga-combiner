@@ -16,6 +16,7 @@ import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.createHttpClient
 import com.mangacombiner.util.logOperationSettings
+import com.mangacombiner.util.showFilePicker
 import com.mangacombiner.util.showFolderPicker
 import com.mangacombiner.util.titlecase
 import com.mangacombiner.util.toSlug
@@ -34,6 +35,7 @@ import kotlin.random.Random
 
 enum class Screen {
     DOWNLOAD,
+    FILE_UPDATER,
     SETTINGS,
     CACHE_VIEWER
 }
@@ -43,6 +45,10 @@ data class Chapter(
     val title: String,
     var isSelected: Boolean = true,
     val isCached: Boolean = false
+)
+data class ChapterInFile(
+    val name: String,
+    var isSelected: Boolean = true
 )
 
 enum class RangeAction {
@@ -96,7 +102,11 @@ data class UiState(
     val fontSizePreset: String = "Medium",
     val systemLightTheme: AppTheme = AppTheme.LIGHT,
     val systemDarkTheme: AppTheme = AppTheme.DARK,
-    val showRestoreDefaultsDialog: Boolean = false
+    val showRestoreDefaultsDialog: Boolean = false,
+    // Local File Updater State
+    val localFilePath: String = "",
+    val localFileChapters: List<ChapterInFile> = emptyList(),
+    val isAnalyzingFile: Boolean = false
 )
 
 /**
@@ -259,6 +269,12 @@ class MainViewModel(
         object RequestRestoreDefaults : Event()
         object ConfirmRestoreDefaults : Event()
         object CancelRestoreDefaults : Event()
+
+        // Local File Updater Events
+        object PickLocalFile : Event()
+        data class LoadLocalFile(val path: String) : Event()
+        data class ToggleLocalFileChapterSelection(val chapterName: String, val isSelected: Boolean) : Event()
+        object StartLocalFileUpdate : Event()
     }
 
     fun onEvent(event: Event) {
@@ -514,6 +530,27 @@ class MainViewModel(
                     uiState.copy(chapterCacheOverrides = newOverrides)
                 }
             }
+
+            // Local File Updater Events
+            Event.PickLocalFile -> {
+                showFilePicker { path ->
+                    if (path != null) {
+                        onEvent(Event.LoadLocalFile(path))
+                    }
+                }
+            }
+            is Event.LoadLocalFile -> loadLocalFileChapters(event.path)
+            is Event.ToggleLocalFileChapterSelection -> {
+                _state.update { uiState ->
+                    val updatedChapters = uiState.localFileChapters.map {
+                        if (it.name == event.chapterName) it.copy(isSelected = event.isSelected) else it
+                    }
+                    uiState.copy(localFileChapters = updatedChapters)
+                }
+            }
+            Event.StartLocalFileUpdate -> {
+                startLocalFileUpdate()
+            }
         }
     }
 
@@ -664,6 +701,66 @@ class MainViewModel(
                     progress = 0f,
                     progressStatusText = ""
                 )
+            }
+        }
+    }
+
+    private fun loadLocalFileChapters(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isAnalyzingFile = true, localFilePath = path, localFileChapters = emptyList()) }
+            val file = File(path)
+            if (!file.exists() || !file.isFile) {
+                Logger.logError("Selected path is not a valid file: $path")
+                _state.update { it.copy(isAnalyzingFile = false, localFilePath = "") }
+                return@launch
+            }
+
+            val chapters = downloadService.processorService.getChaptersFromFile(file)
+            if (chapters.isEmpty()) {
+                Logger.logInfo("No chapters could be identified in the file. It might be an unsupported format.")
+            }
+
+            _state.update { uiState ->
+                uiState.copy(
+                    isAnalyzingFile = false,
+                    localFileChapters = chapters.map { ChapterInFile(name = it, isSelected = true) }
+                )
+            }
+        }
+    }
+
+    private fun startLocalFileUpdate() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _operationState.value = OperationState.RUNNING
+            _state.update { it.copy(progress = 0f, progressStatusText = "Starting update...") }
+            val s = _state.value
+            val inputFile = File(s.localFilePath)
+            val chaptersToKeep = s.localFileChapters.filter { it.isSelected }.map { it.name }
+
+            if (chaptersToKeep.isEmpty()) {
+                Logger.logError("No chapters selected to keep. Aborting update.")
+                _operationState.value = OperationState.IDLE
+                return@launch
+            }
+
+            Logger.logInfo("--- Starting Local File Update ---")
+            Logger.logInfo("Input file: ${inputFile.name}")
+            Logger.logInfo("Keeping ${chaptersToKeep.size} of ${s.localFileChapters.size} chapters.")
+
+            _state.update { it.copy(progress = 0.5f, progressStatusText = "Re-packaging file...") }
+
+            downloadService.processorService.updateLocalFile(
+                inputFile = inputFile,
+                chaptersToKeep = chaptersToKeep,
+                onProgressUpdate = { progress, status ->
+                    _state.update { it.copy(progress = progress, progressStatusText = status) }
+                }
+            )
+
+            Logger.logInfo("--- File Update Complete ---")
+            _operationState.value = OperationState.IDLE
+            _state.update {
+                it.copy(localFilePath = "", localFileChapters = emptyList(), progress = 0f, progressStatusText = "")
             }
         }
     }

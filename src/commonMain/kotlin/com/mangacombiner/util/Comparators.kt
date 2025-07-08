@@ -8,7 +8,7 @@ import kotlin.math.min
  * It parses numbers within the strings and compares them numerically.
  * For example, it correctly sorts "Chapter 2" before "Chapter 10".
  */
-private val naturalSortComparator = Comparator<String> { a, b ->
+val naturalSortComparator = Comparator<String> { a, b ->
     val parts1 = SlugUtils.parseChapterSlugsForSorting(a)
     val parts2 = SlugUtils.parseChapterSlugsForSorting(b)
 

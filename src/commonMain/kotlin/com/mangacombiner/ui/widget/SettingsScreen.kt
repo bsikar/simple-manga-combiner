@@ -16,7 +16,6 @@ import androidx.compose.material.AlertDialog
 import androidx.compose.material.Button
 import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Card
-import androidx.compose.material.ContentAlpha
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
 import androidx.compose.material.Icon
@@ -222,7 +221,7 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 Text(
                     "The app keeps unfinished downloads in a temporary cache. You can view, manage, or clear this cache.",
                     style = MaterialTheme.typography.body2,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium)
+                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Button(
@@ -249,7 +248,7 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 Text(
                     text = state.settingsLocationDescription,
                     style = MaterialTheme.typography.body2,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium)
+                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                 )
                 if (state.isSettingsLocationOpenable) {
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {

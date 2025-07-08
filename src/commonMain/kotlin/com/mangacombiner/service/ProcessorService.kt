@@ -2,13 +2,16 @@ package com.mangacombiner.service
 
 import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.Logger
+import com.mangacombiner.util.naturalSortComparator
 import com.mangacombiner.util.SlugUtils
+import com.mangacombiner.util.ZipUtils
 import kotlinx.coroutines.flow.StateFlow
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import net.lingala.zip4j.model.ZipParameters
 import nl.adaptivity.xmlutil.serialization.XML
 import java.io.File
+import java.nio.file.Files
 import kotlin.io.path.nameWithoutExtension
 
 class ProcessorService(
@@ -156,6 +159,76 @@ class ProcessorService(
             Logger.logInfo("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
             Logger.logError("Failed to create EPUB file ${outputFile.name}", e)
+        }
+    }
+
+    fun getChaptersFromFile(file: File): List<String> {
+        if (!file.exists() || !file.isFile) return emptyList()
+
+        val slugs = when (file.extension.lowercase()) {
+            "cbz" -> ZipUtils.inferChapterSlugsFromZip(file)
+            "epub" -> ZipUtils.inferChapterSlugsFromEpub(file)
+            else -> {
+                Logger.logError("Unsupported file type for chapter analysis: ${file.extension}")
+                emptySet()
+            }
+        }
+        return slugs.sortedWith(naturalSortComparator)
+    }
+
+    fun updateLocalFile(
+        inputFile: File,
+        chaptersToKeep: List<String>,
+        onProgressUpdate: (progress: Float, status: String) -> Unit
+    ) {
+        val extension = inputFile.extension
+        val outputName = "${inputFile.nameWithoutExtension}-updated.$extension"
+        val outputFile = File(inputFile.parent, outputName)
+
+        if (outputFile.exists()) {
+            Logger.logInfo("Deleting existing updated file: ${outputFile.name}")
+            outputFile.delete()
+        }
+        outputFile.parentFile?.mkdirs()
+
+        val tempDir = Files.createTempDirectory("mangacombiner-update-").toFile()
+        onProgressUpdate(0.1f, "Extracting original file...")
+        try {
+            if (!extractZip(inputFile, tempDir)) {
+                Logger.logError("Failed to extract ${inputFile.name}, aborting update.")
+                return
+            }
+
+            onProgressUpdate(0.4f, "Filtering chapters...")
+            val mangaTitle = outputFile.nameWithoutExtension
+
+            // In both cases, we rebuild from a list of folders containing images
+            val sourceFolders = if (extension.equals("cbz", true)) {
+                // For CBZ, the extracted folders are the chapters
+                tempDir.listFiles()?.filter { it.isDirectory && it.name in chaptersToKeep } ?: emptyList()
+            } else {
+                // For EPUB, we need to reconstruct chapter folders from the extracted images
+                ZipUtils.reconstructChapterFoldersFromEpub(tempDir, chaptersToKeep)
+            }
+
+            if (sourceFolders.isEmpty()) {
+                Logger.logError("No chapters left to package after filtering. Aborting update.")
+                return
+            }
+
+            onProgressUpdate(0.7f, "Repackaging as $extension...")
+
+            when (extension.lowercase()) {
+                "cbz" -> createCbzFromFolders(mangaTitle, sourceFolders, outputFile, null)
+                "epub" -> createEpubFromFolders(mangaTitle, sourceFolders, outputFile, null)
+            }
+
+            onProgressUpdate(1.0f, "Update complete!")
+        } catch (e: Exception) {
+            Logger.logError("An error occurred during file update", e)
+            onProgressUpdate(0f, "Update failed.")
+        } finally {
+            tempDir.deleteRecursively()
         }
     }
 
