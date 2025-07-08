@@ -1,5 +1,6 @@
 package com.mangacombiner.service
 
+import com.mangacombiner.util.CachedChapterNameComparator
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.titlecase
@@ -10,6 +11,7 @@ data class CachedChapter(
     val name: String,
     val path: String,
     val sizeFormatted: String,
+    val sizeInBytes: Long,
     val pageCount: Int,
     val parentPath: String
 )
@@ -44,16 +46,23 @@ class CacheService(private val platformProvider: PlatformProvider) {
         return temp.listFiles(FileFilter { file ->
             file.isDirectory && file.name.startsWith("manga-dl-")
         })?.map { seriesDir ->
-            val chapters = seriesDir.listFiles(FileFilter { it.isDirectory })?.map { chapterDir ->
-                val files = chapterDir.walk().filter { it.isFile }
-                CachedChapter(
-                    name = chapterDir.name,
-                    path = chapterDir.absolutePath,
-                    sizeFormatted = formatSize(files.sumOf { it.length() }),
-                    pageCount = files.count(),
-                    parentPath = seriesDir.absolutePath
-                )
-            }?.sortedBy { it.name } ?: emptyList()
+            val chapters = seriesDir.listFiles(FileFilter { it.isDirectory })?.mapNotNull { chapterDir ->
+                val files = chapterDir.walk().filter { it.isFile }.toList()
+                // Only count directories that contain at least one valid image file
+                if (files.any { it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS }) {
+                    val sizeInBytes = files.sumOf { it.length() }
+                    CachedChapter(
+                        name = chapterDir.name,
+                        path = chapterDir.absolutePath,
+                        sizeFormatted = formatSize(sizeInBytes),
+                        sizeInBytes = sizeInBytes,
+                        pageCount = files.count { it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS },
+                        parentPath = seriesDir.absolutePath
+                    )
+                } else {
+                    null
+                }
+            }?.sortedWith(CachedChapterNameComparator) ?: emptyList()
 
             CachedSeries(
                 seriesName = seriesDir.name.removePrefix("manga-dl-").replace('-', ' ').titlecase(),

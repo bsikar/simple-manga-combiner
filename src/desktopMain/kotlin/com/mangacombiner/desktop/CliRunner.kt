@@ -7,7 +7,6 @@ import com.mangacombiner.service.LocalFileOptions
 import com.mangacombiner.service.ProcessorService
 import com.mangacombiner.service.ScraperService
 import com.mangacombiner.ui.viewmodel.OperationState
-import com.mangacombiner.ui.viewmodel.UiState
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.UserAgent
@@ -22,6 +21,7 @@ import kotlinx.coroutines.runBlocking
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
 import java.io.File
+import kotlin.random.Random
 
 fun main(args: Array<String>) {
     startKoin {
@@ -39,12 +39,30 @@ fun main(args: Array<String>) {
     val dryRun by parser.option(ArgType.Boolean, "dry-run", description = "Simulate the operation without creating files.").default(false)
     val exclude by parser.option(ArgType.String, "exclude", "e", "Chapter URL slug to exclude.").multiple()
     val workers by parser.option(ArgType.Int, "workers", "w", "Number of concurrent download workers.").default(4)
+    val userAgentName by parser.option(
+        ArgType.String,
+        "user-agent",
+        "ua",
+        "Browser profile to impersonate."
+    ).default("Chrome (Windows)")
+    val perWorkerUserAgent by parser.option(
+        ArgType.Boolean,
+        "per-worker-ua",
+        description = "Use a different random user agent for each worker."
+    ).default(false)
 
 
     try {
         parser.parse(args)
     } catch (e: Exception) {
         println("Error parsing arguments: ${e.message}")
+        return
+    }
+
+    // Manually validate the userAgentName input
+    val allowedUserAgents = UserAgent.browsers.keys + "Random"
+    if (userAgentName !in allowedUserAgents) {
+        println("Error: '$userAgentName' is not a valid user agent. Please choose from: ${allowedUserAgents.joinToString(", ")}")
         return
     }
 
@@ -63,7 +81,8 @@ fun main(args: Array<String>) {
             when {
                 source.startsWith("http", ignoreCase = true) -> {
                     Logger.logInfo("Fetching chapter list from URL...")
-                    var chapters = scraperService.findChapterUrlsAndTitles(listClient, source, defaultUserAgent)
+                    val listScraperAgent = UserAgent.browsers[userAgentName] ?: defaultUserAgent
+                    var chapters = scraperService.findChapterUrlsAndTitles(listClient, source, listScraperAgent)
                     if (chapters.isEmpty()) {
                         Logger.logError("No chapters found at the provided URL. Aborting.")
                         return@runBlocking
@@ -85,20 +104,23 @@ fun main(args: Array<String>) {
                         exclude = exclude,
                         format = format,
                         tempDir = tempDir,
-                        getUserAgents = { listOf(defaultUserAgent) },
+                        getUserAgents = {
+                            when {
+                                perWorkerUserAgent -> List(workers) { UserAgent.browsers.values.random(Random) }
+                                userAgentName == "Random" -> listOf(UserAgent.browsers.values.random(Random))
+                                else -> listOf(UserAgent.browsers[userAgentName] ?: defaultUserAgent)
+                            }
+                        },
                         outputPath = outputPath,
                         operationState = cliOperationState,
                         dryRun = dryRun
                     )
 
-                    val cliUiState = UiState(
-                        userAgentName = "Chrome (Windows)",
-                        perWorkerUserAgent = false
-                    )
-                    logOperationSettings(downloadOptions, chapters.size, cliUiState)
+                    logOperationSettings(downloadOptions, chapters.size, userAgentName, perWorkerUserAgent)
 
                     downloadService.downloadNewSeries(downloadOptions)
                 }
+
                 File(source).exists() -> {
                     processorService.processLocalFile(
                         LocalFileOptions(
@@ -116,6 +138,7 @@ fun main(args: Array<String>) {
                         )
                     )
                 }
+
                 else -> Logger.logError("Source is not a valid URL or existing file path.")
             }
         } catch (e: Exception) {

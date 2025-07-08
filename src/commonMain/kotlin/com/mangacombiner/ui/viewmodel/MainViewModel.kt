@@ -6,6 +6,7 @@ import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadService
 import com.mangacombiner.service.ScraperService
 import com.mangacombiner.ui.theme.AppTheme
+import com.mangacombiner.util.ChapterPairComparator
 import com.mangacombiner.util.ClipboardManager
 import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.Logger
@@ -41,6 +42,16 @@ enum class RangeAction {
     SELECT, DESELECT, TOGGLE
 }
 
+enum class SortDirection {
+    ASC, DESC
+}
+
+enum class SortCriteria {
+    NAME, SIZE
+}
+
+data class CacheSortState(val criteria: SortCriteria, val direction: SortDirection)
+
 data class UiState(
     val currentScreen: Screen = Screen.DOWNLOAD,
     val theme: AppTheme = AppTheme.DARK,
@@ -65,6 +76,8 @@ data class UiState(
     val showDeleteCacheConfirmationDialog: Boolean = false,
     val cacheContents: List<CachedSeries> = emptyList(),
     val cacheItemsToDelete: Set<String> = emptySet(),
+    val cacheSortState: Map<String, CacheSortState?> = emptyMap(),
+    val expandedCacheSeries: Set<String> = emptySet(),
     val logAutoscrollEnabled: Boolean = true,
     val activeDownloadOptions: DownloadOptions? = null
 )
@@ -117,6 +130,8 @@ class MainViewModel(
         data class SelectAllCachedChapters(val seriesPath: String, val select: Boolean) : Event()
         data class ToggleDeleteCacheOnCancel(val delete: Boolean) : Event()
         data class UpdateDefaultOutputLocation(val location: String) : Event()
+        data class SetCacheSort(val seriesPath: String, val sortState: CacheSortState?) : Event()
+        data class ToggleCacheSeries(val seriesPath: String) : Event()
         object PickCustomDefaultPath : Event()
         object PickOutputPath : Event()
         object ToggleLogAutoscroll : Event()
@@ -211,7 +226,8 @@ class MainViewModel(
                 logOperationSettings(
                     _state.value.activeDownloadOptions!!,
                     _state.value.activeDownloadOptions!!.chaptersToDownload.size,
-                    _state.value,
+                    _state.value.userAgentName,
+                    _state.value.perWorkerUserAgent,
                     isResuming = true
                 )
                 _operationState.value = OperationState.RUNNING
@@ -237,10 +253,10 @@ class MainViewModel(
                 }
             }
             is Event.ToggleCacheItemForDeletion -> {
-                _state.update {
-                    val newSet = it.cacheItemsToDelete.toMutableSet()
+                _state.update { uiState ->
+                    val newSet = uiState.cacheItemsToDelete.toMutableSet()
                     if (newSet.contains(event.path)) newSet.remove(event.path) else newSet.add(event.path)
-                    it.copy(cacheItemsToDelete = newSet)
+                    uiState.copy(cacheItemsToDelete = newSet)
                 }
             }
             Event.RequestDeleteSelectedCacheItems -> _state.update { it.copy(showDeleteCacheConfirmationDialog = true) }
@@ -255,12 +271,12 @@ class MainViewModel(
             is Event.SelectAllCachedChapters -> {
                 _state.update { uiState ->
                     val series = uiState.cacheContents.find { it.path == event.seriesPath } ?: return@update uiState
-                    val chapterPaths = series.chapters.map { it.path }
+                    val chapterPaths = series.chapters.map { it.path }.toSet()
                     val currentSelection = uiState.cacheItemsToDelete.toMutableSet()
                     if (event.select) {
                         currentSelection.addAll(chapterPaths)
                     } else {
-                        currentSelection.removeAll(chapterPaths.toSet())
+                        currentSelection.removeAll(chapterPaths)
                     }
                     uiState.copy(cacheItemsToDelete = currentSelection)
                 }
@@ -278,6 +294,28 @@ class MainViewModel(
                         }
                     }
                     uiState.copy(cacheItemsToDelete = currentSelection)
+                }
+            }
+            is Event.SetCacheSort -> {
+                _state.update { uiState ->
+                    val newSortMap = uiState.cacheSortState.toMutableMap()
+                    if (event.sortState == null) {
+                        newSortMap.remove(event.seriesPath)
+                    } else {
+                        newSortMap[event.seriesPath] = event.sortState
+                    }
+                    uiState.copy(cacheSortState = newSortMap)
+                }
+            }
+            is Event.ToggleCacheSeries -> {
+                _state.update { uiState ->
+                    val newSet = uiState.expandedCacheSeries.toMutableSet()
+                    if (newSet.contains(event.seriesPath)) {
+                        newSet.remove(event.seriesPath)
+                    } else {
+                        newSet.add(event.seriesPath)
+                    }
+                    uiState.copy(expandedCacheSeries = newSet)
                 }
             }
         }
@@ -316,7 +354,12 @@ class MainViewModel(
                 dryRun = currentState.dryRun
             )
             _state.update { it.copy(activeDownloadOptions = initialOptions) }
-            logOperationSettings(initialOptions, chaptersToDownload.size, currentState)
+            logOperationSettings(
+                initialOptions,
+                chaptersToDownload.size,
+                currentState.userAgentName,
+                currentState.perWorkerUserAgent
+            )
 
             val seriesSlug = initialOptions.seriesUrl.toSlug()
             val downloadDir = File(initialOptions.tempDir, "manga-dl-$seriesSlug")
@@ -399,10 +442,12 @@ class MainViewModel(
             Logger.logInfo("Fetching chapter list for: ${_state.value.seriesUrl}")
             val chapters = scraperService.findChapterUrlsAndTitles(client, _state.value.seriesUrl, userAgent)
             if (chapters.isNotEmpty()) {
+                val sortedChapters = chapters.sortedWith(ChapterPairComparator)
+
                 _state.update {
                     it.copy(
                         isFetchingChapters = false,
-                        fetchedChapters = chapters.map { (url, title) -> Chapter(url, title) },
+                        fetchedChapters = sortedChapters.map { (url, title) -> Chapter(url, title) },
                         showChapterDialog = true
                     )
                 }

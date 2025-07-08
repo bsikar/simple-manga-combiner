@@ -1,12 +1,12 @@
 package com.mangacombiner.util
 
 import com.mangacombiner.service.DownloadOptions
-import com.mangacombiner.ui.viewmodel.UiState
 
 fun logOperationSettings(
     options: DownloadOptions,
     chapterCount: Int,
-    state: UiState,
+    userAgentName: String,
+    perWorkerUserAgent: Boolean,
     isResuming: Boolean = false
 ) {
     val title = if (isResuming) "--- Resuming Download Operation ---" else "--- Starting New Download Operation ---"
@@ -26,8 +26,8 @@ fun logOperationSettings(
     Logger.logInfo("Download Workers:  ${options.getWorkers()}")
 
     val userAgentMessage = when {
-        state.perWorkerUserAgent -> "Randomized per worker"
-        else -> state.userAgentName
+        perWorkerUserAgent -> "Randomized per worker"
+        else -> userAgentName
     }
     Logger.logInfo("Browser Profile:   $userAgentMessage")
     if (Logger.isDebugEnabled) {
