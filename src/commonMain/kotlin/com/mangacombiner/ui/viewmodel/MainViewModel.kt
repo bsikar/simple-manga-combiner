@@ -1,5 +1,7 @@
 package com.mangacombiner.ui.viewmodel
 
+import com.mangacombiner.data.SettingsRepository
+import com.mangacombiner.model.AppSettings
 import com.mangacombiner.service.CacheService
 import com.mangacombiner.service.CachedSeries
 import com.mangacombiner.service.DownloadOptions
@@ -18,9 +20,13 @@ import com.mangacombiner.util.showFolderPicker
 import com.mangacombiner.util.titlecase
 import com.mangacombiner.util.toSlug
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
@@ -86,16 +92,33 @@ data class UiState(
     val activeDownloadOptions: DownloadOptions? = null
 )
 
+/**
+ * Helper function to map the full UI state to just the part we want to save.
+ */
+private fun UiState.toAppSettings() = AppSettings(
+    theme = this.theme,
+    defaultOutputLocation = this.defaultOutputLocation,
+    customDefaultOutputPath = this.customDefaultOutputPath,
+    workers = this.workers,
+    outputFormat = this.outputFormat,
+    userAgentName = this.userAgentName,
+    perWorkerUserAgent = this.perWorkerUserAgent,
+    debugLog = this.debugLog,
+    logAutoscrollEnabled = this.logAutoscrollEnabled
+)
+
+@OptIn(FlowPreview::class)
 class MainViewModel(
     private val downloadService: DownloadService,
     private val scraperService: ScraperService,
     private val clipboardManager: ClipboardManager,
     private val platformProvider: PlatformProvider,
-    private val cacheService: CacheService
+    private val cacheService: CacheService,
+    private val settingsRepository: SettingsRepository
 ) : PlatformViewModel() {
 
-    private val _state = MutableStateFlow(UiState())
-    val state: StateFlow<UiState> = _state.asStateFlow()
+    private val _state: MutableStateFlow<UiState>
+    val state: StateFlow<UiState>
 
     private val _operationState = MutableStateFlow(OperationState.IDLE)
 
@@ -103,6 +126,23 @@ class MainViewModel(
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
 
     init {
+        val savedSettings = settingsRepository.loadSettings()
+        Logger.isDebugEnabled = savedSettings.debugLog
+        _state = MutableStateFlow(
+            UiState(
+                theme = savedSettings.theme,
+                defaultOutputLocation = savedSettings.defaultOutputLocation,
+                customDefaultOutputPath = savedSettings.customDefaultOutputPath,
+                workers = savedSettings.workers,
+                outputFormat = savedSettings.outputFormat,
+                userAgentName = savedSettings.userAgentName,
+                perWorkerUserAgent = savedSettings.perWorkerUserAgent,
+                debugLog = savedSettings.debugLog,
+                logAutoscrollEnabled = savedSettings.logAutoscrollEnabled
+            )
+        )
+        state = _state.asStateFlow()
+
         Logger.addListener { logMessage ->
             _logs.update { it + logMessage }
         }
@@ -111,8 +151,35 @@ class MainViewModel(
                 _state.update { uiState -> uiState.copy(operationState = it) }
             }
         }
+
+        // Set initial output path based on saved settings
         val defaultDownloadsPath = platformProvider.getUserDownloadsDir() ?: ""
-        _state.update { it.copy(outputPath = defaultDownloadsPath, customDefaultOutputPath = defaultDownloadsPath) }
+        val initialOutputPath = when (savedSettings.defaultOutputLocation) {
+            "Downloads" -> defaultDownloadsPath
+            "Documents" -> platformProvider.getUserDocumentsDir() ?: ""
+            "Desktop" -> platformProvider.getUserDesktopDir() ?: ""
+            "Custom" -> savedSettings.customDefaultOutputPath
+            else -> ""
+        }
+        _state.update {
+            it.copy(
+                outputPath = initialOutputPath,
+                customDefaultOutputPath = if (savedSettings.defaultOutputLocation == "Custom") savedSettings.customDefaultOutputPath else defaultDownloadsPath
+            )
+        }
+
+
+        // Automatically save settings whenever they change
+        viewModelScope.launch {
+            state
+                .debounce(500L)
+                .map { it.toAppSettings() }
+                .distinctUntilChanged()
+                .collect { settingsToSave ->
+                    settingsRepository.saveSettings(settingsToSave)
+                    Logger.logDebug { "Settings saved automatically." }
+                }
+        }
     }
 
     sealed class Event {

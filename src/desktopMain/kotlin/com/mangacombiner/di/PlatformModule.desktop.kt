@@ -1,5 +1,6 @@
 package com.mangacombiner.di
 
+import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.util.ClipboardManager
 import com.mangacombiner.util.DesktopPlatformProvider
@@ -11,6 +12,7 @@ import org.koin.dsl.module
 actual fun platformModule(): Module = module {
     factory { ClipboardManager() }
     factory<PlatformProvider> { DesktopPlatformProvider() }
+    single { SettingsRepository() }
 
     // ViewModel for Desktop
     factoryOf(::MainViewModel)

@@ -1,5 +1,6 @@
 package com.mangacombiner.di
 
+import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.util.AndroidPlatformProvider
 import com.mangacombiner.util.ClipboardManager
@@ -12,6 +13,7 @@ import org.koin.dsl.module
 actual fun platformModule(): Module = module {
     factory { ClipboardManager(androidContext()) }
     factory<PlatformProvider> { AndroidPlatformProvider(androidContext()) }
+    single { SettingsRepository(androidContext()) }
 
     // ViewModel for Android
     viewModelOf(::MainViewModel)
