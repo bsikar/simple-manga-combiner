@@ -26,6 +26,12 @@ import org.koin.java.KoinJavaComponent.get
 import java.util.Locale
 
 fun main() {
+    // Set macOS-specific property to adopt system theme for AWT components
+    val os = System.getProperty("os.name").lowercase(Locale.US)
+    if ("mac" in os) {
+        System.setProperty("apple.awt.application.appearance", "system")
+    }
+
     startKoin {
         modules(appModule, platformModule())
     }
@@ -34,8 +40,7 @@ fun main() {
 
     application {
         val state by viewModel.state.collectAsState()
-        val os = System.getProperty("os.name").lowercase(Locale.US)
-        val isMac = "mac" in os
+        val isMac = "mac" in os // We can reuse the os check
         val windowState = rememberWindowState(size = DpSize(1280.dp, 800.dp))
 
         Window(
