@@ -78,13 +78,16 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedTextField(
-                            value = state.workers.toString(),
-                            onValueChange = { onEvent(MainViewModel.Event.UpdateWorkers(it.toIntOrNull() ?: 1)) },
-                            label = { Text("Workers") },
-                            modifier = Modifier.weight(1f),
-                            enabled = isIdle
-                        )
+                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Workers:", style = MaterialTheme.typography.body1)
+                            NumberStepper(
+                                value = state.workers,
+                                onValueChange = { onEvent(MainViewModel.Event.UpdateWorkers(it)) },
+                                range = 1..16,
+                                enabled = isProcessing
+                            )
+                        }
+
                         Box(modifier = Modifier.weight(1f)) {
                             OutlinedButton(
                                 onClick = { formatDropdownExpanded = true },
@@ -145,12 +148,12 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
 
                     FormControlLabel(
                         onClick = { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(!state.perWorkerUserAgent)) },
-                        enabled = isIdle,
+                        enabled = isProcessing,
                         control = {
                             Switch(
                                 checked = state.perWorkerUserAgent,
                                 onCheckedChange = { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(it)) },
-                                enabled = isIdle
+                                enabled = isProcessing
                             )
                         },
                         label = { Text("Randomize browser per worker") }
@@ -167,7 +170,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         Box {
                             OutlinedButton(
                                 onClick = { browserDropdownExpanded = true },
-                                enabled = !state.perWorkerUserAgent && isIdle
+                                enabled = !state.perWorkerUserAgent && isProcessing
                             ) {
                                 Text(state.userAgentName)
                                 Icon(Icons.Default.ArrowDropDown, "Impersonate Browser")

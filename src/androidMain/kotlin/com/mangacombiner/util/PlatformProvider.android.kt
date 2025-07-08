@@ -5,15 +5,9 @@ import android.os.Environment
 
 class AndroidPlatformProvider(private val context: Context) : PlatformProvider {
     override fun getTmpDir(): String = context.cacheDir.absolutePath
-
-    override fun getUserDownloadsDir(): String? {
-        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.absolutePath
-    }
-
-    override fun getUserDocumentsDir(): String? {
-        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)?.absolutePath
-    }
-
-    // Android doesn't have a "Desktop" concept
+    override fun getUserDownloadsDir(): String? =
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.absolutePath
+    override fun getUserDocumentsDir(): String? =
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)?.absolutePath
     override fun getUserDesktopDir(): String? = null
 }

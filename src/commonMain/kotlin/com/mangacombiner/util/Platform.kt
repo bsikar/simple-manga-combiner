@@ -5,9 +5,6 @@ import io.ktor.client.HttpClient
 // We expect each platform to provide its own Ktor HttpClient Engine
 expect fun createHttpClient(userAgent: String): HttpClient
 
-// We expect each platform to provide a way to get a temporary directory
-expect fun getTmpDir(): String
-
 object UserAgent {
     val browsers = mapOf(
         // Windows

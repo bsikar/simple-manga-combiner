@@ -8,8 +8,10 @@ import com.mangacombiner.util.titlecase
 import com.mangacombiner.util.toSlug
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.core.isNotEmpty
@@ -52,14 +54,16 @@ class DownloadService(
         }
     }
 
-    private suspend fun downloadFile(client: HttpClient, url: String, outputFile: File): Boolean {
+    private suspend fun downloadFile(client: HttpClient, url: String, outputFile: File, userAgent: String): Boolean {
         if (outputFile.exists()) {
             Logger.logDebug { "File already exists, skipping: ${outputFile.name}" }
             return true
         }
 
         return try {
-            val response: HttpResponse = client.get(url)
+            val response: HttpResponse = client.get(url) {
+                header(HttpHeaders.UserAgent, userAgent)
+            }
             if (response.status.isSuccess()) {
                 writeChannelToFile(response.bodyAsChannel(), outputFile)
                 true
@@ -92,14 +96,15 @@ class DownloadService(
         }
         if (options.operationState.value != OperationState.RUNNING) return null
 
-        val imageUrls = scraperService.findImageUrls(client, chapterUrl)
+        val scraperUserAgent = options.getUserAgents().random()
+        val imageUrls = scraperService.findImageUrls(client, chapterUrl, scraperUserAgent)
         if (imageUrls.isEmpty()) {
             Logger.logInfo(" --> Warning: No images found for chapter '$chapterTitle'. It might be empty or licensed.")
             return if (chapterDir.exists()) chapterDir else null
         }
 
         Logger.logInfo(" --> Found ${imageUrls.size} images for '$chapterTitle'. Starting download...")
-        val dispatcher = Dispatchers.IO.limitedParallelism(options.imageWorkers)
+        val dispatcher = Dispatchers.IO.limitedParallelism(options.getWorkers())
         coroutineScope {
             imageUrls.mapIndexed { index, imageUrl ->
                 launch(dispatcher) {
@@ -108,11 +113,12 @@ class DownloadService(
                     }
                     if (options.operationState.value == OperationState.RUNNING) {
                         delay(IMAGE_DOWNLOAD_DELAY_MS)
+                        val imageUserAgent = options.getUserAgents().random()
                         Logger.logDebug { "Downloading image ${index + 1}/${imageUrls.size}: $imageUrl" }
                         val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
                         val outputFile =
                             File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
-                        downloadFile(client, imageUrl, outputFile)
+                        downloadFile(client, imageUrl, outputFile, imageUserAgent)
                     }
                 }
             }.joinAll()
@@ -138,7 +144,7 @@ class DownloadService(
         Logger.logInfo("Downloading ${chapterData.size} chapters...")
         val downloadedFolders = mutableListOf<File>()
 
-        val client = createHttpClient(options.getUserAgents().random())
+        val client = createHttpClient("")
 
         try {
             for ((url, title) in chapterData) {
@@ -147,7 +153,7 @@ class DownloadService(
                     delay(1000)
                 }
                 if (options.operationState.value != OperationState.RUNNING) {
-                    return null // Cancelled
+                    return null
                 }
 
                 Logger.logInfo("--> Processing chapter ${downloadedFolders.size + 1}/${chapterData.size}: $title")

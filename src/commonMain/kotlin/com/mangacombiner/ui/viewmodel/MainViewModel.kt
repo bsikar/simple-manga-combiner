@@ -47,7 +47,7 @@ data class UiState(
     val seriesUrl: String = "",
     val customTitle: String = "",
     val outputPath: String = "",
-    val defaultOutputLocation: String = "Downloads", // "Downloads", "Documents", "Desktop", "Custom"
+    val defaultOutputLocation: String = "Downloads",
     val customDefaultOutputPath: String = "",
     val workers: Int = 4,
     val outputFormat: String = "epub",
@@ -177,7 +177,7 @@ class MainViewModel(
             }
             is Event.UpdateUrl -> _state.update { it.copy(seriesUrl = event.url) }
             is Event.UpdateCustomTitle -> _state.update { it.copy(customTitle = event.title) }
-            is Event.UpdateWorkers -> _state.update { it.copy(workers = event.count.coerceIn(1, 32)) }
+            is Event.UpdateWorkers -> _state.update { it.copy(workers = event.count.coerceIn(1, 16)) }
             is Event.UpdateFormat -> _state.update { it.copy(outputFormat = event.format) }
             is Event.ToggleDebugLog -> {
                 Logger.isDebugEnabled = event.isEnabled
@@ -299,7 +299,7 @@ class MainViewModel(
                 seriesUrl = currentState.seriesUrl,
                 chaptersToDownload = chaptersToDownload.associate { it.url to it.title },
                 cliTitle = currentState.customTitle.ifBlank { null },
-                imageWorkers = currentState.workers,
+                getWorkers = { _state.value.workers },
                 format = currentState.outputFormat,
                 exclude = emptyList(),
                 tempDir = File(platformProvider.getTmpDir()),
@@ -323,7 +323,6 @@ class MainViewModel(
             val downloadedFolders = downloadService.downloadChaptersOnly(initialOptions, downloadDir)
 
             if (_operationState.value != OperationState.RUNNING) {
-                // This block handles cancellation during the download phase
                 if (_state.value.deleteCacheOnCancel) {
                     Logger.logInfo("Operation was cancelled. Cleaning up temporary files as requested...")
                     if (downloadDir.exists()) {
@@ -396,9 +395,9 @@ class MainViewModel(
         viewModelScope.launch {
             _state.update { it.copy(isFetchingChapters = true) }
             val userAgent = UserAgent.browsers[_state.value.userAgentName] ?: UserAgent.browsers.values.first()
-            val client = createHttpClient(userAgent)
+            val client = createHttpClient("")
             Logger.logInfo("Fetching chapter list for: ${_state.value.seriesUrl}")
-            val chapters = scraperService.findChapterUrlsAndTitles(client, _state.value.seriesUrl)
+            val chapters = scraperService.findChapterUrlsAndTitles(client, _state.value.seriesUrl, userAgent)
             if (chapters.isNotEmpty()) {
                 _state.update {
                     it.copy(

@@ -9,9 +9,9 @@ import com.mangacombiner.service.ScraperService
 import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.ui.viewmodel.UiState
 import com.mangacombiner.util.Logger
+import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.createHttpClient
-import com.mangacombiner.util.getTmpDir
 import com.mangacombiner.util.logOperationSettings
 import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
@@ -53,17 +53,17 @@ fun main(args: Array<String>) {
     val downloadService: DownloadService = get(DownloadService::class.java)
     val processorService: ProcessorService = get(ProcessorService::class.java)
     val scraperService: ScraperService = get(ScraperService::class.java)
+    val platformProvider: PlatformProvider = get(PlatformProvider::class.java)
 
     runBlocking {
-        // For CLI, we use a single client with a default user agent for fetching the initial chapter list
         val defaultUserAgent = UserAgent.browsers["Chrome (Windows)"]!!
-        val listClient = createHttpClient(defaultUserAgent)
-        val tempDir = File(getTmpDir())
+        val listClient = createHttpClient("")
+        val tempDir = File(platformProvider.getTmpDir())
         try {
             when {
                 source.startsWith("http", ignoreCase = true) -> {
                     Logger.logInfo("Fetching chapter list from URL...")
-                    var chapters = scraperService.findChapterUrlsAndTitles(listClient, source)
+                    var chapters = scraperService.findChapterUrlsAndTitles(listClient, source, defaultUserAgent)
                     if (chapters.isEmpty()) {
                         Logger.logError("No chapters found at the provided URL. Aborting.")
                         return@runBlocking
@@ -75,14 +75,13 @@ fun main(args: Array<String>) {
                         }
                     }
 
-                    // CLI operations are always 'RUNNING' and not interactively pausable
                     val cliOperationState = MutableStateFlow(OperationState.RUNNING)
 
                     val downloadOptions = DownloadOptions(
                         seriesUrl = source,
                         chaptersToDownload = chapters.toMap(),
                         cliTitle = title,
-                        imageWorkers = workers,
+                        getWorkers = { workers },
                         exclude = exclude,
                         format = format,
                         tempDir = tempDir,
@@ -92,9 +91,8 @@ fun main(args: Array<String>) {
                         dryRun = dryRun
                     )
 
-                    // Create a synthetic UiState for logging purposes
                     val cliUiState = UiState(
-                        userAgentName = "Chrome (Windows)", // The one we are using
+                        userAgentName = "Chrome (Windows)",
                         perWorkerUserAgent = false
                     )
                     logOperationSettings(downloadOptions, chapters.size, cliUiState)
@@ -113,7 +111,7 @@ fun main(args: Array<String>) {
                             useTrueStreaming = false,
                             useTrueDangerousMode = false,
                             skipIfTargetExists = !force,
-                            tempDirectory = getTmpDir(),
+                            tempDirectory = platformProvider.getTmpDir(),
                             dryRun = dryRun
                         )
                     )
