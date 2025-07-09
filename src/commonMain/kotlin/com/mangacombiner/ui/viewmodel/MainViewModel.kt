@@ -2,6 +2,7 @@ package com.mangacombiner.ui.viewmodel
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.model.AppSettings
+import com.mangacombiner.model.DownloadJob
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.CacheService
 import com.mangacombiner.service.CachedSeries
@@ -43,6 +44,7 @@ import kotlin.random.Random
 
 enum class Screen {
     DOWNLOAD,
+    DOWNLOAD_QUEUE,
     LOGS,
     ADVANCED_SETTINGS,
     SETTINGS,
@@ -138,6 +140,7 @@ data class UiState(
     val originalSearchResults: List<SearchResult> = emptyList(),
     val isSearching: Boolean = false,
     val searchSortOption: SearchSortOption = SearchSortOption.DEFAULT,
+    val downloadQueue: List<DownloadJob> = emptyList(),
 )
 
 private fun UiState.toAppSettings() = AppSettings(
@@ -224,6 +227,18 @@ class MainViewModel(
             it.copy(
                 outputPath = initialOutputPath,
                 customDefaultOutputPath = if (savedSettings.defaultOutputLocation == "Custom") savedSettings.customDefaultOutputPath else defaultDownloadsPath
+            )
+        }
+
+        // placeholder logic for download queue
+        _state.update {
+            it.copy(
+                downloadQueue = listOf(
+                    DownloadJob(id = "1", title = "One-Punch Man", progress = 0.25f, status = "Downloading", totalChapters = 180, downloadedChapters = 45),
+                    DownloadJob(id = "2", title = "Jujutsu Kaisen", progress = 0f, status = "Queued", totalChapters = 230, downloadedChapters = 0),
+                    DownloadJob(id = "3", title = "My Hero Academia", progress = 0.5f, status = "Paused", totalChapters = 420, downloadedChapters = 210),
+                    DownloadJob(id = "4", title = "Solo Leveling", progress = 1f, status = "Completed", totalChapters = 179, downloadedChapters = 179),
+                )
             )
         }
 

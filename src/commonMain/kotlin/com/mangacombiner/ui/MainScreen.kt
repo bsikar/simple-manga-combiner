@@ -24,6 +24,7 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
@@ -40,6 +41,7 @@ import com.mangacombiner.ui.widget.AboutDialog
 import com.mangacombiner.ui.widget.AdvancedSettingsScreen
 import com.mangacombiner.ui.widget.CacheViewerScreen
 import com.mangacombiner.ui.widget.ChapterSelectionDialog
+import com.mangacombiner.ui.widget.DownloadQueueScreen
 import com.mangacombiner.ui.widget.DownloadScreen
 import com.mangacombiner.ui.widget.FormControlLabel
 import com.mangacombiner.ui.widget.LogScreen
@@ -86,6 +88,15 @@ fun MainScreen(viewModel: MainViewModel) {
                             alwaysShowLabel = false
                         )
                     }
+                    PlatformTooltip("Queue") {
+                        NavigationRailItem(
+                            selected = state.currentScreen == Screen.DOWNLOAD_QUEUE,
+                            onClick = { viewModel.onEvent(MainViewModel.Event.Navigate(Screen.DOWNLOAD_QUEUE)) },
+                            icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Download Queue") },
+                            label = if (showNavLabels) { { Text("Queue") } } else null,
+                            alwaysShowLabel = false
+                        )
+                    }
                     PlatformTooltip("Logs") {
                         NavigationRailItem(
                             selected = state.currentScreen == Screen.LOGS,
@@ -120,6 +131,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 Box(modifier = Modifier.weight(1f).padding(16.dp)) {
                     when (state.currentScreen) {
                         Screen.DOWNLOAD -> DownloadScreen(state, viewModel::onEvent)
+                        Screen.DOWNLOAD_QUEUE -> DownloadQueueScreen(state, viewModel::onEvent)
                         Screen.LOGS -> LogScreen(state, logs, viewModel::onEvent)
                         Screen.ADVANCED_SETTINGS -> AdvancedSettingsScreen(state, viewModel::onEvent)
                         Screen.SETTINGS -> SettingsScreen(state, viewModel::onEvent)
