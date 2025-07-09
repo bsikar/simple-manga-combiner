@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.Density
 import androidx.lifecycle.lifecycleScope
 import com.mangacombiner.ui.MainScreen
 import com.mangacombiner.ui.theme.AppTheme
-import com.mangacombiner.ui.viewmodel.FilePickerRequest
+import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.util.Logger
 import kotlinx.coroutines.flow.collectLatest

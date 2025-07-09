@@ -2,48 +2,25 @@ package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.AlertDialog
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Card
-import androidx.compose.material.DropdownMenu
-import androidx.compose.material.DropdownMenuItem
-import androidx.compose.material.Icon
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.OutlinedButton
-import androidx.compose.material.RadioButton
-import androidx.compose.material.Text
-import androidx.compose.material.TextButton
+import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.theme.AppTheme
+import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
-import com.mangacombiner.ui.viewmodel.Screen
-import com.mangacombiner.ui.viewmodel.UiState
+import com.mangacombiner.ui.viewmodel.state.Screen
+import com.mangacombiner.ui.viewmodel.state.UiState
 
 @Composable
-fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
+fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     var themeDropdownExpanded by remember { mutableStateOf(false) }
     var systemLightThemeDropdownExpanded by remember { mutableStateOf(false) }
     var systemDarkThemeDropdownExpanded by remember { mutableStateOf(false) }
@@ -80,7 +57,7 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         ) {
                             themeOptions.forEach { theme ->
                                 DropdownMenuItem(onClick = {
-                                    onEvent(MainViewModel.Event.UpdateTheme(theme))
+                                    onEvent(Event.Settings.UpdateTheme(theme))
                                     themeDropdownExpanded = false
                                 }) { Text(theme.name.lowercase().replaceFirstChar { it.titlecase() }) }
                             }
@@ -107,7 +84,7 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                                 ) {
                                     systemThemeOptions.forEach { theme ->
                                         DropdownMenuItem(onClick = {
-                                            onEvent(MainViewModel.Event.UpdateSystemLightTheme(theme))
+                                            onEvent(Event.Settings.UpdateSystemLightTheme(theme))
                                             systemLightThemeDropdownExpanded = false
                                         }) { Text(theme.name.lowercase().replaceFirstChar { it.titlecase() }) }
                                     }
@@ -131,7 +108,7 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                                 ) {
                                     systemThemeOptions.forEach { theme ->
                                         DropdownMenuItem(onClick = {
-                                            onEvent(MainViewModel.Event.UpdateSystemDarkTheme(theme))
+                                            onEvent(Event.Settings.UpdateSystemDarkTheme(theme))
                                             systemDarkThemeDropdownExpanded = false
                                         }) { Text(theme.name.lowercase().replaceFirstChar { it.titlecase() }) }
                                     }
@@ -147,11 +124,11 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                     fontPresets.forEach { preset ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().clickable { onEvent(MainViewModel.Event.UpdateFontSizePreset(preset)) }
+                            modifier = Modifier.fillMaxWidth().clickable { onEvent(Event.Settings.UpdateFontSizePreset(preset)) }
                         ) {
                             RadioButton(
                                 selected = (state.fontSizePreset == preset),
-                                onClick = { onEvent(MainViewModel.Event.UpdateFontSizePreset(preset)) }
+                                onClick = { onEvent(Event.Settings.UpdateFontSizePreset(preset)) }
                             )
                             Text(text = preset)
                         }
@@ -181,7 +158,7 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         ) {
                             outputLocations.forEach { location ->
                                 DropdownMenuItem(onClick = {
-                                    onEvent(MainViewModel.Event.UpdateDefaultOutputLocation(location))
+                                    onEvent(Event.Settings.UpdateDefaultOutputLocation(location))
                                     outputDropdownExpanded = false
                                 }) { Text(location) }
                             }
@@ -202,7 +179,7 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Button(onClick = { onEvent(MainViewModel.Event.PickCustomDefaultPath) }) {
+                        Button(onClick = { onEvent(Event.Settings.PickCustomDefaultPath) }) {
                             Text("Browse...")
                         }
                     }
@@ -227,12 +204,12 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.Navigate(Screen.CACHE_VIEWER)) },
+                        onClick = { onEvent(Event.Navigate(Screen.CACHE_VIEWER)) },
                     ) {
                         Text("View Cached Downloads")
                     }
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.RequestClearAllCache) },
+                        onClick = { onEvent(Event.Cache.RequestClearAll) },
                         colors = ButtonDefaults.buttonColors(
                             backgroundColor = MaterialTheme.colors.error,
                             contentColor = MaterialTheme.colors.onError
@@ -245,7 +222,7 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
         }
 
         Button(
-            onClick = { onEvent(MainViewModel.Event.RequestRestoreDefaults) },
+            onClick = { onEvent(Event.Settings.RequestRestoreDefaults) },
             colors = ButtonDefaults.outlinedButtonColors(),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -255,19 +232,19 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
 
     if (state.showClearCacheDialog) {
         AlertDialog(
-            onDismissRequest = { onEvent(MainViewModel.Event.CancelClearAllCache) },
+            onDismissRequest = { onEvent(Event.Cache.CancelClearAll) },
             title = { Text("Confirm Clear All Cache") },
             text = { Text("Are you sure you want to delete all temporary application data, including paused or incomplete downloads? This action cannot be undone.") },
             confirmButton = {
                 Button(
-                    onClick = { onEvent(MainViewModel.Event.ConfirmClearAllCache) },
+                    onClick = { onEvent(Event.Cache.ConfirmClearAll) },
                     colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
                 ) {
                     Text("Clear Everything")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { onEvent(MainViewModel.Event.CancelClearAllCache) }) {
+                TextButton(onClick = { onEvent(Event.Cache.CancelClearAll) }) {
                     Text("Cancel")
                 }
             }
@@ -276,19 +253,19 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
 
     if (state.showRestoreDefaultsDialog) {
         AlertDialog(
-            onDismissRequest = { onEvent(MainViewModel.Event.CancelRestoreDefaults) },
+            onDismissRequest = { onEvent(Event.Settings.CancelRestoreDefaults) },
             title = { Text("Restore Default Settings?") },
             text = { Text("Are you sure you want to restore all settings to their original defaults? This action cannot be undone.") },
             confirmButton = {
                 Button(
-                    onClick = { onEvent(MainViewModel.Event.ConfirmRestoreDefaults) },
+                    onClick = { onEvent(Event.Settings.ConfirmRestoreDefaults) },
                     colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
                 ) {
                     Text("Restore")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { onEvent(MainViewModel.Event.CancelRestoreDefaults) }) {
+                TextButton(onClick = { onEvent(Event.Settings.CancelRestoreDefaults) }) {
                     Text("Cancel")
                 }
             }

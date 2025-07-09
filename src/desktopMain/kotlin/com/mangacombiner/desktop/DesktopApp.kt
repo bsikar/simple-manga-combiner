@@ -22,7 +22,8 @@ import com.mangacombiner.di.appModule
 import com.mangacombiner.di.platformModule
 import com.mangacombiner.ui.MainScreen
 import com.mangacombiner.ui.theme.AppTheme
-import com.mangacombiner.ui.viewmodel.FilePickerRequest
+import com.mangacombiner.ui.viewmodel.Event
+import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.widget.AboutDialog
 import org.koin.core.context.startKoin
@@ -47,7 +48,7 @@ fun main() {
         System.setProperty("apple.awt.application.appearance", "system")
         System.setProperty("apple.awt.application.name", "Manga Combiner")
         Desktop.getDesktop().setAboutHandler {
-            viewModel.onEvent(MainViewModel.Event.ToggleAboutDialog(true))
+            viewModel.onEvent(Event.ToggleAboutDialog(true))
         }
     }
 
@@ -65,15 +66,15 @@ fun main() {
                     if (isModifierPressed) {
                         when (it.key) {
                             Key.Equals, Key.Plus -> {
-                                viewModel.onEvent(MainViewModel.Event.ZoomIn)
+                                viewModel.onEvent(Event.Settings.ZoomIn)
                                 true
                             }
                             Key.Minus -> {
-                                viewModel.onEvent(MainViewModel.Event.ZoomOut)
+                                viewModel.onEvent(Event.Settings.ZoomOut)
                                 true
                             }
                             Key.Zero -> {
-                                viewModel.onEvent(MainViewModel.Event.ZoomReset)
+                                viewModel.onEvent(Event.Settings.ZoomReset)
                                 true
                             }
                             else -> false
@@ -105,7 +106,7 @@ fun main() {
                     if (!isMac) {
                         Item(
                             "About Manga Combiner",
-                            onClick = { viewModel.onEvent(MainViewModel.Event.ToggleAboutDialog(true)) }
+                            onClick = { viewModel.onEvent(Event.ToggleAboutDialog(true)) }
                         )
                     }
                 }
@@ -136,7 +137,7 @@ fun main() {
 
             if (state.showAboutDialog) {
                 AboutDialog(
-                    onDismissRequest = { viewModel.onEvent(MainViewModel.Event.ToggleAboutDialog(false)) }
+                    onDismissRequest = { viewModel.onEvent(Event.ToggleAboutDialog(false)) }
                 )
             }
         }
