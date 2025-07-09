@@ -11,6 +11,7 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -60,6 +61,7 @@ fun main() {
             onCloseRequest = ::exitApplication,
             title = "Manga Combiner",
             state = windowState,
+            icon = painterResource("SMC.png"),
             onKeyEvent = {
                 if (it.type == KeyEventType.KeyDown) {
                     val isModifierPressed = if (isMac) it.isMetaPressed else it.isCtrlPressed

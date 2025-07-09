@@ -120,6 +120,17 @@ compose.desktop {
             packageVersion = appVersionName
             description = "A tool to download and combine manga chapters."
             vendor = "MangaCombiner"
+
+            // Add icon configuration
+            macOS {
+                iconFile.set(project.file("src/desktopMain/resources/SMC.png"))
+            }
+            windows {
+                iconFile.set(project.file("src/desktopMain/resources/SMC.png"))
+            }
+            linux {
+                iconFile.set(project.file("src/desktopMain/resources/SMC.png"))
+            }
         }
     }
 }
