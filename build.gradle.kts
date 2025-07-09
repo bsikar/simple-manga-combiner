@@ -117,7 +117,11 @@ compose.desktop {
     }
 }
 
-tasks.withType<ShadowJar> {
+// This single block replaces the two old ones.
+tasks.register<ShadowJar>("cliJar") {
+    group = "build"
+    description = "Assembles the CLI fat JAR"
+
     archiveBaseName.set("manga-combiner-cli")
     archiveClassifier.set("")
     archiveVersion.set("2.0.0")
@@ -132,8 +136,3 @@ tasks.withType<ShadowJar> {
     mergeServiceFiles()
 }
 
-tasks.register("cliJar") {
-    group = "build"
-    description = "Assembles the CLI fat JAR"
-    dependsOn("shadowJar")
-}
