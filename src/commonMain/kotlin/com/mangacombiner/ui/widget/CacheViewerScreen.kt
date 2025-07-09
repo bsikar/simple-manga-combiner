@@ -100,7 +100,7 @@ fun CacheViewerScreen(state: UiState, onEvent: (Event) -> Unit) {
             ) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Delete Selected (${state.cacheItemsToDelete.size})")
+                Text("Delete Selected (${state.cacheItemsToDelete.size})", softWrap = false)
             }
         }
     }

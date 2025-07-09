@@ -18,6 +18,7 @@ import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.UiState
+import com.mangacombiner.util.AppVersion
 
 @Composable
 fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
@@ -206,7 +207,7 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     Button(
                         onClick = { onEvent(Event.Navigate(Screen.CACHE_VIEWER)) },
                     ) {
-                        Text("View Cached Downloads")
+                        Text("View Cached Downloads", softWrap = false)
                     }
                     Button(
                         onClick = { onEvent(Event.Cache.RequestClearAll) },
@@ -215,7 +216,7 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                             contentColor = MaterialTheme.colors.onError
                         )
                     ) {
-                        Text("Clear All Cache")
+                        Text("Clear All Cache", softWrap = false)
                     }
                 }
             }
@@ -228,6 +229,14 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
         ) {
             Text("Restore All Defaults")
         }
+
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Manga Combiner v${AppVersion.NAME}",
+            style = MaterialTheme.typography.caption,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
     }
 
     if (state.showClearCacheDialog) {

@@ -4,7 +4,7 @@
     <selectionStates>
       <SelectionState runConfigName="manga-combiner-kmp">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-07-09T05:25:49.670908Z">
+        <DropdownSelection timestamp="2025-07-09T16:54:04.623877Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="PhysicalDevice" identifier="serial=76c55dc5" />

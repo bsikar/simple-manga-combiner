@@ -11,6 +11,9 @@ plugins {
     alias(libs.plugins.shadow.jar)
 }
 
+val appVersionName: String by project
+val appVersionCode: String by project
+
 val kotlin: org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension by project
 
 kotlin {
@@ -32,6 +35,7 @@ kotlin {
 
     sourceSets {
         val commonMain by getting {
+            kotlin.srcDir(layout.buildDirectory.dir("generated/version/commonMain"))
             dependencies {
                 api(compose.runtime)
                 api(compose.foundation)
@@ -84,8 +88,8 @@ android {
         applicationId = "com.mangacombiner"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = appVersionCode.toInt()
+        versionName = appVersionName
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -111,7 +115,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "MangaCombiner"
-            packageVersion = "2.0.0"
+            packageVersion = appVersionName
             description = "A tool to download and combine manga chapters."
             vendor = "MangaCombiner"
         }
@@ -124,7 +128,7 @@ tasks.register<ShadowJar>("cliJar") {
 
     archiveBaseName.set("manga-combiner-cli")
     archiveClassifier.set("")
-    archiveVersion.set("2.0.0")
+    archiveVersion.set(appVersionName)
 
     manifest {
         attributes["Main-Class"] = "com.mangacombiner.desktop.CliRunnerKt"
@@ -134,4 +138,30 @@ tasks.register<ShadowJar>("cliJar") {
     from(project.configurations.named("desktopRuntimeClasspath"))
 
     mergeServiceFiles()
+}
+
+val generateVersionFile by tasks.register("generateVersionFile") {
+    val outputDir = project.layout.buildDirectory.get().dir("generated/version/commonMain/com/mangacombiner/util")
+    val outputFile = outputDir.file("AppVersion.kt")
+    outputs.file(outputFile)
+    group = "build"
+    description = "Generates a file with the app version."
+
+    doLast {
+        outputDir.asFile.mkdirs()
+        outputFile.asFile.writeText("""
+        package com.mangacombiner.util
+
+        /**
+         * An object that holds the application's version name, generated at build time.
+         */
+        object AppVersion {
+            const val NAME = "$appVersionName"
+        }
+        """.trimIndent())
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(generateVersionFile)
 }
