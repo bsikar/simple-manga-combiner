@@ -15,6 +15,7 @@ androidGradlePlugin = "8.11.0"
 koin = "3.5.6"
 kotlinxSerializationPlugin = "1.9.23"
 documentfile = "1.0.1"
+material = "1.12.0"
 
 [libraries]
 # Kotlinx
@@ -22,6 +23,7 @@ kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test" }
 kotlinx-cli = { module = "org.jetbrains.kotlinx:kotlinx-cli-jvm", version.ref = "kotlinxCli" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinxSerialization" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 
 # Ktor HTTP Client
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
@@ -47,6 +49,9 @@ koin-jvm = { module = "io.insert-koin:koin-core-jvm", version.ref = "koin" }
 
 # AndroidX
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
+
+# Material Components
+google-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

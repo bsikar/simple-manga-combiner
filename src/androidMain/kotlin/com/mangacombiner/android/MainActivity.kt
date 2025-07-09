@@ -28,6 +28,9 @@ class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModel<MainViewModel>()
 
+    // This variable will temporarily hold the type of folder request (e.g., for the main screen or for settings)
+    private var currentFolderPickerRequestType: FilePickerRequest.PathType? = null
+
     private val filePickerLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
             uri?.let { handleFileUri(it) }
@@ -36,9 +39,15 @@ class MainActivity : AppCompatActivity() {
     private val folderPickerLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
             uri?.let {
-                val path = it.toString()
-                viewModel.onFolderSelected(path, FilePickerRequest.PathType.DEFAULT_OUTPUT)
-                Logger.logInfo("Note: On Android, output is handled via the selected folder's URI.")
+                // When the folder picker returns a result, use the stored request type
+                // to call the correct function in the ViewModel.
+                currentFolderPickerRequestType?.let { type ->
+                    val path = it.toString()
+                    viewModel.onFolderSelected(path, type)
+                    Logger.logInfo("Note: On Android, output is handled via the selected folder's URI.")
+                }
+                // Clear the stored type after use.
+                currentFolderPickerRequestType = null
             }
         }
 
@@ -51,7 +60,11 @@ class MainActivity : AppCompatActivity() {
                     is FilePickerRequest.OpenFile -> filePickerLauncher.launch(
                         arrayOf("application/epub+zip", "application/vnd.comicbook+zip", "application/x-cbz")
                     )
-                    is FilePickerRequest.OpenFolder -> folderPickerLauncher.launch(null)
+                    is FilePickerRequest.OpenFolder -> {
+                        // Before launching the folder picker, store the type of request.
+                        currentFolderPickerRequestType = request.forPath
+                        folderPickerLauncher.launch(null)
+                    }
                 }
             }
         }

@@ -1,17 +1,18 @@
 package com.mangacombiner.ui.widget
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.model.DownloadJob
 import com.mangacombiner.ui.viewmodel.Event
-import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.UiState
 
 @Composable
@@ -42,6 +43,10 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
 
 @Composable
 private fun DownloadJobItem(job: DownloadJob) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = job.progress,
+        animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
+    )
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = 2.dp
@@ -77,7 +82,7 @@ private fun DownloadJobItem(job: DownloadJob) {
             Spacer(Modifier.height(8.dp))
             if (job.progress < 1f) {
                 LinearProgressIndicator(
-                    progress = job.progress,
+                    progress = animatedProgress,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

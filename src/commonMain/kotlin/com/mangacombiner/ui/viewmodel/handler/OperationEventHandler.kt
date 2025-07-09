@@ -17,6 +17,9 @@ internal fun MainViewModel.handleOperationEvent(event: Event.Operation) {
         Event.Operation.ConfirmCancel -> onConfirmCancelOperation()
         Event.Operation.AbortCancel -> _state.update { it.copy(showCancelDialog = false) }
         is Event.Operation.ToggleDeleteCacheOnCancel -> _state.update { it.copy(deleteCacheOnCancel = event.delete) }
+        Event.Operation.ConfirmBrokenDownload -> onConfirmBrokenDownload()
+        Event.Operation.DiscardFailed -> onDiscardFailed()
+        Event.Operation.RetryFailed -> onRetryFailed()
     }
 }
 
@@ -50,4 +53,22 @@ private fun MainViewModel.onResumeOperation() {
 private fun MainViewModel.onConfirmCancelOperation() {
     _state.update { it.copy(showCancelDialog = false) }
     _operationState.value = OperationState.CANCELLING
+}
+
+private fun MainViewModel.onConfirmBrokenDownload() {
+    _state.update { it.copy(showBrokenDownloadDialog = false) }
+    _state.value.lastDownloadResult?.let { result ->
+        packageFinalFile(result.successfulFolders, result.failedChapters)
+    }
+}
+
+private fun MainViewModel.onDiscardFailed() {
+    _state.update { it.copy(showBrokenDownloadDialog = false, showCompletionDialog = false) }
+    resetUiStateAfterOperation()
+    _operationState.value = OperationState.IDLE
+}
+
+private fun MainViewModel.onRetryFailed() {
+    _state.update { it.copy(showBrokenDownloadDialog = false) }
+    startOperation(isRetry = true)
 }

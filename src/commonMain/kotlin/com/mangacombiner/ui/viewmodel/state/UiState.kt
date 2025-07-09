@@ -5,6 +5,7 @@ import com.mangacombiner.model.DownloadJob
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.CachedSeries
 import com.mangacombiner.service.DownloadOptions
+import com.mangacombiner.service.DownloadResult
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.OperationState
 
@@ -30,6 +31,7 @@ data class UiState(
     val isAnalyzingFile: Boolean = false,
     val fetchedChapters: List<Chapter> = emptyList(),
     val localChaptersForSync: Map<String, String> = emptyMap(),
+    val failedItemsForSync: Map<String, List<String>> = emptyMap(),
     val sourceFilePath: String? = null,
     val showChapterDialog: Boolean = false,
     val showClearCacheDialog: Boolean = false,
@@ -59,6 +61,11 @@ data class UiState(
     val isSearching: Boolean = false,
     val searchSortOption: SearchSortOption = SearchSortOption.DEFAULT,
     val downloadQueue: List<DownloadJob> = emptyList(),
+
+    // New properties for error handling
+    val showBrokenDownloadDialog: Boolean = false,
+    val showCompletionDialog: Boolean = false,
+    val lastDownloadResult: DownloadResult? = null
 )
 
 internal fun UiState.toAppSettings() = AppSettings(

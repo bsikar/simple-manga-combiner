@@ -1,6 +1,7 @@
 package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.ui.viewmodel.Event
-import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.ui.viewmodel.state.SearchSortOption
 import com.mangacombiner.ui.viewmodel.state.UiState
@@ -260,13 +260,17 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
         }
 
         if (isRunning) {
+            val animatedProgress by animateFloatAsState(
+                targetValue = state.progress,
+                animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
+            )
             Column(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 LinearProgressIndicator(
-                    progress = state.progress,
+                    progress = animatedProgress,
                     modifier = Modifier.fillMaxWidth().height(8.dp)
                 )
                 Text(

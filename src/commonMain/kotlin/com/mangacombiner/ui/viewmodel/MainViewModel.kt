@@ -23,7 +23,6 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.io.File
@@ -54,10 +53,19 @@ class MainViewModel(
     init {
         val savedSettings = settingsRepository.loadSettings()
         Logger.isDebugEnabled = savedSettings.debugLog
+        val effectiveDefaultLocation = savedSettings.defaultOutputLocation
+        val initialOutputPath = when (effectiveDefaultLocation) {
+            "Downloads" -> platformProvider.getUserDownloadsDir() ?: ""
+            "Documents" -> platformProvider.getUserDocumentsDir() ?: ""
+            "Desktop" -> platformProvider.getUserDesktopDir() ?: ""
+            "Custom" -> savedSettings.customDefaultOutputPath
+            else -> ""
+        }
+
         _state = MutableStateFlow(
             UiState(
                 theme = savedSettings.theme,
-                defaultOutputLocation = savedSettings.defaultOutputLocation,
+                defaultOutputLocation = effectiveDefaultLocation,
                 customDefaultOutputPath = savedSettings.customDefaultOutputPath,
                 workers = savedSettings.workers,
                 outputFormat = savedSettings.outputFormat,
@@ -71,13 +79,13 @@ class MainViewModel(
                 zoomFactor = savedSettings.zoomFactor,
                 fontSizePreset = savedSettings.fontSizePreset,
                 systemLightTheme = savedSettings.systemLightTheme,
-                systemDarkTheme = savedSettings.systemDarkTheme
+                systemDarkTheme = savedSettings.systemDarkTheme,
+                outputPath = initialOutputPath
             )
         )
         state = _state.asStateFlow()
 
         setupListeners()
-        setInitialPaths(savedSettings.defaultOutputLocation, savedSettings.customDefaultOutputPath)
         setPlaceholderQueue()
     }
 
@@ -92,30 +100,12 @@ class MainViewModel(
         }
         viewModelScope.launch {
             state
-                .debounce(500L)
                 .map { it.toAppSettings() }
                 .distinctUntilChanged()
                 .collect { settingsToSave ->
                     settingsRepository.saveSettings(settingsToSave)
                     Logger.logDebug { "Settings saved automatically." }
                 }
-        }
-    }
-
-    private fun setInitialPaths(defaultLocation: String, customPath: String) {
-        val defaultDownloadsPath = platformProvider.getUserDownloadsDir() ?: ""
-        val initialOutputPath = when (defaultLocation) {
-            "Downloads" -> defaultDownloadsPath
-            "Documents" -> platformProvider.getUserDocumentsDir() ?: ""
-            "Desktop" -> platformProvider.getUserDesktopDir() ?: ""
-            "Custom" -> customPath
-            else -> ""
-        }
-        _state.update {
-            it.copy(
-                outputPath = initialOutputPath,
-                customDefaultOutputPath = if (defaultLocation == "Custom") customPath else defaultDownloadsPath
-            )
         }
     }
 
@@ -155,13 +145,16 @@ class MainViewModel(
                 _state.update { it.copy(outputPath = path) }
             }
             FilePickerRequest.PathType.CUSTOM_OUTPUT -> {
-                _state.update { it.copy(customDefaultOutputPath = path, outputPath = path) }
+                _state.update { it.copy(
+                    customDefaultOutputPath = path,
+                    outputPath = path,
+                    defaultOutputLocation = "Custom"
+                ) }
             }
         }
         checkOutputFileExistence()
     }
 
-    //region Internal Helper Functions
     internal fun getChapterDefaultSource(chapter: Chapter): ChapterSource {
         return when {
             chapter.availableSources.contains(ChapterSource.LOCAL) -> ChapterSource.LOCAL
@@ -187,7 +180,7 @@ class MainViewModel(
         } else {
             _state.update { it.copy(outputFileExists = false) }
             if (s.sourceFilePath == outputFile.path) {
-                _state.update { it.copy(sourceFilePath = null, localChaptersForSync = emptyMap()) }
+                _state.update { it.copy(sourceFilePath = null, localChaptersForSync = emptyMap(), failedItemsForSync = emptyMap()) }
             }
         }
     }
@@ -198,22 +191,23 @@ class MainViewModel(
                 Logger.logError("Path is not a valid file for analysis: ${file.path}")
                 return@launch
             }
-
             _state.update { it.copy(isAnalyzingFile = true) }
 
-            val (chapterSlugs, url) = downloadService.processorService.getChaptersAndInfoFromFile(file)
+            val (chapterSlugs, url, failedItems) = downloadService.processorService.getChaptersAndInfoFromFile(file)
 
             _state.update { currentState ->
                 if (chapterSlugs.isEmpty() && url == null) {
                     Logger.logInfo("No chapters or URL could be identified in the file: ${file.name}.")
-                    currentState.copy(isAnalyzingFile = false, sourceFilePath = null, localChaptersForSync = emptyMap())
+                    currentState.copy(isAnalyzingFile = false, sourceFilePath = null, localChaptersForSync = emptyMap(), failedItemsForSync = emptyMap())
                 } else {
                     if (url != null) Logger.logInfo("Found embedded series URL in ${file.name}: $url")
+                    if (failedItems.isNotEmpty()) Logger.logInfo("Found ${failedItems.size} chapters with download failures in the file.")
                     currentState.copy(
                         isAnalyzingFile = false,
                         seriesUrl = currentState.seriesUrl.ifBlank { url ?: "" },
                         sourceFilePath = file.path,
-                        localChaptersForSync = chapterSlugs.associateBy { SlugUtils.toComparableKey(it) }
+                        localChaptersForSync = chapterSlugs.associateBy { SlugUtils.toComparableKey(it) },
+                        failedItemsForSync = failedItems
                     )
                 }
             }
@@ -226,10 +220,10 @@ class MainViewModel(
 
         viewModelScope.launch {
             _state.update { it.copy(isFetchingChapters = true) }
-
             val seriesSlug = url.toSlug()
             val cachedChapterNames = cacheService.getCachedChapterNamesForSeries(seriesSlug)
             val localChapterMap = _state.value.localChaptersForSync
+            val failedChapterTitles = _state.value.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
 
             val userAgent = UserAgent.browsers[_state.value.userAgentName] ?: UserAgent.browsers.values.first()
             val client = createHttpClient("")
@@ -244,17 +238,21 @@ class MainViewModel(
                     val originalLocalSlug = localChapterMap[comparableKey]
                     val isLocal = originalLocalSlug != null
                     val isCached = sanitizedTitle in cachedChapterNames
+                    val isRetry = comparableKey in failedChapterTitles
 
                     val sources = mutableSetOf(ChapterSource.WEB)
                     if (isLocal) sources.add(ChapterSource.LOCAL)
                     if (isCached) sources.add(ChapterSource.CACHE)
 
+                    val initialSource = if (isRetry) ChapterSource.WEB else getChapterDefaultSource(Chapter(chapUrl, title, sources, null, originalLocalSlug, false))
+
                     Chapter(
                         url = chapUrl,
                         title = title,
                         availableSources = sources,
-                        selectedSource = getChapterDefaultSource(Chapter(chapUrl, title, sources, null, originalLocalSlug)),
-                        localSlug = originalLocalSlug
+                        selectedSource = initialSource,
+                        localSlug = originalLocalSlug,
+                        isRetry = isRetry
                     )
                 }.sortedWith(compareBy(naturalSortComparator) { it.title })
 
@@ -268,92 +266,155 @@ class MainViewModel(
         }
     }
 
-    internal fun startOperation() {
+    internal fun startOperation(isRetry: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
             _operationState.value = OperationState.RUNNING
             _state.update { it.copy(progress = 0f, progressStatusText = "Starting operation...") }
             val s = _state.value
-
             val tempDir = File(platformProvider.getTmpDir())
             val tempUpdateDir = File(tempDir, "manga-update-${System.currentTimeMillis()}").apply { mkdirs() }
 
             try {
-                if (s.seriesUrl.isNotBlank()) {
-                    val seriesSlug = s.seriesUrl.toSlug()
-                    val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
-                    val urlFile = File(tempSeriesDir, "url.txt")
-                    if (!urlFile.exists()) {
-                        try {
-                            urlFile.writeText(s.seriesUrl)
-                        } catch (e: Exception) {
-                            Logger.logError("Failed to save series URL to cache", e)
-                        }
-                    }
+                val chaptersForOperation = if (isRetry) {
+                    val failedTitles = s.lastDownloadResult?.failedChapters?.keys ?: emptySet()
+                    s.fetchedChapters.filter { it.title in failedTitles }
+                } else {
+                    s.fetchedChapters.filter { it.selectedSource != null }
                 }
 
-                val selectedChapters = s.fetchedChapters.filter { it.selectedSource != null }
-                if (selectedChapters.isEmpty()) {
+                if (chaptersForOperation.isEmpty()) {
                     Logger.logError("No chapters selected for operation. Aborting.")
                     _operationState.value = OperationState.IDLE
                     return@launch
                 }
 
-                val chaptersToExtract = selectedChapters.filter { it.selectedSource == ChapterSource.LOCAL }
-                val chaptersFromCache = selectedChapters.filter { it.selectedSource == ChapterSource.CACHE }
-                val chaptersToDownload = selectedChapters.filter { it.selectedSource == ChapterSource.WEB }
-
-                val downloadOptions = createDownloadOptions(s, s.seriesUrl, chaptersToDownload)
-                _state.update { it.copy(activeDownloadOptions = downloadOptions) }
-                // logOperationSettings(...)
-
-                val allChapterFolders = mutableListOf<File>()
-
-                if (s.sourceFilePath != null && chaptersToExtract.isNotEmpty()) {
-                    _state.update { it.copy(progress = 0.1f, progressStatusText = "Extracting local chapters...") }
-                    val extracted = downloadService.processorService.extractChaptersToDirectory(
-                        File(s.sourceFilePath),
-                        chaptersToExtract.mapNotNull { it.localSlug },
-                        tempUpdateDir
-                    )
-                    allChapterFolders.addAll(extracted)
+                val allChapterFolders = if (isRetry) {
+                    s.lastDownloadResult?.successfulFolders?.toMutableList() ?: mutableListOf()
+                } else {
+                    mutableListOf()
                 }
 
-                val seriesSlug = s.seriesUrl.toSlug()
-                val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
+                val seriesSlug = if (s.seriesUrl.isNotBlank()) s.seriesUrl.toSlug() else ""
+                val tempSeriesDir = if (seriesSlug.isNotBlank()) File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() } else tempDir
 
-                if (chaptersToDownload.isNotEmpty()) {
-                    val downloaded = downloadService.downloadChaptersOnly(downloadOptions, tempSeriesDir)
-                    if (downloaded != null) {
-                        allChapterFolders.addAll(downloaded)
-                    } else if (_operationState.value != OperationState.RUNNING) {
-                        return@launch
+                if (!isRetry) {
+                    val chaptersToExtract = chaptersForOperation.filter { it.selectedSource == ChapterSource.LOCAL }
+                    if (s.sourceFilePath != null && chaptersToExtract.isNotEmpty()) {
+                        _state.update { it.copy(progress = 0.1f, progressStatusText = "Extracting local chapters...") }
+                        allChapterFolders.addAll(
+                            downloadService.processorService.extractChaptersToDirectory(
+                                File(s.sourceFilePath),
+                                chaptersToExtract.mapNotNull { it.localSlug },
+                                tempUpdateDir
+                            )
+                        )
                     }
-                }
 
-                if (chaptersFromCache.isNotEmpty()) {
+                    val chaptersFromCache = chaptersForOperation.filter { it.selectedSource == ChapterSource.CACHE }
                     chaptersFromCache.forEach {
                         allChapterFolders.add(File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)))
                     }
                 }
-            } finally {
-                tempUpdateDir.deleteRecursively()
-                _operationState.value = OperationState.IDLE
-                _state.update {
-                    it.copy(
-                        activeDownloadOptions = null,
-                        deleteCacheOnCancel = false,
-                        progress = 0f,
-                        progressStatusText = "",
-                        sourceFilePath = null,
-                        localChaptersForSync = emptyMap(),
-                        fetchedChapters = emptyList(),
-                        seriesUrl = "",
-                        customTitle = ""
-                    )
+
+                val chaptersToDownload = chaptersForOperation.filter { it.selectedSource == ChapterSource.WEB }
+                if (chaptersToDownload.isNotEmpty()) {
+                    val downloadOptions = createDownloadOptions(s, s.seriesUrl, chaptersToDownload)
+                    _state.update { it.copy(activeDownloadOptions = downloadOptions) }
+                    val downloadResult = downloadService.downloadChapters(downloadOptions, tempSeriesDir)
+
+                    if(downloadResult != null) {
+                        allChapterFolders.addAll(downloadResult.successfulFolders)
+                        _state.update { it.copy(lastDownloadResult = downloadResult) }
+
+                        if (downloadResult.failedChapters.isNotEmpty()) {
+                            _state.update { it.copy(showBrokenDownloadDialog = true) }
+                            return@launch
+                        }
+                    }
                 }
-                Logger.logInfo("--- Operation Complete ---")
+
+                if (_operationState.value == OperationState.RUNNING) {
+                    packageFinalFile(allChapterFolders)
+                }
+            } finally {
+                if (_operationState.value == OperationState.IDLE) {
+                    tempUpdateDir.deleteRecursively()
+                    resetUiStateAfterOperation()
+                }
             }
         }
+    }
+
+    internal fun packageFinalFile(folders: List<File>, failedChapters: Map<String, List<String>>? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val s = _state.value
+            if (folders.isNotEmpty()) {
+                val mangaTitle = s.customTitle.ifBlank {
+                    s.seriesUrl.toSlug().replace('-', ' ').titlecase().ifBlank { "Untitled" }
+                }
+                _state.update { it.copy(progress = 0.95f, progressStatusText = "Packaging ${folders.size} chapters...") }
+
+                val finalOutputPath = s.outputPath
+                val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${s.outputFormat}"
+
+                val tempOutputFile = File(platformProvider.getTmpDir(), finalFileName)
+
+                if (s.outputFormat == "cbz") {
+                    downloadService.processorService.createCbzFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, _operationState, failedChapters)
+                } else {
+                    downloadService.processorService.createEpubFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, _operationState, failedChapters)
+                }
+
+                if (_operationState.value == OperationState.RUNNING && tempOutputFile.exists() && tempOutputFile.length() > 0) {
+                    _state.update { it.copy(progress = 1.0f, progressStatusText = "Moving final file...") }
+                    val finalPath = fileMover.moveToFinalDestination(tempOutputFile, finalOutputPath, finalFileName)
+                    val message = if (finalPath.isNotBlank()) {
+                        "Download complete: $finalPath"
+                    } else {
+                        "Error: Failed to move file to final destination."
+                    }
+                    _state.update { it.copy(completionMessage = message, showCompletionDialog = true) }
+                    Logger.logInfo("\n$message")
+                } else {
+                    val message = "Packaging failed. Output file was not created or is empty."
+                    _state.update { it.copy(completionMessage = "Error: $message") }
+                    Logger.logError(message)
+                }
+            } else {
+                Logger.logInfo("No chapters to process. Operation finished.")
+            }
+            resetUiStateAfterOperation()
+            _operationState.value = OperationState.IDLE
+        }
+    }
+
+    internal fun resetUiStateAfterOperation() {
+        val seriesSlug = if (_state.value.seriesUrl.isNotBlank()) _state.value.seriesUrl.toSlug() else ""
+        if (seriesSlug.isNotBlank()) {
+            val tempSeriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
+            if (tempSeriesDir.exists()) {
+                Logger.logInfo("Cleaning up temporary series directory...")
+                tempSeriesDir.deleteRecursively()
+            }
+        }
+
+        _state.update {
+            it.copy(
+                activeDownloadOptions = null,
+                deleteCacheOnCancel = false,
+                progress = 0f,
+                progressStatusText = "",
+                sourceFilePath = null,
+                localChaptersForSync = emptyMap(),
+                failedItemsForSync = emptyMap(),
+                fetchedChapters = emptyList(),
+                seriesUrl = "",
+                customTitle = "",
+                lastDownloadResult = null,
+                showCompletionDialog = false
+            )
+        }
+        Logger.logInfo("--- Operation Complete ---")
     }
 
     private fun startFromFile(path: String) {
@@ -363,11 +424,12 @@ class MainViewModel(
                 Logger.logError("Selected path is not a valid file: $path")
                 return@launch
             }
+            _state.update { it.copy(customTitle = file.toPath().nameWithoutExtension.toString()) }
             analyzeLocalFile(file)
         }
     }
 
-    internal fun createDownloadOptions(s: UiState, seriesUrl: String, chaptersToDownload: List<Chapter>): DownloadOptions {
+    private fun createDownloadOptions(s: UiState, seriesUrl: String, chaptersToDownload: List<Chapter>): DownloadOptions {
         return DownloadOptions(
             seriesUrl = seriesUrl,
             chaptersToDownload = chaptersToDownload.associate { it.url to it.title },
@@ -383,7 +445,7 @@ class MainViewModel(
                     else -> listOf(UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first())
                 }
             },
-            outputPath = "",
+            outputPath = s.outputPath,
             operationState = _operationState,
             dryRun = s.dryRun,
             onProgressUpdate = { progress, status ->
@@ -391,5 +453,4 @@ class MainViewModel(
             }
         )
     }
-    //endregion
 }

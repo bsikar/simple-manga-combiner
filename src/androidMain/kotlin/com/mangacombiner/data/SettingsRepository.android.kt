@@ -1,6 +1,7 @@
 package com.mangacombiner.data
 
 import android.content.Context
+import androidx.core.content.edit
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.ui.theme.AppTheme
 
@@ -24,7 +25,8 @@ actual class SettingsRepository(private val context: Context) {
     }
 
     actual fun saveSettings(settings: AppSettings) {
-        with(prefs.edit()) {
+        // Use the KTX edit extension with commit = true for synchronous saving
+        prefs.edit(commit = true) {
             putString(THEME, settings.theme.name)
             putString(DEFAULT_OUTPUT_LOCATION, settings.defaultOutputLocation)
             putString(CUSTOM_DEFAULT_OUTPUT_PATH, settings.customDefaultOutputPath)
@@ -38,7 +40,6 @@ actual class SettingsRepository(private val context: Context) {
             putString(FONT_SIZE_PRESET, settings.fontSizePreset)
             putString(SYSTEM_LIGHT_THEME, settings.systemLightTheme.name)
             putString(SYSTEM_DARK_THEME, settings.systemDarkTheme.name)
-            apply()
         }
     }
 

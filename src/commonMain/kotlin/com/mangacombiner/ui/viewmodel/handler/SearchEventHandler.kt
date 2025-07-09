@@ -28,14 +28,21 @@ internal fun MainViewModel.handleSearchEvent(event: Event.Search) {
 private fun MainViewModel.onSelectSearchResult(url: String) {
     _state.update {
         it.copy(
+            // Set new manga context
             seriesUrl = url,
             customTitle = url.substringAfterLast("/manga/", "")
                 .substringBefore('/')
                 .replace('-', ' ')
                 .titlecase(),
+
+            // Clear search UI state
             searchQuery = "",
             searchResults = emptyList(),
-            originalSearchResults = emptyList()
+            originalSearchResults = emptyList(),
+
+            // Clear state from any previous local file operation
+            sourceFilePath = null,
+            localChaptersForSync = emptyMap()
         )
     }
     checkOutputFileExistence()

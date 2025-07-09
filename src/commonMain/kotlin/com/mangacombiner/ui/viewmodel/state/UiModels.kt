@@ -18,7 +18,8 @@ data class Chapter(
     val title: String,
     val availableSources: Set<ChapterSource>,
     var selectedSource: ChapterSource?,
-    val localSlug: String?
+    val localSlug: String?,
+    val isRetry: Boolean = false // Added to indicate a failed chapter
 )
 
 enum class RangeAction {

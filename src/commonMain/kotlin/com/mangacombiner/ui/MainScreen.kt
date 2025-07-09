@@ -18,7 +18,18 @@ import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.Screen
-import com.mangacombiner.ui.widget.*
+import com.mangacombiner.ui.widget.AboutDialog
+import com.mangacombiner.ui.widget.AdvancedSettingsScreen
+import com.mangacombiner.ui.widget.BrokenDownloadDialog
+import com.mangacombiner.ui.widget.CacheViewerScreen
+import com.mangacombiner.ui.widget.ChapterSelectionDialog
+import com.mangacombiner.ui.widget.CompletionDialog
+import com.mangacombiner.ui.widget.DownloadQueueScreen
+import com.mangacombiner.ui.widget.DownloadScreen
+import com.mangacombiner.ui.widget.FormControlLabel
+import com.mangacombiner.ui.widget.LogScreen
+import com.mangacombiner.ui.widget.PlatformTooltip
+import com.mangacombiner.ui.widget.SettingsScreen
 
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
@@ -46,7 +57,7 @@ fun MainScreen(viewModel: MainViewModel) {
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colors.background).padding(paddingValues)) {
             Row(modifier = Modifier.fillMaxSize()) {
-                val showNavLabels = state.fontSizePreset != "Large"
+                val showNavLabels = state.fontSizePreset != "Large" && state.fontSizePreset != "X-Large"
                 NavigationRail(
                     modifier = Modifier.fillMaxHeight(),
                     backgroundColor = MaterialTheme.colors.surface
@@ -117,6 +128,12 @@ fun MainScreen(viewModel: MainViewModel) {
             }
             if (state.showAboutDialog) {
                 AboutDialog(onDismissRequest = { viewModel.onEvent(Event.ToggleAboutDialog(false)) })
+            }
+            if (state.showBrokenDownloadDialog) {
+                BrokenDownloadDialog(state, viewModel::onEvent)
+            }
+            if (state.showCompletionDialog) {
+                CompletionDialog(state, viewModel::onEvent)
             }
             if (state.showCancelDialog) {
                 AlertDialog(

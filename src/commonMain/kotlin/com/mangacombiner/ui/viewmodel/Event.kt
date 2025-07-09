@@ -8,11 +8,9 @@ import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.SearchSortOption
 
 sealed interface Event {
-    // Navigation and General UI
     data class Navigate(val screen: Screen) : Event
     data class ToggleAboutDialog(val show: Boolean) : Event
 
-    // Settings
     sealed interface Settings : Event {
         data class UpdateTheme(val theme: AppTheme) : Settings
         data class UpdateSystemLightTheme(val theme: AppTheme) : Settings
@@ -33,7 +31,6 @@ sealed interface Event {
         object CancelRestoreDefaults : Settings
     }
 
-    // Search
     sealed interface Search : Event {
         data class UpdateQuery(val query: String) : Search
         data class SelectResult(val url: String) : Search
@@ -42,7 +39,6 @@ sealed interface Event {
         object Perform : Search
     }
 
-    // Download & Sync
     sealed interface Download : Event {
         data class UpdateUrl(val url: String) : Download
         data class UpdateCustomTitle(val title: String) : Download
@@ -70,7 +66,6 @@ sealed interface Event {
         object RedownloadAllCached : Download
     }
 
-    // Operation Control
     sealed interface Operation : Event {
         object RequestStart : Operation
         object ConfirmOverwrite : Operation
@@ -81,9 +76,11 @@ sealed interface Event {
         object ConfirmCancel : Operation
         object AbortCancel : Operation
         data class ToggleDeleteCacheOnCancel(val delete: Boolean) : Operation
+        object ConfirmBrokenDownload : Operation
+        object DiscardFailed : Operation
+        object RetryFailed : Operation
     }
 
-    // Cache Management
     sealed interface Cache : Event {
         data class ToggleItemForDeletion(val path: String) : Cache
         data class UpdateChapterRange(val seriesPath: String, val start: Int, val end: Int, val action: RangeAction) : Cache
@@ -101,7 +98,6 @@ sealed interface Event {
         object DeselectAll : Cache
     }
 
-    // Logs
     sealed interface Log : Event {
         object ToggleAutoscroll : Log
         object CopyToClipboard : Log

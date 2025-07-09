@@ -27,8 +27,23 @@ import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 
+// New data class to hold the result for a single chapter
+data class ChapterDownloadResult(
+    val chapterDir: File?,
+    val chapterTitle: String,
+    val failedImageUrls: List<String>
+)
+
+// New data class to hold the result for the entire download operation
+data class DownloadResult(
+    val successfulFolders: List<File>,
+    val failedChapters: Map<String, List<String>> // Map of Chapter Title -> List of failed image URLs
+)
+
+// Updated status to include partial success
 enum class DownloadCompletionStatus {
     SUCCESS,
+    PARTIAL_SUCCESS,
     FAILED,
     CANCELLED
 }
@@ -88,27 +103,28 @@ class DownloadService(
         client: HttpClient,
         baseProgress: Float,
         progressWeight: Float
-    ): File? {
+    ): ChapterDownloadResult {
         val chapterDir = File(baseDir, FileUtils.sanitizeFilename(chapterTitle))
-        if (!chapterDir.exists()) {
-            chapterDir.mkdirs()
-        }
+        if (!chapterDir.exists()) chapterDir.mkdirs()
 
         while (options.operationState.value == OperationState.PAUSED) {
             delay(1000)
         }
-        if (options.operationState.value != OperationState.RUNNING) return null
+        if (options.operationState.value != OperationState.RUNNING) {
+            return ChapterDownloadResult(null, chapterTitle, emptyList())
+        }
 
         val scraperUserAgent = options.getUserAgents().random()
         val imageUrls = scraperService.findImageUrls(client, chapterUrl, scraperUserAgent)
         if (imageUrls.isEmpty()) {
             Logger.logInfo(" --> Warning: No images found for chapter '$chapterTitle'. It might be empty or licensed.")
-            return if (chapterDir.exists()) chapterDir else null
+            return ChapterDownloadResult(chapterDir.takeIf { it.exists() }, chapterTitle, listOf("Chapter page might be empty or licensed."))
         }
 
         Logger.logInfo(" --> Found ${imageUrls.size} images for '$chapterTitle'. Starting download...")
         val dispatcher = Dispatchers.IO.limitedParallelism(options.getWorkers())
         val downloadedImagesCount = AtomicInteger(0)
+        val failedImageUrls = mutableListOf<String>()
 
         coroutineScope {
             imageUrls.mapIndexed { index, imageUrl ->
@@ -121,39 +137,48 @@ class DownloadService(
                         val imageUserAgent = options.getUserAgents().random()
                         Logger.logDebug { "Downloading image ${index + 1}/${imageUrls.size}: $imageUrl" }
                         val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
-                        val outputFile =
-                            File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
+                        val outputFile = File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
+
                         if (downloadFile(client, imageUrl, outputFile, imageUserAgent)) {
-                            val currentDownloaded = downloadedImagesCount.incrementAndGet()
-                            val imageProgress = currentDownloaded.toFloat() / imageUrls.size
-                            val currentTotalProgress = baseProgress + (imageProgress * progressWeight)
-                            val statusText = "Downloading: ${chapterTitle.take(30)}..."
-                            options.onProgressUpdate(currentTotalProgress, statusText)
+                            downloadedImagesCount.incrementAndGet()
+                        } else {
+                            failedImageUrls.add(imageUrl)
                         }
+
+                        val imageProgress = (index + 1).toFloat() / imageUrls.size
+                        val currentTotalProgress = baseProgress + (imageProgress * progressWeight)
+                        val statusText = "Downloading: ${chapterTitle.take(30)}... (${index + 1}/${imageUrls.size})"
+                        options.onProgressUpdate(currentTotalProgress, statusText)
                     }
                 }
             }.joinAll()
         }
 
-        if (options.operationState.value != OperationState.RUNNING) return null
+        if (options.operationState.value != OperationState.RUNNING) {
+            return ChapterDownloadResult(null, chapterTitle, failedImageUrls)
+        }
 
         val downloadedCount = chapterDir.listFiles()?.count { it.isFile } ?: 0
         return if (downloadedCount > 0) {
+            if (failedImageUrls.isNotEmpty()) {
+                Logger.logError("Warning: Failed to download ${failedImageUrls.size} images for chapter: '$chapterTitle'")
+            }
             Logger.logDebug { "Finished download for chapter: '$chapterTitle' ($downloadedCount images)" }
-            chapterDir
+            ChapterDownloadResult(chapterDir, chapterTitle, failedImageUrls)
         } else {
-            Logger.logDebug { "Warning: Failed to download any images for chapter: '$chapterTitle'" }
-            chapterDir.takeIf { it.exists() }
+            Logger.logError("Error: Failed to download any images for chapter: '$chapterTitle'")
+            ChapterDownloadResult(null, chapterTitle, imageUrls)
         }
     }
 
-    private suspend fun downloadChapters(
+    suspend fun downloadChapters(
         options: DownloadOptions,
         downloadDir: File
-    ): List<File>? {
+    ): DownloadResult? {
         val chapterData = options.chaptersToDownload.toList()
         Logger.logInfo("Downloading ${chapterData.size} chapters...")
-        val downloadedFolders = mutableListOf<File>()
+        val successfulFolders = mutableListOf<File>()
+        val failedChapters = mutableMapOf<String, List<String>>()
 
         val client = createHttpClient("")
 
@@ -161,119 +186,30 @@ class DownloadService(
             for ((index, chapter) in chapterData.withIndex()) {
                 val (url, title) = chapter
                 while (options.operationState.value == OperationState.PAUSED) {
-                    Logger.logDebug { "Operation is paused. Waiting..." }
                     delay(1000)
                 }
                 if (options.operationState.value != OperationState.RUNNING) {
                     return null
                 }
 
-                Logger.logInfo("--> Processing chapter ${downloadedFolders.size + 1}/${chapterData.size}: $title")
+                Logger.logInfo("--> Processing chapter ${index + 1}/${chapterData.size}: $title")
                 val baseProgress = index.toFloat() / chapterData.size
                 val progressWeight = 1f / chapterData.size
-                downloadChapter(options, url, title, downloadDir, client, baseProgress, progressWeight)?.let {
-                    downloadedFolders.add(it)
+
+                val result = downloadChapter(options, url, title, downloadDir, client, baseProgress, progressWeight)
+
+                result.chapterDir?.let { successfulFolders.add(it) }
+                if (result.failedImageUrls.isNotEmpty()) {
+                    failedChapters[title] = result.failedImageUrls
                 }
 
+                if (options.operationState.value != OperationState.RUNNING) return null
                 delay(CHAPTER_DOWNLOAD_DELAY_MS)
             }
         } finally {
             client.close()
         }
 
-        return downloadedFolders
-    }
-
-    suspend fun downloadChaptersOnly(options: DownloadOptions, downloadDir: File): List<File>? {
-        return downloadChapters(options, downloadDir)
-    }
-
-    private fun processDownloadedChapters(
-        options: DownloadOptions,
-        mangaTitle: String,
-        downloadedFolders: List<File>,
-    ) {
-        if (downloadedFolders.isEmpty()) {
-            Logger.logInfo("\nNo chapters were downloaded. Exiting.")
-            return
-        }
-
-        val outputDir = if (options.outputPath.isNotBlank()) File(options.outputPath) else File(".")
-        if (!outputDir.exists()) {
-            outputDir.mkdirs()
-        }
-
-        options.onProgressUpdate(1.0f, "Processing ${downloadedFolders.size} chapters...")
-
-        val outputFile = File(outputDir, "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
-        if (options.format == "cbz") {
-            processorService.createCbzFromFolders(mangaTitle, downloadedFolders, outputFile, options.seriesUrl, options.operationState)
-        } else {
-            processorService.createEpubFromFolders(mangaTitle, downloadedFolders, outputFile, options.seriesUrl, options.operationState)
-        }
-
-        if (options.operationState.value != OperationState.CANCELLING) {
-            Logger.logInfo("\nDownload and packaging complete: ${outputFile.absolutePath}")
-            options.onProgressUpdate(1.0f, "Packaging complete!")
-        }
-    }
-
-    suspend fun downloadNewSeries(options: DownloadOptions): DownloadCompletionStatus {
-        if (options.operationState.value != OperationState.RUNNING) return DownloadCompletionStatus.CANCELLED
-
-        val mangaTitle = options.cliTitle ?: options.seriesUrl.substringAfterLast("/manga/", "")
-            .substringBefore('/')
-            .replace('-', ' ')
-            .titlecase()
-
-        Logger.logInfo("Processing chapter list for: $mangaTitle")
-
-        if (options.chaptersToDownload.isEmpty()) {
-            Logger.logInfo("Could not find any chapters at the provided URL or none were selected.")
-            return DownloadCompletionStatus.SUCCESS
-        }
-
-        if (options.dryRun) {
-            Logger.logInfo("[DRY RUN] Would download ${options.chaptersToDownload.size} chapters for series '$mangaTitle'.")
-            val outputFile = File(".", "${FileUtils.sanitizeFilename(mangaTitle)}.${options.format}")
-            Logger.logInfo("[DRY RUN] Would create output file: ${outputFile.name}")
-            return DownloadCompletionStatus.SUCCESS
-        }
-
-        val seriesSlug = options.seriesUrl.toSlug()
-        val downloadDir = File(options.tempDir, "manga-dl-$seriesSlug")
-        if (downloadDir.exists()) {
-            Logger.logInfo("Reusing existing temporary directory: ${downloadDir.name}")
-        }
-        downloadDir.mkdirs()
-
-        try {
-            val downloadedFolders = downloadChapters(options, downloadDir)
-
-            if (options.operationState.value != OperationState.RUNNING) {
-                return DownloadCompletionStatus.CANCELLED
-            }
-
-            if (downloadedFolders != null) {
-                processDownloadedChapters(options, mangaTitle, downloadedFolders)
-
-                if (options.operationState.value == OperationState.CANCELLING) {
-                    return DownloadCompletionStatus.CANCELLED
-                }
-
-                Logger.logInfo("Cleaning up temporary files...")
-                if (downloadDir.deleteRecursively()) {
-                    Logger.logInfo("Cleanup successful.")
-                } else {
-                    Logger.logError("Failed to clean up temporary directory: ${downloadDir.absolutePath}")
-                }
-                return DownloadCompletionStatus.SUCCESS
-            } else {
-                return DownloadCompletionStatus.CANCELLED
-            }
-        } catch (e: Exception) {
-            Logger.logError("Operation failed. Temporary files have been kept for a future resume.", e)
-            return DownloadCompletionStatus.FAILED
-        }
+        return DownloadResult(successfulFolders, failedChapters)
     }
 }

@@ -48,6 +48,7 @@ kotlin {
 
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.core)
+                implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.cli)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.plugins)
@@ -64,6 +65,7 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 implementation("androidx.activity:activity-compose:1.9.0")
+                implementation(libs.google.material)
                 api(libs.koin.android)
                 implementation(libs.ktor.client.cio)
                 implementation(libs.androidx.documentfile)
