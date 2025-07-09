@@ -1,6 +1,7 @@
 package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material.Divider
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
 import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
 import androidx.compose.material.LinearProgressIndicator
 import androidx.compose.material.LocalContentColor
 import androidx.compose.material.MaterialTheme
@@ -33,6 +35,9 @@ import androidx.compose.material.Switch
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +55,7 @@ import com.mangacombiner.util.UserAgent
 fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
     var formatDropdownExpanded by remember { mutableStateOf(false) }
     var browserDropdownExpanded by remember { mutableStateOf(false) }
+    var advancedOptionsExpanded by remember { mutableStateOf(false) }
     val browserImpersonationOptions = listOf("Random") + UserAgent.browsers.keys.toList()
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -72,7 +78,20 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         label = { Text("Series URL") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        enabled = isIdle
+                        enabled = isIdle,
+                        trailingIcon = {
+                            if (state.seriesUrl.isNotBlank()) {
+                                IconButton(
+                                    onClick = { onEvent(MainViewModel.Event.ClearDownloadInputs) },
+                                    enabled = isIdle
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Clear,
+                                        contentDescription = "Clear URL and Filename"
+                                    )
+                                }
+                            }
+                        }
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -170,92 +189,98 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
             }
 
             Card(elevation = 4.dp) {
-                Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                    Text("Advanced Options", style = MaterialTheme.typography.h6)
-                    Spacer(Modifier.height(16.dp))
-
-                    AnimatedVisibility(visible = state.sourceFilePath != null) {
-                        FormControlLabel(
-                            onClick = { onEvent(MainViewModel.Event.ToggleReplaceOriginalFile(!state.replaceOriginalFile)) },
-                            enabled = isProcessing,
-                            control = {
-                                Switch(
-                                    checked = state.replaceOriginalFile,
-                                    onCheckedChange = { onEvent(MainViewModel.Event.ToggleReplaceOriginalFile(it)) },
-                                    enabled = isProcessing
-                                )
-                            },
-                            label = { Text("Replace original file on update") }
+                Column(Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { advancedOptionsExpanded = !advancedOptionsExpanded }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Advanced Options", style = MaterialTheme.typography.h6)
+                        Icon(
+                            imageVector = if (advancedOptionsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (advancedOptionsExpanded) "Collapse" else "Expand"
                         )
                     }
+                    AnimatedVisibility(visible = advancedOptionsExpanded) {
+                        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                            Spacer(Modifier.height(16.dp))
 
-                    FormControlLabel(
-                        onClick = { onEvent(MainViewModel.Event.ToggleDebugLog(!state.debugLog)) },
-                        enabled = true,
-                        control = {
-                            Switch(
-                                checked = state.debugLog,
-                                onCheckedChange = { onEvent(MainViewModel.Event.ToggleDebugLog(it)) },
-                                enabled = true
+                            FormControlLabel(
+                                onClick = { onEvent(MainViewModel.Event.ToggleDebugLog(!state.debugLog)) },
+                                enabled = true,
+                                control = {
+                                    Switch(
+                                        checked = state.debugLog,
+                                        onCheckedChange = { onEvent(MainViewModel.Event.ToggleDebugLog(it)) },
+                                        enabled = true
+                                    )
+                                },
+                                label = { Text("Enable Debug Logging") }
                             )
-                        },
-                        label = { Text("Enable Debug Logging") }
-                    )
 
-                    FormControlLabel(
-                        onClick = { onEvent(MainViewModel.Event.ToggleDryRun(!state.dryRun)) },
-                        enabled = isIdle,
-                        control = {
-                            Switch(
-                                checked = state.dryRun,
-                                onCheckedChange = { onEvent(MainViewModel.Event.ToggleDryRun(it)) },
-                                enabled = isIdle
+                            FormControlLabel(
+                                onClick = { onEvent(MainViewModel.Event.ToggleDryRun(!state.dryRun)) },
+                                enabled = isIdle,
+                                control = {
+                                    Switch(
+                                        checked = state.dryRun,
+                                        onCheckedChange = { onEvent(MainViewModel.Event.ToggleDryRun(it)) },
+                                        enabled = isIdle
+                                    )
+                                },
+                                label = { Text("Dry Run (Simulate Only)") }
                             )
-                        },
-                        label = { Text("Dry Run (Simulate Only)") }
-                    )
 
-                    FormControlLabel(
-                        onClick = { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(!state.perWorkerUserAgent)) },
-                        enabled = isProcessing,
-                        control = {
-                            Switch(
-                                checked = state.perWorkerUserAgent,
-                                onCheckedChange = { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(it)) },
-                                enabled = isProcessing
+                            FormControlLabel(
+                                onClick = { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(!state.perWorkerUserAgent)) },
+                                enabled = isProcessing,
+                                control = {
+                                    Switch(
+                                        checked = state.perWorkerUserAgent,
+                                        onCheckedChange = { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(it)) },
+                                        enabled = isProcessing
+                                    )
+                                },
+                                label = { Text("Randomize browser per worker") }
                             )
-                        },
-                        label = { Text("Randomize browser per worker") }
-                    )
 
-                    Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(8.dp))
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Impersonate Browser:", style = MaterialTheme.typography.body1, modifier = Modifier.weight(1f))
-                        Box {
-                            OutlinedButton(
-                                onClick = { browserDropdownExpanded = true },
-                                enabled = !state.perWorkerUserAgent && isProcessing
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(state.userAgentName)
-                                Icon(Icons.Default.ArrowDropDown, "Impersonate Browser")
-                            }
-                            DropdownMenu(
-                                expanded = browserDropdownExpanded,
-                                onDismissRequest = { browserDropdownExpanded = false },
-                                modifier = Modifier.widthIn(max = 280.dp)
-                            ) {
-                                Box(modifier = Modifier.heightIn(max = 400.dp)) {
-                                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                                        browserImpersonationOptions.forEach { name ->
-                                            DropdownMenuItem(onClick = {
-                                                onEvent(MainViewModel.Event.UpdateUserAgent(name))
-                                                browserDropdownExpanded = false
-                                            }) { Text(name) }
+                                Text(
+                                    "Impersonate Browser:",
+                                    style = MaterialTheme.typography.body1,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Box {
+                                    OutlinedButton(
+                                        onClick = { browserDropdownExpanded = true },
+                                        enabled = !state.perWorkerUserAgent && isProcessing
+                                    ) {
+                                        Text(state.userAgentName)
+                                        Icon(Icons.Default.ArrowDropDown, "Impersonate Browser")
+                                    }
+                                    DropdownMenu(
+                                        expanded = browserDropdownExpanded,
+                                        onDismissRequest = { browserDropdownExpanded = false },
+                                        modifier = Modifier.widthIn(max = 280.dp)
+                                    ) {
+                                        Box(modifier = Modifier.heightIn(max = 400.dp)) {
+                                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                                browserImpersonationOptions.forEach { name ->
+                                                    DropdownMenuItem(onClick = {
+                                                        onEvent(MainViewModel.Event.UpdateUserAgent(name))
+                                                        browserDropdownExpanded = false
+                                                    }) { Text(name) }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -293,7 +318,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 OperationState.IDLE -> {
                     val buttonText = if (state.sourceFilePath != null) "Sync & Update File" else "Start Download"
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.StartOperation) },
+                        onClick = { onEvent(MainViewModel.Event.RequestStartOperation) },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = state.fetchedChapters.any { it.selectedSource != null }
                     ) {

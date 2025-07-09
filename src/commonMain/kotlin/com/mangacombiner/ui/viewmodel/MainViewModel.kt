@@ -89,7 +89,6 @@ data class UiState(
     val fetchedChapters: List<Chapter> = emptyList(),
     val localChaptersForSync: Map<String, String> = emptyMap(),
     val sourceFilePath: String? = null,
-    val replaceOriginalFile: Boolean = false,
     val showChapterDialog: Boolean = false,
     val showClearCacheDialog: Boolean = false,
     val showCancelDialog: Boolean = false,
@@ -108,6 +107,9 @@ data class UiState(
     val systemLightTheme: AppTheme = AppTheme.LIGHT,
     val systemDarkTheme: AppTheme = AppTheme.DARK,
     val showRestoreDefaultsDialog: Boolean = false,
+    val outputFileExists: Boolean = false,
+    val showOverwriteConfirmationDialog: Boolean = false,
+    val showAboutDialog: Boolean = false,
 )
 
 /**
@@ -235,7 +237,7 @@ class MainViewModel(
         data class UpdateFontSizePreset(val preset: String) : Event()
         data class UpdateSystemLightTheme(val theme: AppTheme) : Event()
         data class UpdateSystemDarkTheme(val theme: AppTheme) : Event()
-        data class ToggleReplaceOriginalFile(val replace: Boolean) : Event()
+        data class ToggleAboutDialog(val show: Boolean) : Event()
 
         object PickCustomDefaultPath : Event()
         object PickOutputPath : Event()
@@ -253,7 +255,9 @@ class MainViewModel(
         object UseAllCached : Event()
         object IgnoreAllCached : Event()
         object RedownloadAllCached : Event()
-        object StartOperation : Event()
+        object RequestStartOperation : Event()
+        object ConfirmOverwrite : Event()
+        object CancelOverwrite : Event()
         object PauseOperation : Event()
         object ResumeOperation : Event()
         object RequestCancelOperation : Event()
@@ -276,6 +280,7 @@ class MainViewModel(
         object ConfirmRestoreDefaults : Event()
         object CancelRestoreDefaults : Event()
         object PickLocalFile : Event()
+        object ClearDownloadInputs : Event()
     }
 
     private fun getChapterDefaultSource(chapter: Chapter): ChapterSource {
@@ -297,11 +302,13 @@ class MainViewModel(
                     else -> ""
                 } ?: ""
                 _state.update { it.copy(defaultOutputLocation = event.location, outputPath = newPath) }
+                checkOutputFileExistence()
             }
             Event.PickCustomDefaultPath -> {
                 showFolderPicker { path ->
                     if (path != null) {
                         _state.update { it.copy(customDefaultOutputPath = path, outputPath = path) }
+                        checkOutputFileExistence()
                     }
                 }
             }
@@ -309,6 +316,7 @@ class MainViewModel(
                 showFolderPicker { path ->
                     if (path != null) {
                         _state.update { it.copy(outputPath = path) }
+                        checkOutputFileExistence()
                     }
                 }
             }
@@ -361,17 +369,47 @@ class MainViewModel(
                 }
                 Logger.logInfo("All settings restored to default values.")
             }
-            is Event.UpdateOutputPath -> _state.update { it.copy(outputPath = event.path) }
+            is Event.UpdateOutputPath -> {
+                _state.update { it.copy(outputPath = event.path) }
+                checkOutputFileExistence()
+            }
             is Event.Navigate -> {
                 _state.update { it.copy(currentScreen = event.screen) }
                 if (event.screen == Screen.CACHE_VIEWER) {
                     onEvent(Event.RefreshCacheView)
                 }
             }
-            is Event.UpdateUrl -> _state.update { it.copy(seriesUrl = event.url) }
-            is Event.UpdateCustomTitle -> _state.update { it.copy(customTitle = event.title) }
+            is Event.UpdateUrl -> {
+                val newUrl = event.url
+                val newTitle = if (newUrl.isNotBlank() && newUrl.contains("/manga/")) {
+                    newUrl.substringAfterLast("/manga/", "")
+                        .substringBefore('/')
+                        .replace('-', ' ')
+                        .titlecase()
+                } else {
+                    ""
+                }
+                _state.update {
+                    it.copy(
+                        seriesUrl = newUrl,
+                        customTitle = newTitle,
+                        // Reset context when URL changes, so we can re-detect a matching local file
+                        sourceFilePath = null,
+                        localChaptersForSync = emptyMap(),
+                        fetchedChapters = emptyList()
+                    )
+                }
+                checkOutputFileExistence()
+            }
+            is Event.UpdateCustomTitle -> {
+                _state.update { it.copy(customTitle = event.title) }
+                checkOutputFileExistence()
+            }
             is Event.UpdateWorkers -> _state.update { it.copy(workers = event.count.coerceIn(1, 16)) }
-            is Event.UpdateFormat -> _state.update { it.copy(outputFormat = event.format) }
+            is Event.UpdateFormat -> {
+                _state.update { it.copy(outputFormat = event.format) }
+                checkOutputFileExistence()
+            }
             is Event.ToggleDebugLog -> {
                 Logger.isDebugEnabled = event.isEnabled
                 _state.update { it.copy(debugLog = event.isEnabled) }
@@ -466,7 +504,21 @@ class MainViewModel(
                     if (ch.availableSources.contains(ChapterSource.CACHE)) ch.copy(selectedSource = ChapterSource.WEB) else ch
                 })
             }
-            Event.StartOperation -> startOperation()
+            Event.RequestStartOperation -> {
+                val s = _state.value
+                if (s.sourceFilePath != null) {
+                    _state.update { it.copy(showOverwriteConfirmationDialog = true) }
+                } else {
+                    startOperation()
+                }
+            }
+            Event.ConfirmOverwrite -> {
+                _state.update { it.copy(showOverwriteConfirmationDialog = false) }
+                startOperation()
+            }
+            Event.CancelOverwrite -> {
+                _state.update { it.copy(showOverwriteConfirmationDialog = false) }
+            }
             Event.PauseOperation -> _operationState.value = OperationState.PAUSED
             Event.ResumeOperation -> {
                 logOperationSettings(
@@ -582,7 +634,21 @@ class MainViewModel(
                     }
                 }
             }
-            is Event.ToggleReplaceOriginalFile -> _state.update { it.copy(replaceOriginalFile = event.replace) }
+            Event.ClearDownloadInputs -> {
+                _state.update {
+                    it.copy(
+                        seriesUrl = "",
+                        customTitle = "",
+                        sourceFilePath = null,
+                        fetchedChapters = emptyList(),
+                        localChaptersForSync = emptyMap(),
+                        outputFileExists = false
+                    )
+                }
+            }
+            is Event.ToggleAboutDialog -> {
+                _state.update { it.copy(showAboutDialog = event.show) }
+            }
         }
     }
 
@@ -658,7 +724,7 @@ class MainViewModel(
                 val outputDir = if (s.outputPath.isNotBlank()) File(s.outputPath) else File(".")
                 outputDir.mkdirs()
 
-                val finalOutputFile = if (s.sourceFilePath != null && s.replaceOriginalFile) File(s.sourceFilePath) else File(outputDir, "$mangaTitle.${s.outputFormat}")
+                val finalOutputFile = if (s.sourceFilePath != null) File(s.sourceFilePath) else File(outputDir, "$mangaTitle.${s.outputFormat}")
                 val tempOutputFile = File(finalOutputFile.parent, "${finalOutputFile.nameWithoutExtension}-temp.${finalOutputFile.extension}")
 
                 if (s.outputFormat == "cbz") {
@@ -689,7 +755,6 @@ class MainViewModel(
                         sourceFilePath = null,
                         localChaptersForSync = emptyMap(),
                         fetchedChapters = emptyList(),
-                        replaceOriginalFile = false,
                         seriesUrl = "",
                         customTitle = ""
                     )
@@ -701,31 +766,30 @@ class MainViewModel(
 
     private fun startFromFile(path: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            _state.update { it.copy(isAnalyzingFile = true, fetchedChapters = emptyList(), localChaptersForSync = emptyMap()) }
             val file = File(path)
             if (!file.exists() || !file.isFile) {
                 Logger.logError("Selected path is not a valid file: $path")
-                _state.update { it.copy(isAnalyzingFile = false) }
                 return@launch
             }
 
-            val (chapterSlugs, url) = downloadService.processorService.getChaptersAndInfoFromFile(file)
-            if (chapterSlugs.isEmpty() && url == null) {
-                Logger.logInfo("No chapters or URL could be identified in the file. It might be an unsupported format or not created by this app.")
-            } else {
-                if (url != null) Logger.logInfo("Found embedded series URL: $url")
-            }
+            _state.update { it.copy(isAnalyzingFile = true) }
 
-            _state.update { uiState ->
-                uiState.copy(
+            val (chapterSlugs, url) = downloadService.processorService.getChaptersAndInfoFromFile(file)
+
+            _state.update {
+                it.copy(
                     isAnalyzingFile = false,
+                    // When picking a file, its properties become the source of truth.
                     seriesUrl = url ?: "",
-                    sourceFilePath = path,
-                    localChaptersForSync = chapterSlugs.associateBy { SlugUtils.toComparableKey(it) },
                     customTitle = file.nameWithoutExtension,
-                    outputFormat = file.extension
+                    outputFormat = file.extension,
+                    outputPath = file.parent ?: it.outputPath,
+                    sourceFilePath = file.path,
+                    localChaptersForSync = chapterSlugs.associateBy { slug -> SlugUtils.toComparableKey(slug) },
+                    fetchedChapters = emptyList() // Clear old chapter list
                 )
             }
+            checkOutputFileExistence()
         }
     }
 
@@ -833,6 +897,74 @@ class MainViewModel(
                 }
             }
             it.copy(fetchedChapters = updatedChapters)
+        }
+    }
+
+    private fun checkOutputFileExistence() {
+        val s = _state.value
+        if (s.customTitle.isBlank() || s.outputPath.isBlank()) {
+            _state.update { it.copy(outputFileExists = false) }
+            return
+        }
+
+        val outputFile = File(File(s.outputPath), "${FileUtils.sanitizeFilename(s.customTitle)}.${s.outputFormat}")
+
+        if (outputFile.exists()) {
+            _state.update { it.copy(outputFileExists = true) }
+            // If we aren't already tracking a file (via user selection),
+            // let's analyze this one we just found.
+            if (s.sourceFilePath == null) {
+                analyzeLocalFile(outputFile)
+            }
+        } else {
+            _state.update { it.copy(outputFileExists = false) }
+            // If the file that doesn't exist is the one we WERE tracking, clear the tracking info.
+            if (s.sourceFilePath == outputFile.path) {
+                clearLocalFileInfo()
+            }
+        }
+    }
+
+    private fun analyzeLocalFile(file: File) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!file.exists() || !file.isFile) {
+                Logger.logError("Path is not a valid file for analysis: ${file.path}")
+                return@launch
+            }
+
+            _state.update { it.copy(isAnalyzingFile = true) }
+
+            val (chapterSlugs, url) = downloadService.processorService.getChaptersAndInfoFromFile(file)
+
+            _state.update { currentState ->
+                if (chapterSlugs.isEmpty() && url == null) {
+                    Logger.logInfo("No chapters or URL could be identified in the file: ${file.name}. It might be an unsupported format or not created by this app.")
+                    // If we can't get info, we shouldn't treat it as a sync source.
+                    currentState.copy(
+                        isAnalyzingFile = false,
+                        sourceFilePath = null,
+                        localChaptersForSync = emptyMap()
+                    )
+                } else {
+                    if (url != null) Logger.logInfo("Found embedded series URL in ${file.name}: $url")
+                    currentState.copy(
+                        isAnalyzingFile = false,
+                        // IMPORTANT: Only update the URL if the user hasn't typed one in.
+                        seriesUrl = currentState.seriesUrl.ifBlank { url ?: "" },
+                        sourceFilePath = file.path,
+                        localChaptersForSync = chapterSlugs.associateBy { SlugUtils.toComparableKey(it) }
+                    )
+                }
+            }
+        }
+    }
+
+    private fun clearLocalFileInfo() {
+        _state.update {
+            it.copy(
+                sourceFilePath = null,
+                localChaptersForSync = emptyMap()
+            )
         }
     }
 }

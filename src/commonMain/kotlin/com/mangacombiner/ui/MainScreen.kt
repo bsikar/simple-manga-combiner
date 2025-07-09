@@ -220,5 +220,25 @@ fun MainScreen(viewModel: MainViewModel) {
                 }
             )
         }
+        if (state.showOverwriteConfirmationDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.onEvent(MainViewModel.Event.CancelOverwrite) },
+                title = { Text("Confirm Overwrite") },
+                text = { Text("An existing file will be overwritten with the new chapter selections. This action cannot be undone. Are you sure you want to proceed?") },
+                confirmButton = {
+                    Button(
+                        onClick = { viewModel.onEvent(MainViewModel.Event.ConfirmOverwrite) },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                    ) {
+                        Text("Overwrite")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.onEvent(MainViewModel.Event.CancelOverwrite) }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
 }
