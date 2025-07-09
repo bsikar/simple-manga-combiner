@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -223,6 +224,14 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                     style = MaterialTheme.typography.body2,
                     color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                 )
+                // This is the new Text element to show the cache path
+                Text(
+                    text = "Location: ${state.cachePath}",
+                    style = MaterialTheme.typography.caption,
+                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.8f),
+                    softWrap = true
+                )
+                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Button(
                         onClick = { onEvent(MainViewModel.Event.Navigate(Screen.CACHE_VIEWER)) },

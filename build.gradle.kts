@@ -62,6 +62,7 @@ kotlin {
                 implementation("androidx.activity:activity-compose:1.9.0")
                 api(libs.koin.android)
                 implementation(libs.ktor.client.cio)
+                implementation(libs.androidx.documentfile)
             }
         }
         val desktopMain by getting {
@@ -117,7 +118,6 @@ compose.desktop {
     }
 }
 
-// This single block replaces the two old ones.
 tasks.register<ShadowJar>("cliJar") {
     group = "build"
     description = "Assembles the CLI fat JAR"
@@ -135,4 +135,3 @@ tasks.register<ShadowJar>("cliJar") {
 
     mergeServiceFiles()
 }
-

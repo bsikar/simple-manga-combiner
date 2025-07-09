@@ -13,8 +13,8 @@ detekt = "1.23.6"
 compose = "1.6.10"
 androidGradlePlugin = "8.2.2"
 koin = "3.5.6"
-# Add version for the serialization plugin, typically matches Kotlin version
 kotlinxSerializationPlugin = "1.9.23"
+documentfile = "1.0.1"
 
 [libraries]
 # Kotlinx
@@ -45,10 +45,12 @@ koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
 koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin" }
 koin-jvm = { module = "io.insert-koin:koin-core-jvm", version.ref = "koin" }
 
+# AndroidX
+androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
+
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
 shadow-jar = { id = "com.github.johnrengelman.shadow", version.ref = "shadowJar" }
 compose-plugin = { id = "org.jetbrains.compose", version.ref = "compose" }
-# Add the alias for the serialization plugin
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlinxSerializationPlugin" }

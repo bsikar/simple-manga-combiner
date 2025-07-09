@@ -1,6 +1,7 @@
 package com.mangacombiner.desktop
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.input.key.Key
@@ -21,13 +22,15 @@ import com.mangacombiner.di.appModule
 import com.mangacombiner.di.platformModule
 import com.mangacombiner.ui.MainScreen
 import com.mangacombiner.ui.theme.AppTheme
+import com.mangacombiner.ui.viewmodel.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.widget.AboutDialog
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
 import java.awt.Desktop
-import java.awt.desktop.AboutEvent
-import java.awt.desktop.AboutHandler
+import java.awt.FileDialog
+import java.awt.Frame
+import java.io.File
 import java.util.Locale
 
 fun main() {
@@ -79,10 +82,26 @@ fun main() {
                 } else false
             }
         ) {
+            // Add a LaunchedEffect to handle file picker dialogs from the ViewModel
+            LaunchedEffect(Unit) {
+                viewModel.filePickerRequest.collect { request ->
+                    when (request) {
+                        is FilePickerRequest.OpenFile -> {
+                            val path = showFilePickerAwt("Select EPUB or CBZ File") { _, name ->
+                                name.endsWith(".cbz", true) || name.endsWith(".epub", true)
+                            }
+                            path?.let { viewModel.onFileSelected(it) }
+                        }
+                        is FilePickerRequest.OpenFolder -> {
+                            val path = showFolderPickerAwt("Select Folder")
+                            path?.let { viewModel.onFolderSelected(it, request.forPath) }
+                        }
+                    }
+                }
+            }
+
             MenuBar {
                 Menu("Help", mnemonic = 'H') {
-                    // On non-macOS, the "About" item goes in the Help menu.
-                    // On macOS, it's handled by the system via setAboutHandler.
                     if (!isMac) {
                         Item(
                             "About Manga Combiner",
@@ -120,4 +139,25 @@ fun main() {
             }
         }
     }
+}
+
+private fun showFilePickerAwt(title: String, filter: ((File, String) -> Boolean)? = null): String? {
+    val dialog = FileDialog(null as Frame?, title, FileDialog.LOAD).apply {
+        if (filter != null) {
+            setFilenameFilter(filter)
+        }
+        isVisible = true
+    }
+    return if (dialog.directory != null && dialog.file != null) {
+        File(dialog.directory, dialog.file).absolutePath
+    } else {
+        null
+    }
+}
+
+private fun showFolderPickerAwt(title: String): String? {
+    System.setProperty("apple.awt.fileDialogForDirectories", "true")
+    val path = showFilePickerAwt(title)
+    System.setProperty("apple.awt.fileDialogForDirectories", "false")
+    return path
 }

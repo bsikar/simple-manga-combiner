@@ -31,9 +31,8 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Launch
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -191,6 +190,20 @@ private fun CacheSeriesItem(
                         style = MaterialTheme.typography.caption
                     )
                 }
+
+                // Only show the continue button if a URL was found in the cache
+                if (series.seriesUrl != null) {
+                    PlatformTooltip("Continue Download") {
+                        IconButton(
+                            onClick = {
+                                onEvent(MainViewModel.Event.ContinueFromCache(series.seriesUrl))
+                            }
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Launch, contentDescription = "Continue Downloading Series")
+                        }
+                    }
+                }
+
                 Box {
                     PlatformTooltip("Sort Chapters") {
                         IconButton(onClick = { sortMenuExpanded = true }) {

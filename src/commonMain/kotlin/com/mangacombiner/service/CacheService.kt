@@ -19,6 +19,7 @@ data class CachedChapter(
 data class CachedSeries(
     val seriesName: String,
     val path: String,
+    val seriesUrl: String?,
     val chapters: List<CachedChapter>,
     val totalSizeFormatted: String
 )
@@ -48,7 +49,6 @@ class CacheService(private val platformProvider: PlatformProvider) {
         })?.map { seriesDir ->
             val chapters = seriesDir.listFiles(FileFilter { it.isDirectory })?.mapNotNull { chapterDir ->
                 val files = chapterDir.walk().filter { it.isFile }.toList()
-                // Only count directories that contain at least one valid image file
                 if (files.any { it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS }) {
                     val sizeInBytes = files.sumOf { it.length() }
                     CachedChapter(
@@ -64,9 +64,13 @@ class CacheService(private val platformProvider: PlatformProvider) {
                 }
             }?.sortedWith(CachedChapterNameComparator) ?: emptyList()
 
+            val urlFile = File(seriesDir, "url.txt")
+            val seriesUrl = if (urlFile.exists()) urlFile.readText().trim() else null
+
             CachedSeries(
                 seriesName = seriesDir.name.removePrefix("manga-dl-").replace('-', ' ').titlecase(),
                 path = seriesDir.absolutePath,
+                seriesUrl = seriesUrl,
                 chapters = chapters,
                 totalSizeFormatted = formatSize(seriesDir.walk().sumOf { it.length() })
             )
@@ -110,11 +114,17 @@ class CacheService(private val platformProvider: PlatformProvider) {
             }
         }
 
+        // Clean up parent directories if they are now empty (or only contain our metadata files)
         parentDirs.forEach { dirPath ->
             val dir = File(dirPath)
-            if (dir.exists() && dir.isDirectory && (dir.listFiles()?.isEmpty() == true)) {
-                Logger.logDebug { "Cleaning up empty parent directory: ${dir.name}" }
-                dir.delete()
+            if (dir.exists() && dir.isDirectory) {
+                val remainingFiles = dir.listFiles()
+                // Check if the directory is empty OR only contains our metadata file.
+                if (remainingFiles.isNullOrEmpty() || remainingFiles.all { it.name == "url.txt" }) {
+                    Logger.logDebug { "Cleaning up empty or near-empty parent directory: ${dir.name}" }
+                    // deleteRecursively will handle the directory and any remaining files (like url.txt)
+                    dir.deleteRecursively()
+                }
             }
         }
 

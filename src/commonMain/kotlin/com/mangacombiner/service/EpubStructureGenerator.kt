@@ -1,13 +1,13 @@
 package com.mangacombiner.service
 
 import com.mangacombiner.util.Logger
+import com.mangacombiner.util.getImageDimensions
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionMethod
 import java.io.File
 import java.io.IOException
 import java.util.UUID
-import javax.imageio.ImageIO
 import kotlin.text.Charsets
 
 internal class EpubStructureGenerator {
@@ -49,7 +49,6 @@ internal class EpubStructureGenerator {
     /**
      * Adds a chapter to the EPUB with all its images.
      */
-    @Suppress("SwallowedException")
     fun addChapterToEpub(images: List<File>, chapterName: String, metadata: EpubMetadata, epubZip: ZipFile) {
         var firstPageOfChapter = true
         // Sanitize chapter name to be valid for file paths and XML IDs
@@ -57,14 +56,10 @@ internal class EpubStructureGenerator {
 
         images.forEachIndexed { index, imageFile ->
             val pageIndex = metadata.totalPages + index + 1
-            val imageDim = try {
-                ImageIO.read(imageFile)?.let { it.width to it.height } ?: (DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT)
-            } catch (e: IOException) {
-                Logger.logDebug {
-                    "Could not read image dimensions for ${imageFile.name}, using defaults. Error: ${e.message}"
-                }
-                DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT
-            }
+
+            // Use the new platform-agnostic function to get dimensions
+            val imageDim = getImageDimensions(imageFile.absolutePath)?.let { it.width to it.height }
+                ?: (DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT)
 
             // Use the sanitized chapter name for IDs and HREFs
             val imageId = "img_${safeChapterName}_$pageIndex"

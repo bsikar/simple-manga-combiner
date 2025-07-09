@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="manga-combiner-kmp-desktop">
+    <output-path>$PROJECT_DIR$/build/libs</output-path>
+    <root id="archive" name="manga-combiner-kmp-desktop.jar">
+      <element id="module-output" name="manga-combiner-kmp.desktopMain" />
+    </root>
+  </artifact>
+</component>
