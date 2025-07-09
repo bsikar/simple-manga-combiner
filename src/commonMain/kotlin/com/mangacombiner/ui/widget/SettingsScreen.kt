@@ -141,25 +141,19 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                     }
                 }
 
-                val fontPresets = listOf("Small", "Medium", "Large")
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                val fontPresets = listOf("X-Small", "Small", "Medium", "Large", "X-Large")
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Font Size:", style = MaterialTheme.typography.body1)
-                    Row {
-                        fontPresets.forEach { preset ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable { onEvent(MainViewModel.Event.UpdateFontSizePreset(preset)) }
-                            ) {
-                                RadioButton(
-                                    selected = (state.fontSizePreset == preset),
-                                    onClick = { onEvent(MainViewModel.Event.UpdateFontSizePreset(preset)) }
-                                )
-                                Text(text = preset)
-                            }
+                    fontPresets.forEach { preset ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clickable { onEvent(MainViewModel.Event.UpdateFontSizePreset(preset)) }
+                        ) {
+                            RadioButton(
+                                selected = (state.fontSizePreset == preset),
+                                onClick = { onEvent(MainViewModel.Event.UpdateFontSizePreset(preset)) }
+                            )
+                            Text(text = preset)
                         }
                     }
                 }
@@ -224,7 +218,6 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                     style = MaterialTheme.typography.body2,
                     color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                 )
-                // This is the new Text element to show the cache path
                 Text(
                     text = "Location: ${state.cachePath}",
                     style = MaterialTheme.typography.caption,
@@ -246,26 +239,6 @@ fun SettingsScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         )
                     ) {
                         Text("Clear All Cache")
-                    }
-                }
-            }
-        }
-
-        Card(elevation = 4.dp) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Configuration File Location", style = MaterialTheme.typography.h6)
-                Text(
-                    text = state.settingsLocationDescription,
-                    style = MaterialTheme.typography.body2,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                )
-                if (state.isSettingsLocationOpenable) {
-                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                        Button(onClick = { onEvent(MainViewModel.Event.OpenSettingsLocation) }) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = "Open Location")
-                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                            Text("Open Location")
-                        }
                     }
                 }
             }

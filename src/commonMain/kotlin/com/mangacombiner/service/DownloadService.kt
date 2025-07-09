@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class DownloadCompletionStatus {
     SUCCESS,
@@ -84,7 +85,9 @@ class DownloadService(
         chapterUrl: String,
         chapterTitle: String,
         baseDir: File,
-        client: HttpClient
+        client: HttpClient,
+        baseProgress: Float,
+        progressWeight: Float
     ): File? {
         val chapterDir = File(baseDir, FileUtils.sanitizeFilename(chapterTitle))
         if (!chapterDir.exists()) {
@@ -105,6 +108,8 @@ class DownloadService(
 
         Logger.logInfo(" --> Found ${imageUrls.size} images for '$chapterTitle'. Starting download...")
         val dispatcher = Dispatchers.IO.limitedParallelism(options.getWorkers())
+        val downloadedImagesCount = AtomicInteger(0)
+
         coroutineScope {
             imageUrls.mapIndexed { index, imageUrl ->
                 launch(dispatcher) {
@@ -118,7 +123,13 @@ class DownloadService(
                         val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
                         val outputFile =
                             File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
-                        downloadFile(client, imageUrl, outputFile, imageUserAgent)
+                        if (downloadFile(client, imageUrl, outputFile, imageUserAgent)) {
+                            val currentDownloaded = downloadedImagesCount.incrementAndGet()
+                            val imageProgress = currentDownloaded.toFloat() / imageUrls.size
+                            val currentTotalProgress = baseProgress + (imageProgress * progressWeight)
+                            val statusText = "Downloading: ${chapterTitle.take(30)}..."
+                            options.onProgressUpdate(currentTotalProgress, statusText)
+                        }
                     }
                 }
             }.joinAll()
@@ -158,13 +169,11 @@ class DownloadService(
                 }
 
                 Logger.logInfo("--> Processing chapter ${downloadedFolders.size + 1}/${chapterData.size}: $title")
-                downloadChapter(options, url, title, downloadDir, client)?.let {
+                val baseProgress = index.toFloat() / chapterData.size
+                val progressWeight = 1f / chapterData.size
+                downloadChapter(options, url, title, downloadDir, client, baseProgress, progressWeight)?.let {
                     downloadedFolders.add(it)
                 }
-
-                val progress = (index + 1).toFloat() / chapterData.size
-                val statusText = "Downloading... (${index + 1} of ${chapterData.size})"
-                options.onProgressUpdate(progress, statusText)
 
                 delay(CHAPTER_DOWNLOAD_DELAY_MS)
             }

@@ -167,10 +167,6 @@ class ProcessorService(
         }
     }
 
-    /**
-     * Reads a file and returns its chapter names and, if available, the embedded source URL.
-     * @return A Pair containing the list of chapter names and the source URL (or null).
-     */
     fun getChaptersAndInfoFromFile(file: File): Pair<List<String>, String?> {
         if (!file.exists() || !file.isFile) return emptyList<String>() to null
 
@@ -193,16 +189,29 @@ class ProcessorService(
         return slugs.sortedWith(naturalSortComparator) to url
     }
 
-    /**
-     * Extracts a specific list of chapters from a zip file into a target directory.
-     * @return A list of the File objects for the created chapter directories.
-     */
     fun extractChaptersToDirectory(zipFile: File, chaptersToKeep: List<String>, outDir: File): List<File> {
         val chapterSet = chaptersToKeep.toSet()
+        val isEpub = zipFile.extension.equals("epub", ignoreCase = true)
+
         try {
             ZipFile(zipFile).use { zip ->
                 zip.fileHeaders.forEach { header ->
-                    if (!header.isDirectory) {
+                    if (header.isDirectory) return@forEach
+
+                    if (isEpub) {
+                        if (header.fileName.startsWith("OEBPS/images/")) {
+                            val fileName = File(header.fileName).name
+                            val slugRegex = Regex("""^img_(.+)_\d+\..*""")
+                            val chapterSlug = slugRegex.find(fileName)?.groupValues?.get(1)
+
+                            if (chapterSlug != null && chapterSlug in chapterSet) {
+                                val chapterDir = File(outDir, chapterSlug)
+                                if (!chapterDir.exists()) chapterDir.mkdirs()
+                                // Extract the file into the new chapter-specific directory, keeping its original name
+                                zip.extractFile(header, chapterDir.absolutePath, fileName)
+                            }
+                        }
+                    } else { // CBZ logic
                         val chapterName = File(header.fileName).parent ?: return@forEach
                         if (chapterName in chapterSet) {
                             zip.extractFile(header, outDir.absolutePath)
@@ -243,12 +252,9 @@ class ProcessorService(
             onProgressUpdate(0.4f, "Filtering chapters...")
             val mangaTitle = outputFile.nameWithoutExtension
 
-            // In both cases, we rebuild from a list of folders containing images
             val sourceFolders = if (extension.equals("cbz", true)) {
-                // For CBZ, the extracted folders are the chapters
                 tempDir.listFiles()?.filter { it.isDirectory && it.name in chaptersToKeep } ?: emptyList()
             } else {
-                // For EPUB, we need to reconstruct chapter folders from the extracted images
                 ZipUtils.reconstructChapterFoldersFromEpub(tempDir, chaptersToKeep)
             }
 

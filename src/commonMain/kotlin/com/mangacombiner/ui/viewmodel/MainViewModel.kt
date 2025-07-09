@@ -2,6 +2,7 @@ package com.mangacombiner.ui.viewmodel
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.model.AppSettings
+import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.CacheService
 import com.mangacombiner.service.CachedSeries
 import com.mangacombiner.service.DownloadOptions
@@ -22,6 +23,10 @@ import com.mangacombiner.util.titlecase
 import com.mangacombiner.util.toSlug
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +43,8 @@ import kotlin.random.Random
 
 enum class Screen {
     DOWNLOAD,
+    LOGS,
+    ADVANCED_SETTINGS,
     SETTINGS,
     CACHE_VIEWER
 }
@@ -66,6 +73,10 @@ enum class SortCriteria {
     NAME, SIZE
 }
 
+enum class SearchSortOption {
+    DEFAULT, CHAPTER_COUNT, ALPHABETICAL
+}
+
 data class CacheSortState(val criteria: SortCriteria, val direction: SortDirection)
 
 sealed class FilePickerRequest {
@@ -79,7 +90,7 @@ sealed class FilePickerRequest {
 
 data class UiState(
     val currentScreen: Screen = Screen.DOWNLOAD,
-    val theme: AppTheme = AppTheme.DARK,
+    val theme: AppTheme = AppTheme.LIGHT,
     val seriesUrl: String = "",
     val customTitle: String = "",
     val outputPath: String = "",
@@ -94,6 +105,7 @@ data class UiState(
     val operationState: OperationState = OperationState.IDLE,
     val progress: Float = 0f,
     val progressStatusText: String = "",
+    val completionMessage: String? = null,
     val isFetchingChapters: Boolean = false,
     val isAnalyzingFile: Boolean = false,
     val fetchedChapters: List<Chapter> = emptyList(),
@@ -121,6 +133,11 @@ data class UiState(
     val outputFileExists: Boolean = false,
     val showOverwriteConfirmationDialog: Boolean = false,
     val showAboutDialog: Boolean = false,
+    val searchQuery: String = "",
+    val searchResults: List<SearchResult> = emptyList(),
+    val originalSearchResults: List<SearchResult> = emptyList(),
+    val isSearching: Boolean = false,
+    val searchSortOption: SearchSortOption = SearchSortOption.DEFAULT,
 )
 
 private fun UiState.toAppSettings() = AppSettings(
@@ -250,7 +267,12 @@ class MainViewModel(
         data class UpdateSystemDarkTheme(val theme: AppTheme) : Event()
         data class ToggleAboutDialog(val show: Boolean) : Event()
         data class ContinueFromCache(val url: String) : Event()
+        data class UpdateSearchQuery(val query: String) : Event()
+        data class SelectSearchResult(val url: String) : Event()
+        data class SortSearchResults(val sortOption: SearchSortOption) : Event()
+        data class ToggleSearchResultExpansion(val url: String) : Event()
 
+        object PerformSearch : Event()
         object PickCustomDefaultPath : Event()
         object PickOutputPath : Event()
         object PickLocalFile : Event()
@@ -321,6 +343,47 @@ class MainViewModel(
 
     fun onEvent(event: Event) {
         when (event) {
+            is Event.UpdateSearchQuery -> {
+                _state.update { it.copy(searchQuery = event.query) }
+            }
+            is Event.PerformSearch -> {
+                performSearch()
+            }
+            is Event.SelectSearchResult -> {
+                _state.update {
+                    it.copy(
+                        seriesUrl = event.url,
+                        customTitle = event.url.substringAfterLast("/manga/", "")
+                            .substringBefore('/')
+                            .replace('-', ' ')
+                            .titlecase(),
+                        searchQuery = "",
+                        searchResults = emptyList(),
+                        originalSearchResults = emptyList()
+                    )
+                }
+                checkOutputFileExistence()
+            }
+            is Event.SortSearchResults -> {
+                val originalList = state.value.originalSearchResults
+                val currentExpansionState = state.value.searchResults.associate { it.url to it.isExpanded }
+
+                val sortedList = when (event.sortOption) {
+                    SearchSortOption.CHAPTER_COUNT -> originalList.sortedByDescending { it.chapterCount }
+                    SearchSortOption.ALPHABETICAL -> originalList.sortedBy { it.title }
+                    SearchSortOption.DEFAULT -> originalList
+                }.map { resultFromOriginal ->
+                    resultFromOriginal.copy(isExpanded = currentExpansionState.getOrDefault(resultFromOriginal.url, false))
+                }
+
+                _state.update { it.copy(searchResults = sortedList, searchSortOption = event.sortOption) }
+            }
+            is Event.ToggleSearchResultExpansion -> {
+                val updatedResults = state.value.searchResults.map {
+                    if (it.url == event.url) it.copy(isExpanded = !it.isExpanded) else it
+                }
+                _state.update { it.copy(searchResults = updatedResults) }
+            }
             is Event.ContinueFromCache -> {
                 _state.update {
                     it.copy(
@@ -681,6 +744,100 @@ class MainViewModel(
         }
     }
 
+    private fun getChapterRange(chapters: List<Pair<String, String>>): String {
+        if (chapters.isEmpty()) return "N/A"
+        val firstChapter = chapters.first().second
+        val lastChapter = chapters.last().second
+
+        fun getDisplayNumber(title: String): String {
+            val chapterPrefixRegex = """(?i)(?:chapter|ch)\s*([\d]+(?:\.\d+)?)""".toRegex()
+            val prefixMatch = chapterPrefixRegex.find(title)
+            if (prefixMatch != null) {
+                return prefixMatch.groupValues[1]
+            }
+
+            val genericNumberRegex = """([\d]+(?:\.\d+)?)""".toRegex()
+            val genericMatch = genericNumberRegex.find(title)
+            return genericMatch?.groupValues?.get(1) ?: ""
+        }
+
+        val firstNum = getDisplayNumber(firstChapter)
+        val lastNum = getDisplayNumber(lastChapter)
+
+        return if (firstNum.isNotBlank() && lastNum.isNotBlank()) {
+            if (firstNum == lastNum) "Ch. $firstNum" else "Ch. $firstNum - $lastNum"
+        } else {
+            "N/A"
+        }
+    }
+
+    private fun performSearch() {
+        val query = _state.value.searchQuery
+        if (query.isBlank()) {
+            Logger.logInfo("Search query is empty.")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isSearching = true, searchResults = emptyList(), originalSearchResults = emptyList()) }
+            Logger.logInfo("Searching for '$query'...")
+
+            val userAgent = UserAgent.browsers[_state.value.userAgentName] ?: UserAgent.browsers.values.first()
+            val client = createHttpClient(userAgent)
+            val initialResults = try {
+                scraperService.search(client, query, userAgent)
+            } catch (e: Exception) {
+                Logger.logError("Failed to fetch initial search results", e)
+                emptyList()
+            }
+
+            if (initialResults.isEmpty()) {
+                Logger.logInfo("No results found for '$query'.")
+                _state.update { it.copy(isSearching = false) }
+                client.close()
+                return@launch
+            }
+
+            _state.update {
+                it.copy(
+                    isSearching = false,
+                    searchResults = initialResults.map { sr -> sr.copy(isFetchingDetails = true) }
+                )
+            }
+
+            coroutineScope {
+                val detailedResults = initialResults.map { searchResult ->
+                    async {
+                        val chapters = scraperService.findChapterUrlsAndTitles(client, searchResult.url, userAgent)
+                        val chapterRange = getChapterRange(chapters)
+                        searchResult.copy(
+                            isFetchingDetails = false,
+                            chapters = chapters,
+                            chapterCount = chapters.size,
+                            chapterRange = chapterRange
+                        )
+                    }
+                }.awaitAll()
+                _state.update {
+                    it.copy(
+                        searchResults = detailedResults,
+                        originalSearchResults = detailedResults,
+                        searchSortOption = SearchSortOption.DEFAULT
+                    )
+                }
+            }
+            client.close()
+        }
+    }
+
+    private fun showCompletionMessage(message: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(completionMessage = message) }
+            delay(4000L) // Show for 4 seconds
+            _state.update { it.copy(completionMessage = null) }
+        }
+    }
+
     private fun startOperation() {
         viewModelScope.launch(Dispatchers.IO) {
             _operationState.value = OperationState.RUNNING
@@ -775,12 +932,16 @@ class MainViewModel(
                     val finalPath = fileMover.moveToFinalDestination(tempOutputFile, s.outputPath, finalFileName)
 
                     if (finalPath.isNotBlank()) {
-                        Logger.logInfo("Successfully created file: $finalPath")
+                        val finalFileNameOnly = File(finalPath).name
+                        Logger.logInfo("Successfully created file: $finalFileNameOnly")
+                        showCompletionMessage("Success! Created $finalFileNameOnly")
                     } else {
                         Logger.logError("Failed to move temporary file to the final destination. It can be found at: ${tempOutputFile.absolutePath}")
+                        showCompletionMessage("Error: Failed to move file to destination.")
                     }
                 } else if (_operationState.value != OperationState.CANCELLING) {
                     Logger.logError("Failed to create the output file.")
+                    showCompletionMessage("Error: Failed to create output file.")
                 }
 
             } finally {
@@ -822,7 +983,6 @@ class MainViewModel(
                     seriesUrl = url ?: "",
                     customTitle = file.nameWithoutExtension,
                     outputFormat = file.extension,
-                    outputPath = file.parent ?: it.outputPath,
                     sourceFilePath = file.path,
                     localChaptersForSync = chapterSlugs.associateBy { slug -> SlugUtils.toComparableKey(slug) },
                     fetchedChapters = emptyList()

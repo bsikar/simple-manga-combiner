@@ -31,10 +31,12 @@ import androidx.compose.material.LocalContentColor
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.OutlinedButton
 import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.Switch
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -46,17 +48,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mangacombiner.model.SearchResult
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.OperationState
+import com.mangacombiner.ui.viewmodel.SearchSortOption
 import com.mangacombiner.ui.viewmodel.UiState
-import com.mangacombiner.util.UserAgent
 
 @Composable
 fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
     var formatDropdownExpanded by remember { mutableStateOf(false) }
-    var browserDropdownExpanded by remember { mutableStateOf(false) }
-    var advancedOptionsExpanded by remember { mutableStateOf(false) }
-    val browserImpersonationOptions = listOf("Random") + UserAgent.browsers.keys.toList()
+    var sortDropdownExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         val isIdle = state.operationState == OperationState.IDLE
@@ -67,6 +68,101 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Card(elevation = 4.dp) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Search for a Series", style = MaterialTheme.typography.h6)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.searchQuery,
+                        onValueChange = { onEvent(MainViewModel.Event.UpdateSearchQuery(it)) },
+                        label = { Text("Search on MangaRead.org") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = isIdle,
+                        trailingIcon = {
+                            if (state.searchQuery.isNotBlank()) {
+                                IconButton(
+                                    onClick = { onEvent(MainViewModel.Event.UpdateSearchQuery("")) },
+                                    enabled = isIdle
+                                ) {
+                                    Icon(Icons.Filled.Clear, "Clear Search")
+                                }
+                            }
+                        }
+                    )
+                    Button(
+                        onClick = { onEvent(MainViewModel.Event.PerformSearch) },
+                        enabled = state.searchQuery.isNotBlank() && !state.isSearching && isIdle,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        if (state.isSearching) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Searching...")
+                        } else {
+                            Text("Search")
+                        }
+                    }
+
+                    AnimatedVisibility(visible = state.searchResults.isNotEmpty() || state.isSearching) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Search Results:", style = MaterialTheme.typography.subtitle1)
+                                Box {
+                                    OutlinedButton(
+                                        onClick = { sortDropdownExpanded = true },
+                                        enabled = !state.isSearching
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Filled.Sort, "Sort Results", modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Sort By")
+                                    }
+                                    DropdownMenu(
+                                        expanded = sortDropdownExpanded,
+                                        onDismissRequest = { sortDropdownExpanded = false }
+                                    ) {
+                                        DropdownMenuItem(onClick = {
+                                            onEvent(MainViewModel.Event.SortSearchResults(SearchSortOption.DEFAULT))
+                                            sortDropdownExpanded = false
+                                        }) {
+                                            if (state.searchSortOption == SearchSortOption.DEFAULT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
+                                            Text("Default")
+                                        }
+                                        DropdownMenuItem(onClick = {
+                                            onEvent(MainViewModel.Event.SortSearchResults(SearchSortOption.CHAPTER_COUNT))
+                                            sortDropdownExpanded = false
+                                        }) {
+                                            if (state.searchSortOption == SearchSortOption.CHAPTER_COUNT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
+                                            Text("Chapter Count")
+                                        }
+                                        DropdownMenuItem(onClick = {
+                                            onEvent(MainViewModel.Event.SortSearchResults(SearchSortOption.ALPHABETICAL))
+                                            sortDropdownExpanded = false
+                                        }) {
+                                            if (state.searchSortOption == SearchSortOption.ALPHABETICAL) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
+                                            Text("Alphabetical")
+                                        }
+                                    }
+                                }
+                            }
+                            Divider()
+                            state.searchResults.forEach { result ->
+                                SearchResultItem(
+                                    result = result,
+                                    onExpandToggle = { onEvent(MainViewModel.Event.ToggleSearchResultExpansion(result.url)) },
+                                    onSelect = { onEvent(MainViewModel.Event.SelectSearchResult(result.url)) }
+                                )
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+
             Card(elevation = 4.dp) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Download & Sync Options", style = MaterialTheme.typography.h6)
@@ -146,12 +242,15 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         enabled = isProcessing
                     )
 
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
                             Text("Workers:", style = MaterialTheme.typography.body1)
                             NumberStepper(
                                 value = state.workers,
@@ -161,7 +260,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                             )
                         }
 
-                        Box(modifier = Modifier.weight(1f)) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 onClick = { formatDropdownExpanded = true },
                                 modifier = Modifier.fillMaxWidth(),
@@ -182,108 +281,6 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                                     onEvent(MainViewModel.Event.UpdateFormat("epub"))
                                     formatDropdownExpanded = false
                                 }) { Text("EPUB") }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Card(elevation = 4.dp) {
-                Column(Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { advancedOptionsExpanded = !advancedOptionsExpanded }
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Advanced Options", style = MaterialTheme.typography.h6)
-                        Icon(
-                            imageVector = if (advancedOptionsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                            contentDescription = if (advancedOptionsExpanded) "Collapse" else "Expand"
-                        )
-                    }
-                    AnimatedVisibility(visible = advancedOptionsExpanded) {
-                        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
-                            Spacer(Modifier.height(16.dp))
-
-                            FormControlLabel(
-                                onClick = { onEvent(MainViewModel.Event.ToggleDebugLog(!state.debugLog)) },
-                                enabled = true,
-                                control = {
-                                    Switch(
-                                        checked = state.debugLog,
-                                        onCheckedChange = { onEvent(MainViewModel.Event.ToggleDebugLog(it)) },
-                                        enabled = true
-                                    )
-                                },
-                                label = { Text("Enable Debug Logging") }
-                            )
-
-                            FormControlLabel(
-                                onClick = { onEvent(MainViewModel.Event.ToggleDryRun(!state.dryRun)) },
-                                enabled = isIdle,
-                                control = {
-                                    Switch(
-                                        checked = state.dryRun,
-                                        onCheckedChange = { onEvent(MainViewModel.Event.ToggleDryRun(it)) },
-                                        enabled = isIdle
-                                    )
-                                },
-                                label = { Text("Dry Run (Simulate Only)") }
-                            )
-
-                            FormControlLabel(
-                                onClick = { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(!state.perWorkerUserAgent)) },
-                                enabled = isProcessing,
-                                control = {
-                                    Switch(
-                                        checked = state.perWorkerUserAgent,
-                                        onCheckedChange = { onEvent(MainViewModel.Event.TogglePerWorkerUserAgent(it)) },
-                                        enabled = isProcessing
-                                    )
-                                },
-                                label = { Text("Randomize browser per worker") }
-                            )
-
-                            Spacer(Modifier.height(8.dp))
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    "Impersonate Browser:",
-                                    style = MaterialTheme.typography.body1,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Box {
-                                    OutlinedButton(
-                                        onClick = { browserDropdownExpanded = true },
-                                        enabled = !state.perWorkerUserAgent && isProcessing
-                                    ) {
-                                        Text(state.userAgentName)
-                                        Icon(Icons.Default.ArrowDropDown, "Impersonate Browser")
-                                    }
-                                    DropdownMenu(
-                                        expanded = browserDropdownExpanded,
-                                        onDismissRequest = { browserDropdownExpanded = false },
-                                        modifier = Modifier.widthIn(max = 280.dp)
-                                    ) {
-                                        Box(modifier = Modifier.heightIn(max = 400.dp)) {
-                                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                                                browserImpersonationOptions.forEach { name ->
-                                                    DropdownMenuItem(onClick = {
-                                                        onEvent(MainViewModel.Event.UpdateUserAgent(name))
-                                                        browserDropdownExpanded = false
-                                                    }) { Text(name) }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -364,6 +361,75 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         Text("Cancelling...")
                         Spacer(Modifier.width(8.dp))
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchResultItem(
+    result: SearchResult,
+    onExpandToggle: () -> Unit,
+    onSelect: () -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onExpandToggle() }
+                .padding(vertical = 8.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(result.title, style = MaterialTheme.typography.body1)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (result.isFetchingDetails) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Loading chapters...", style = MaterialTheme.typography.caption)
+                    } else {
+                        Text(
+                            text = "${result.chapterCount ?: 0} chapters",
+                            style = MaterialTheme.typography.caption,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        result.chapterRange?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.caption,
+                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            PlatformTooltip("Select this series for download") {
+                IconButton(onClick = onSelect) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Select this series")
+                }
+            }
+            PlatformTooltip(if (result.isExpanded) "Collapse" else "Expand to see chapters") {
+                Icon(
+                    imageVector = if (result.isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Expand/Collapse"
+                )
+            }
+        }
+        AnimatedVisibility(result.isExpanded && !result.isFetchingDetails) {
+            Column(
+                modifier = Modifier
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+                    .heightIn(max = 200.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                if (result.chapters.isEmpty()) {
+                    Text("No chapters found for this entry.", style = MaterialTheme.typography.body2)
+                } else {
+                    result.chapters.forEach { chapter ->
+                        Text("• ${chapter.second}", style = MaterialTheme.typography.body2)
                     }
                 }
             }

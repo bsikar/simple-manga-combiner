@@ -113,9 +113,11 @@ fun main() {
 
             val density = LocalDensity.current
             val fontMultiplier = when (state.fontSizePreset) {
-                "Small" -> 0.85f
+                "X-Small" -> 0.75f
+                "Small" -> 0.90f
                 "Large" -> 1.15f
-                else -> 1.0f
+                "X-Large" -> 1.30f
+                else -> 1.0f // Medium
             }
             val newDensity = Density(
                 density.density * state.zoomFactor,

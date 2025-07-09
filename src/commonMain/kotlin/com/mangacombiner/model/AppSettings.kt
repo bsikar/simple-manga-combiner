@@ -6,7 +6,7 @@ import com.mangacombiner.ui.theme.AppTheme
  * A data class representing the user's saved preferences.
  */
 data class AppSettings(
-    val theme: AppTheme = AppTheme.DARK,
+    val theme: AppTheme = AppTheme.LIGHT,
     val defaultOutputLocation: String = "Downloads",
     val customDefaultOutputPath: String = "",
     val workers: Int = 4,

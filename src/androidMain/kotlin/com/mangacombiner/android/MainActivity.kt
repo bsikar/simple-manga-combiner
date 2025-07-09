@@ -37,9 +37,6 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
             uri?.let {
                 val path = it.toString()
-                // For Android, we'll store the URI string and let a different part
-                // of the app handle file operations through it. For this app's current
-                // structure, we can't easily use a raw file path. This is a compromise.
                 viewModel.onFolderSelected(path, FilePickerRequest.PathType.DEFAULT_OUTPUT)
                 Logger.logInfo("Note: On Android, output is handled via the selected folder's URI.")
             }
@@ -63,9 +60,11 @@ class MainActivity : AppCompatActivity() {
             val state by viewModel.state.collectAsState()
             val density = LocalDensity.current
             val fontMultiplier = when (state.fontSizePreset) {
-                "Small" -> 0.85f
+                "X-Small" -> 0.75f
+                "Small" -> 0.90f
                 "Large" -> 1.15f
-                else -> 1.0f
+                "X-Large" -> 1.30f
+                else -> 1.0f // Medium
             }
             val newDensity = Density(
                 density.density, // On Android, we respect the system's density

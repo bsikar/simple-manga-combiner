@@ -44,7 +44,7 @@ actual class SettingsRepository(private val context: Context) {
 
     actual fun loadSettings(): AppSettings {
         return AppSettings(
-            theme = AppTheme.valueOf(prefs.getString(THEME, AppTheme.DARK.name) ?: AppTheme.DARK.name),
+            theme = AppTheme.valueOf(prefs.getString(THEME, AppTheme.LIGHT.name) ?: AppTheme.LIGHT.name),
             defaultOutputLocation = prefs.getString(DEFAULT_OUTPUT_LOCATION, "Downloads") ?: "Downloads",
             customDefaultOutputPath = prefs.getString(CUSTOM_DEFAULT_OUTPUT_PATH, "") ?: "",
             workers = prefs.getInt(WORKERS, 4),
