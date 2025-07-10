@@ -154,7 +154,6 @@ fun main(args: Array<String>) {
                                 downloadResult.successfulFolders,
                                 outputFile,
                                 source,
-                                null,
                                 downloadResult.failedChapters
                             )
                         } else {
@@ -163,7 +162,6 @@ fun main(args: Array<String>) {
                                 downloadResult.successfulFolders,
                                 outputFile,
                                 source,
-                                null,
                                 downloadResult.failedChapters
                             )
                         }

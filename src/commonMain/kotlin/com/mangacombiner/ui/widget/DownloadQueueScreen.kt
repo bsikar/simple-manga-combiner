@@ -12,11 +12,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.model.DownloadJob
-import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.UiState
 
 @Composable
-fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
+fun DownloadQueueScreen(state: UiState) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text("Download Queue", style = MaterialTheme.typography.h5)
         Spacer(Modifier.height(16.dp))
