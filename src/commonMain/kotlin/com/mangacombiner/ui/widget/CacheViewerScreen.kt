@@ -9,12 +9,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Launch
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,7 +19,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.service.CachedSeries
 import com.mangacombiner.ui.viewmodel.Event
-import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.*
 import com.mangacombiner.util.CachedChapterNameComparator
 
@@ -140,6 +135,11 @@ private fun CacheSeriesItem(
     var rangeEnd by remember { mutableStateOf("") }
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
+    val seriesChapterPaths = remember(series.chapters) { series.chapters.map { it.path }.toSet() }
+    val selectedChaptersInSeries = remember(selectedPaths, seriesChapterPaths) {
+        seriesChapterPaths.intersect(selectedPaths)
+    }
+
     Card(elevation = 4.dp) {
         Column {
             Row(
@@ -148,11 +148,9 @@ private fun CacheSeriesItem(
                     .padding(start = 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val chapterPaths = remember(series.chapters) { series.chapters.map { it.path }.toSet() }
-                val isSeriesSelected = chapterPaths.isNotEmpty() && selectedPaths.containsAll(chapterPaths)
                 Checkbox(
-                    checked = isSeriesSelected,
-                    onCheckedChange = { onEvent(Event.Cache.SelectAllChapters(series.path, !isSeriesSelected)) }
+                    checked = seriesChapterPaths.isNotEmpty() && selectedPaths.containsAll(seriesChapterPaths),
+                    onCheckedChange = { onEvent(Event.Cache.SelectAllChapters(series.path, it)) }
                 )
                 Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
                     Text(
@@ -167,14 +165,11 @@ private fun CacheSeriesItem(
                 }
 
                 if (series.seriesUrl != null) {
-                    PlatformTooltip("Continue Download") {
-                        IconButton(
-                            onClick = {
-                                onEvent(Event.Download.ContinueFromCache(series.seriesUrl))
-                            }
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Launch, contentDescription = "Continue Downloading Series")
-                        }
+                    Button(
+                        onClick = { onEvent(Event.Cache.LoadCachedSeries(series.path)) },
+                        enabled = selectedChaptersInSeries.isNotEmpty()
+                    ) {
+                        Text("Load in Downloader")
                     }
                 }
 
@@ -295,10 +290,20 @@ private fun CacheSeriesItem(
                                     onCheckedChange = { onEvent(Event.Cache.ToggleItemForDeletion(chapter.path)) }
                                 )
                                 Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                                    Text(
-                                        text = "${index + 1}. ${chapter.name}",
-                                        style = MaterialTheme.typography.body1
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = "${index + 1}. ${chapter.name}",
+                                            style = MaterialTheme.typography.body1
+                                        )
+                                        if (chapter.isBroken) {
+                                            Icon(
+                                                imageVector = Icons.Default.SyncProblem,
+                                                contentDescription = "Broken Chapter",
+                                                tint = MaterialTheme.colors.error,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
                                     Text(
                                         text = "${chapter.pageCount} pages (${chapter.sizeFormatted})",
                                         style = MaterialTheme.typography.body2,

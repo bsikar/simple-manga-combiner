@@ -219,12 +219,14 @@ class MainViewModel(
 
         viewModelScope.launch {
             _state.update { it.copy(isFetchingChapters = true) }
+            val s = _state.value
             val seriesSlug = url.toSlug()
             val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
-            val localChapterMap = _state.value.localChaptersForSync
-            val failedChapterTitles = _state.value.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
+            val localChapterMap = s.localChaptersForSync
+            val failedChapterTitles = s.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
+            val preselectedNames = s.chaptersToPreselect
 
-            val userAgent = UserAgent.browsers[_state.value.userAgentName] ?: UserAgent.browsers.values.first()
+            val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
             val client = createHttpClient("")
             Logger.logInfo("Fetching chapter list for: $url")
             val chapters = scraperService.findChapterUrlsAndTitles(client, url, userAgent)
@@ -255,14 +257,25 @@ class MainViewModel(
                         isBroken = isBroken
                     )
 
-                    val initialSource = if (isRetry || isBroken) ChapterSource.WEB else getChapterDefaultSource(chapter)
+                    // Determine the source based on pre-selection, then fall back to defaults
+                    val initialSource = when {
+                        sanitizedTitle in preselectedNames -> ChapterSource.CACHE
+                        preselectedNames.isNotEmpty() -> null // If pre-selecting, others are deselected by default
+                        isRetry || isBroken -> ChapterSource.WEB
+                        else -> getChapterDefaultSource(chapter)
+                    }
 
                     chapter.copy(selectedSource = initialSource)
 
                 }.sortedWith(compareBy(naturalSortComparator) { it.title })
 
                 _state.update {
-                    it.copy(isFetchingChapters = false, fetchedChapters = allChapters, showChapterDialog = true)
+                    it.copy(
+                        isFetchingChapters = false,
+                        fetchedChapters = allChapters,
+                        showChapterDialog = true,
+                        chaptersToPreselect = emptySet() // Clear after use
+                    )
                 }
             } else {
                 Logger.logError("Could not find any chapters at the provided URL.")
@@ -337,7 +350,7 @@ class MainViewModel(
                     }
                 }
 
-                ensureActive()
+                coroutineContext.ensureActive()
                 packageFinalFile(allChapterFolders)
 
             } catch (e: CancellationException) {
@@ -422,7 +435,8 @@ class MainViewModel(
                 seriesUrl = "",
                 customTitle = "",
                 lastDownloadResult = null,
-                showCompletionDialog = false
+                showCompletionDialog = false,
+                chaptersToPreselect = emptySet()
             )
         }
         Logger.logInfo("--- Operation Complete ---")

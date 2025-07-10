@@ -15,7 +15,6 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         is Event.Download.UpdateCustomTitle -> onUpdateCustomTitle(event.title)
         is Event.Download.UpdateFormat -> onUpdateFormat(event.format)
         is Event.Download.ToggleDryRun -> _state.update { it.copy(dryRun = event.isEnabled) }
-        is Event.Download.ContinueFromCache -> onContinueFromCache(event.url)
         is Event.Download.ToggleChapterSelection -> onToggleChapterSelection(event.chapterUrl, event.select)
         is Event.Download.ToggleChapterRedownload -> onToggleChapterRedownload(event.chapterUrl)
         is Event.Download.UpdateChapterSource -> onUpdateChapterSource(event.chapterUrl, event.source)
@@ -70,22 +69,6 @@ private fun MainViewModel.onUpdateCustomTitle(title: String) {
 private fun MainViewModel.onUpdateFormat(format: String) {
     _state.update { it.copy(outputFormat = format) }
     checkOutputFileExistence()
-}
-
-private fun MainViewModel.onContinueFromCache(url: String) {
-    _state.update {
-        it.copy(
-            seriesUrl = url,
-            customTitle = url.substringAfterLast("/manga/", "")
-                .substringBefore('/')
-                .replace('-', ' ')
-                .titlecase(),
-            sourceFilePath = null,
-            fetchedChapters = emptyList(),
-            localChaptersForSync = emptyMap()
-        )
-    }
-    onEvent(Event.Download.FetchChapters)
 }
 
 private fun MainViewModel.onClearDownloadInputs() {

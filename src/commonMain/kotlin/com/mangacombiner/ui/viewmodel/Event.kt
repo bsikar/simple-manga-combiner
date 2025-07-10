@@ -49,7 +49,6 @@ sealed interface Event {
         data class ToggleChapterSelection(val chapterUrl: String, val select: Boolean) : Download
         data class ToggleChapterRedownload(val chapterUrl: String) : Download
         data class UpdateChapterRange(val start: Int, val end: Int, val action: RangeAction) : Download
-        data class ContinueFromCache(val url: String) : Download
         object PickOutputPath : Download
         object PickLocalFile : Download
         object ClearInputs : Download
@@ -85,6 +84,7 @@ sealed interface Event {
     }
 
     sealed interface Cache : Event {
+        data class LoadCachedSeries(val seriesPath: String) : Cache
         data class ToggleItemForDeletion(val path: String) : Cache
         data class UpdateChapterRange(val seriesPath: String, val start: Int, val end: Int, val action: RangeAction) : Cache
         data class SelectAllChapters(val seriesPath: String, val select: Boolean) : Cache

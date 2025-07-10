@@ -3,6 +3,7 @@ package com.mangacombiner.ui.viewmodel.handler
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.RangeAction
+import com.mangacombiner.ui.viewmodel.state.Screen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -26,6 +27,7 @@ internal fun MainViewModel.handleCacheEvent(event: Event.Cache) {
             it.copy(expandedCacheSeries = newSet)
         }
         is Event.Cache.UpdateChapterRange -> onUpdateCachedChapterRange(event.seriesPath, event.start, event.end, event.action)
+        is Event.Cache.LoadCachedSeries -> onLoadCachedSeries(event.seriesPath)
         Event.Cache.CancelClearAll -> _state.update { it.copy(showClearCacheDialog = false) }
         Event.Cache.CancelDeleteSelected -> _state.update { it.copy(showDeleteCacheConfirmationDialog = false) }
         Event.Cache.ConfirmClearAll -> onConfirmClearAllCache()
@@ -69,6 +71,29 @@ private fun MainViewModel.onUpdateCachedChapterRange(seriesPath: String, start: 
         }
         uiState.copy(cacheItemsToDelete = currentSelection)
     }
+}
+
+private fun MainViewModel.onLoadCachedSeries(seriesPath: String) {
+    val series = _state.value.cacheContents.find { it.path == seriesPath } ?: return
+    val selectedPaths = _state.value.cacheItemsToDelete
+    val selectedChapterNames = series.chapters
+        .filter { it.path in selectedPaths }
+        .map { it.name }
+        .toSet()
+
+    _state.update {
+        it.copy(
+            seriesUrl = series.seriesUrl ?: "",
+            customTitle = series.seriesName,
+            chaptersToPreselect = selectedChapterNames,
+            // Clear fields from any previous operations
+            sourceFilePath = null,
+            localChaptersForSync = emptyMap(),
+            failedItemsForSync = emptyMap()
+        )
+    }
+    onEvent(Event.Navigate(Screen.DOWNLOAD))
+    onEvent(Event.Download.FetchChapters)
 }
 
 private fun MainViewModel.onConfirmClearAllCache() {

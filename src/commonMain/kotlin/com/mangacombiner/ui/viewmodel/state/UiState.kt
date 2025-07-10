@@ -61,11 +61,10 @@ data class UiState(
     val isSearching: Boolean = false,
     val searchSortOption: SearchSortOption = SearchSortOption.DEFAULT,
     val downloadQueue: List<DownloadJob> = emptyList(),
-
-    // New properties for error handling
     val showBrokenDownloadDialog: Boolean = false,
     val showCompletionDialog: Boolean = false,
-    val lastDownloadResult: DownloadResult? = null
+    val lastDownloadResult: DownloadResult? = null,
+    val chaptersToPreselect: Set<String> = emptySet()
 )
 
 internal fun UiState.toAppSettings() = AppSettings(

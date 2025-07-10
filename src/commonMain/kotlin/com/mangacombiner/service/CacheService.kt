@@ -13,7 +13,8 @@ data class CachedChapter(
     val sizeFormatted: String,
     val sizeInBytes: Long,
     val pageCount: Int,
-    val parentPath: String
+    val parentPath: String,
+    val isBroken: Boolean
 )
 
 data class CachedSeries(
@@ -51,7 +52,8 @@ class CacheService(private val platformProvider: PlatformProvider) {
                         sizeFormatted = formatSize(sizeInBytes),
                         sizeInBytes = sizeInBytes,
                         pageCount = files.count { it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS },
-                        parentPath = seriesDir.absolutePath
+                        parentPath = seriesDir.absolutePath,
+                        isBroken = File(chapterDir, ".incomplete").exists()
                     )
                 } else {
                     null
