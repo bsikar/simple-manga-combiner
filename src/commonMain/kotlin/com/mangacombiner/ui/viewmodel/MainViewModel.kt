@@ -22,6 +22,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.coroutineContext
 import kotlin.io.path.nameWithoutExtension
 import kotlin.random.Random
 
@@ -355,7 +356,6 @@ class MainViewModel(
             } finally {
                 withContext(NonCancellable) {
                     _operationState.value = OperationState.IDLE
-                    // Only reset the UI if the operation didn't complete with a result dialog showing.
                     if (!_state.value.showCompletionDialog && !_state.value.showBrokenDownloadDialog) {
                         resetUiStateAfterOperation()
                     }
@@ -365,49 +365,47 @@ class MainViewModel(
         }
     }
 
-    internal fun packageFinalFile(folders: List<File>, failedChapters: Map<String, List<String>>? = null) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val s = _state.value
-            if (folders.isNotEmpty()) {
-                val mangaTitle = s.customTitle.ifBlank {
-                    s.seriesUrl.toSlug().replace('-', ' ').titlecase().ifBlank { "Untitled" }
-                }
-                _state.update { it.copy(progress = 0.95f, progressStatusText = "Packaging ${folders.size} chapters...") }
-
-                val finalOutputPath = s.outputPath
-                val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${s.outputFormat}"
-
-                val tempOutputFile = File(platformProvider.getTmpDir(), finalFileName)
-
-                if (s.outputFormat == "cbz") {
-                    downloadService.processorService.createCbzFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, failedChapters)
-                } else {
-                    downloadService.processorService.createEpubFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, failedChapters)
-                }
-
-                ensureActive()
-
-                if (tempOutputFile.exists() && tempOutputFile.length() > 0) {
-                    _state.update { it.copy(progress = 1.0f, progressStatusText = "Moving final file...") }
-                    val finalPath = fileMover.moveToFinalDestination(tempOutputFile, finalOutputPath, finalFileName)
-                    val message = if (finalPath.isNotBlank()) {
-                        "Download complete: $finalPath"
-                    } else {
-                        "Error: Failed to move file to final destination."
-                    }
-                    _state.update { it.copy(completionMessage = message, showCompletionDialog = true) }
-                    Logger.logInfo("\n$message")
-                } else {
-                    val message = "Packaging failed. Output file was not created or is empty."
-                    _state.update { it.copy(completionMessage = "Error: $message") }
-                    Logger.logError(message)
-                }
-            } else {
-                Logger.logInfo("No chapters to process. Operation finished.")
+    internal suspend fun packageFinalFile(folders: List<File>, failedChapters: Map<String, List<String>>? = null) {
+        val s = _state.value
+        if (folders.isNotEmpty()) {
+            val mangaTitle = s.customTitle.ifBlank {
+                s.seriesUrl.toSlug().replace('-', ' ').titlecase().ifBlank { "Untitled" }
             }
-            _operationState.value = OperationState.IDLE
-            resetUiStateAfterOperation()
+            _state.update { it.copy(progress = 0.95f, progressStatusText = "Packaging ${folders.size} chapters...") }
+
+            val finalOutputPath = s.outputPath
+            val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${s.outputFormat}"
+
+            val tempOutputFile = File(platformProvider.getTmpDir(), finalFileName)
+
+            if (s.outputFormat == "cbz") {
+                downloadService.processorService.createCbzFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, failedChapters)
+            } else {
+                downloadService.processorService.createEpubFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, failedChapters)
+            }
+
+            coroutineContext.ensureActive()
+
+            if (tempOutputFile.exists() && tempOutputFile.length() > 0) {
+                _state.update { it.copy(progress = 1.0f, progressStatusText = "Moving final file...") }
+                val finalPath = fileMover.moveToFinalDestination(tempOutputFile, finalOutputPath, finalFileName)
+                val message = if (finalPath.isNotBlank()) {
+                    "Download complete: $finalPath"
+                } else {
+                    "Error: Failed to move file to final destination."
+                }
+                _state.update { it.copy(completionMessage = message, showCompletionDialog = true) }
+                Logger.logInfo("\n$message")
+            } else {
+                val message = "Packaging failed. Output file was not created or is empty."
+                _state.update { it.copy(completionMessage = "Error: $message") }
+                Logger.logError(message)
+            }
+        } else {
+            Logger.logInfo("No chapters to process. Operation finished.")
         }
+        _operationState.value = OperationState.IDLE
+        resetUiStateAfterOperation()
     }
 
     internal fun resetUiStateAfterOperation() {

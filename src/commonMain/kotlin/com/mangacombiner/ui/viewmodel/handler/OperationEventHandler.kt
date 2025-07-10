@@ -5,6 +5,7 @@ import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.logOperationSettings
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 internal fun MainViewModel.handleOperationEvent(event: Event.Operation) {
     when (event) {
@@ -59,9 +60,11 @@ private fun MainViewModel.onConfirmCancelOperation() {
 }
 
 private fun MainViewModel.onConfirmBrokenDownload() {
-    _state.update { it.copy(showBrokenDownloadDialog = false) }
-    _state.value.lastDownloadResult?.let { result ->
-        packageFinalFile(result.successfulFolders, result.failedChapters)
+    viewModelScope.launch {
+        _state.update { it.copy(showBrokenDownloadDialog = false) }
+        _state.value.lastDownloadResult?.let { result ->
+            packageFinalFile(result.successfulFolders, result.failedChapters)
+        }
     }
 }
 
