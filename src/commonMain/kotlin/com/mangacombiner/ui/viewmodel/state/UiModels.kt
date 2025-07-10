@@ -24,7 +24,7 @@ data class Chapter(
 )
 
 enum class RangeAction {
-    SELECT, DESELECT, TOGGLE
+    SELECT, DESELECT
 }
 
 enum class SortDirection {

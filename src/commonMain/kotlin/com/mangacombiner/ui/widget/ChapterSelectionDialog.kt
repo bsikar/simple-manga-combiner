@@ -124,11 +124,6 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (Event) -> Unit) {
                         enabled = rangeIsSet,
                         modifier = Modifier.weight(1f)
                     ) { Text("Deselect") }
-                    Button(
-                        onClick = { onEvent(Event.Download.UpdateChapterRange(rangeStart.toInt(), rangeEnd.toInt(), RangeAction.TOGGLE)) },
-                        enabled = rangeIsSet,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Toggle") }
                 }
 
                 Divider(modifier = Modifier.padding(vertical = 16.dp))

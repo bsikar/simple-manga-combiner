@@ -65,9 +65,6 @@ private fun MainViewModel.onUpdateCachedChapterRange(seriesPath: String, start: 
         when (action) {
             RangeAction.SELECT -> currentSelection.addAll(chaptersToUpdate)
             RangeAction.DESELECT -> currentSelection.removeAll(chaptersToUpdate.toSet())
-            RangeAction.TOGGLE -> chaptersToUpdate.forEach { path ->
-                if (currentSelection.contains(path)) currentSelection.remove(path) else currentSelection.add(path)
-            }
         }
         uiState.copy(cacheItemsToDelete = currentSelection)
     }

@@ -151,13 +151,6 @@ private fun MainViewModel.onUpdateChapterRange(start: Int, end: Int, action: Ran
                 when (action) {
                     RangeAction.SELECT -> chapter.copy(selectedSource = if (chapter.isBroken) ChapterSource.WEB else getChapterDefaultSource(chapter))
                     RangeAction.DESELECT -> chapter.copy(selectedSource = null)
-                    RangeAction.TOGGLE -> chapter.copy(
-                        selectedSource = if (chapter.selectedSource == null) {
-                            if (chapter.isBroken) ChapterSource.WEB else getChapterDefaultSource(chapter)
-                        } else {
-                            null
-                        }
-                    )
                 }
             } else {
                 chapter

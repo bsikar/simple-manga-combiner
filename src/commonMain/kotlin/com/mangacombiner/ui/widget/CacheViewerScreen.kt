@@ -22,6 +22,7 @@ import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.*
 import com.mangacombiner.util.CachedChapterNameComparator
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CacheViewerScreen(state: UiState, onEvent: (Event) -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -243,10 +244,6 @@ private fun CacheSeriesItem(
                                 onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.DESELECT)) },
                                 enabled = rangeIsSet,
                             ) { Text("Deselect") }
-                            Button(
-                                onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.TOGGLE)) },
-                                enabled = rangeIsSet,
-                            ) { Text("Toggle") }
                         }
                     }
 
