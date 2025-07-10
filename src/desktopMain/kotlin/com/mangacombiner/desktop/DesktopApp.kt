@@ -116,10 +116,12 @@ fun main() {
 
             val density = LocalDensity.current
             val fontMultiplier = when (state.fontSizePreset) {
+                "XX-Small" -> 0.5f
                 "X-Small" -> 0.75f
                 "Small" -> 0.90f
                 "Large" -> 1.15f
                 "X-Large" -> 1.30f
+                "XX-Large" -> 1.45f
                 else -> 1.0f // Medium
             }
             val newDensity = Density(

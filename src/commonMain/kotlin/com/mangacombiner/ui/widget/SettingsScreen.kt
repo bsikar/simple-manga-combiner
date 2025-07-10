@@ -26,12 +26,14 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     var systemLightThemeDropdownExpanded by remember { mutableStateOf(false) }
     var systemDarkThemeDropdownExpanded by remember { mutableStateOf(false) }
     var outputDropdownExpanded by remember { mutableStateOf(false) }
+    var fontSizeDropdownExpanded by remember { mutableStateOf(false) }
     val outputLocations = listOf("Downloads", "Documents", "Desktop", "Custom").filter {
         // Simple way to hide "Desktop" on Android, which returns null for it
         !(it == "Desktop" && System.getProperty("java.runtime.name")?.contains("Android") == true)
     }
     val themeOptions = remember { AppTheme.values().toList() }
     val systemThemeOptions = remember { themeOptions.filter { it != AppTheme.SYSTEM } }
+    val fontPresets = listOf("XX-Small", "X-Small", "Small", "Medium", "Large", "X-Large", "XX-Large")
 
     Column(
         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
@@ -119,19 +121,29 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     }
                 }
 
-                val fontPresets = listOf("X-Small", "Small", "Medium", "Large", "X-Large")
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text("Font Size:", style = MaterialTheme.typography.body1)
-                    fontPresets.forEach { preset ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().clickable { onEvent(Event.Settings.UpdateFontSizePreset(preset)) }
+                    Box {
+                        OutlinedButton(onClick = { fontSizeDropdownExpanded = true }) {
+                            Text(state.fontSizePreset)
+                            Icon(Icons.Default.ArrowDropDown, "Font Size")
+                        }
+                        DropdownMenu(
+                            expanded = fontSizeDropdownExpanded,
+                            onDismissRequest = { fontSizeDropdownExpanded = false }
                         ) {
-                            RadioButton(
-                                selected = (state.fontSizePreset == preset),
-                                onClick = { onEvent(Event.Settings.UpdateFontSizePreset(preset)) }
-                            )
-                            Text(text = preset)
+                            fontPresets.forEach { preset ->
+                                DropdownMenuItem(onClick = {
+                                    onEvent(Event.Settings.UpdateFontSizePreset(preset))
+                                    fontSizeDropdownExpanded = false
+                                }) {
+                                    Text(preset)
+                                }
+                            }
                         }
                     }
                 }

@@ -57,7 +57,7 @@ fun MainScreen(viewModel: MainViewModel) {
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colors.background).padding(paddingValues)) {
             Row(modifier = Modifier.fillMaxSize()) {
-                val showNavLabels = state.fontSizePreset != "Large" && state.fontSizePreset != "X-Large"
+                val showNavLabels = state.fontSizePreset !in listOf("Large", "X-Large", "XX-Large")
                 NavigationRail(
                     modifier = Modifier.fillMaxHeight(),
                     backgroundColor = MaterialTheme.colors.surface
