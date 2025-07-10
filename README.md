@@ -1,9 +1,3 @@
-Of course\! I've updated your `README.md` to be more accurate and provide clearer instructions for building and running your application on all supported platforms. The new version reflects the artifact versions and tasks defined in your Gradle files.
-
-Here is the updated `README.md`:
-
------
-
 # Manga Combiner
 
 [](https://github.com/bsikar/simple-manga-combiner)  [](https://opensource.org/licenses/MIT)
