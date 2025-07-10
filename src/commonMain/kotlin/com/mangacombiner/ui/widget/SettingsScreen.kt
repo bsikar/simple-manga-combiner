@@ -1,7 +1,6 @@
 package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,7 +14,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.Event
-import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.AppVersion
@@ -202,45 +200,16 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
 
         Card(elevation = 4.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Cache Management", style = MaterialTheme.typography.h6)
-                Text(
-                    "The app keeps unfinished downloads in a temporary cache. You can view, manage, or clear this cache.",
-                    style = MaterialTheme.typography.body2,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                )
-                Text(
-                    text = "Location: ${state.cachePath}",
-                    style = MaterialTheme.typography.caption,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.8f),
-                    softWrap = true
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                Text("Diagnostics", style = MaterialTheme.typography.h6)
+                Button(
+                    onClick = { onEvent(Event.Navigate(Screen.LOGS)) },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Button(
-                        onClick = {
-                            onEvent(Event.Cache.RefreshView)
-                            onEvent(Event.Navigate(Screen.CACHE_VIEWER))
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("View Cache")
-                    }
-                    Button(
-                        onClick = { onEvent(Event.Cache.RequestClearAll) },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = MaterialTheme.colors.error,
-                            contentColor = MaterialTheme.colors.onError
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Clear Cache")
-                    }
+                    Text("View Application Logs")
                 }
             }
         }
+
 
         Button(
             onClick = { onEvent(Event.Settings.RequestRestoreDefaults) },
@@ -256,27 +225,6 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
             style = MaterialTheme.typography.caption,
             color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
             modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
-    }
-
-    if (state.showClearCacheDialog) {
-        AlertDialog(
-            onDismissRequest = { onEvent(Event.Cache.CancelClearAll) },
-            title = { Text("Confirm Clear All Cache") },
-            text = { Text("Are you sure you want to delete all temporary application data, including paused or incomplete downloads? This action cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = { onEvent(Event.Cache.ConfirmClearAll) },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
-                ) {
-                    Text("Clear Everything")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { onEvent(Event.Cache.CancelClearAll) }) {
-                    Text("Cancel")
-                }
-            }
         )
     }
 

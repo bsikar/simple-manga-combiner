@@ -19,6 +19,7 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Switch
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.VerticalAlignBottom
@@ -27,8 +28,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.Event
+import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.UiState
 
 @Composable
@@ -51,6 +52,9 @@ fun LogScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            IconButton(onClick = { onEvent(Event.Navigate(Screen.SETTINGS)) }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Settings")
+            }
             Text("Logs", style = MaterialTheme.typography.h5, modifier = Modifier.weight(1f))
             PlatformTooltip(if (state.logAutoscrollEnabled) "Disable Auto-scroll" else "Enable Auto-scroll") {
                 IconButton(onClick = { onEvent(Event.Log.ToggleAutoscroll) }) {

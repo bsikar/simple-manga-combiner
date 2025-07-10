@@ -4,10 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -69,15 +69,6 @@ fun MainScreen(viewModel: MainViewModel) {
                             alwaysShowLabel = false
                         )
                     }
-                    PlatformTooltip("Logs") {
-                        NavigationRailItem(
-                            selected = state.currentScreen == Screen.LOGS,
-                            onClick = { viewModel.onEvent(Event.Navigate(Screen.LOGS)) },
-                            icon = { Icon(Icons.AutoMirrored.Filled.Article, contentDescription = "Logs") },
-                            label = if (showNavLabels) { { Text("Logs") } } else null,
-                            alwaysShowLabel = false
-                        )
-                    }
                     PlatformTooltip("Advanced") {
                         NavigationRailItem(
                             selected = state.currentScreen == Screen.ADVANCED_SETTINGS,
@@ -87,9 +78,21 @@ fun MainScreen(viewModel: MainViewModel) {
                             alwaysShowLabel = false
                         )
                     }
+                    PlatformTooltip("Cache") {
+                        NavigationRailItem(
+                            selected = state.currentScreen == Screen.CACHE_VIEWER,
+                            onClick = {
+                                viewModel.onEvent(Event.Cache.RefreshView)
+                                viewModel.onEvent(Event.Navigate(Screen.CACHE_VIEWER))
+                            },
+                            icon = { Icon(Icons.Default.Storage, contentDescription = "Cache") },
+                            label = if (showNavLabels) { { Text("Cache") } } else null,
+                            alwaysShowLabel = false
+                        )
+                    }
                     PlatformTooltip("Settings") {
                         NavigationRailItem(
-                            selected = state.currentScreen == Screen.SETTINGS || state.currentScreen == Screen.CACHE_VIEWER,
+                            selected = state.currentScreen == Screen.SETTINGS || state.currentScreen == Screen.LOGS,
                             onClick = { viewModel.onEvent(Event.Navigate(Screen.SETTINGS)) },
                             icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                             label = if (showNavLabels) { { Text("Settings") } } else null,
@@ -186,6 +189,26 @@ fun MainScreen(viewModel: MainViewModel) {
                     },
                     dismissButton = {
                         TextButton(onClick = { viewModel.onEvent(Event.Operation.CancelOverwrite) }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+            if (state.showClearCacheDialog) {
+                AlertDialog(
+                    onDismissRequest = { viewModel.onEvent(Event.Cache.CancelClearAll) },
+                    title = { Text("Confirm Clear All Cache") },
+                    text = { Text("Are you sure you want to delete all temporary application data, including paused or incomplete downloads? This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = { viewModel.onEvent(Event.Cache.ConfirmClearAll) },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                        ) {
+                            Text("Clear Everything")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.onEvent(Event.Cache.CancelClearAll) }) {
                             Text("Cancel")
                         }
                     }
