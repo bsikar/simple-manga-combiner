@@ -17,7 +17,7 @@ class FileConverter {
         return try {
             val inputFormat = options.inputFile.extension.lowercase()
             val finalOutputFormat = options.outputFormat.lowercase()
-
+            Logger.logDebug { "Processing file conversion from .$inputFormat to .$finalOutputFormat" }
             when (inputFormat to finalOutputFormat) {
                 "cbz" to "epub" -> processCbzToEpub(options, mangaTitle, outputFile, processor)
                 "epub" to "cbz" -> processEpubToCbz(options, mangaTitle, outputFile, processor)
@@ -30,7 +30,7 @@ class FileConverter {
                 }
             }
         } catch (e: IOException) {
-            val msg = "ERROR: A file failure occurred while processing ${options.inputFile.name}: ${e.message}"
+            val msg = "ERROR: A file failure occurred while processing ${options.inputFile.name}"
             Logger.logError(msg, e)
             ProcessResult(false, error = msg)
         }
@@ -44,6 +44,7 @@ class FileConverter {
     ): ProcessResult {
         Logger.logInfo("Re-processing to fix structure...")
         val tempDir = File(options.tempDirectory, "cbz-reprocess-${UUID.randomUUID()}").apply { mkdirs() }
+        Logger.logDebug { "Created temp directory for CBZ reprocessing: ${tempDir.absolutePath}" }
         return try {
             ZipUtils.extractZip(options.inputFile, tempDir)
             val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
@@ -54,6 +55,7 @@ class FileConverter {
                 ProcessResult(false, error = "No chapter folders found in CBZ to reprocess.")
             }
         } finally {
+            Logger.logDebug { "Deleting temp directory: ${tempDir.absolutePath}" }
             tempDir.deleteRecursively()
         }
     }
@@ -66,6 +68,7 @@ class FileConverter {
     ): ProcessResult {
         Logger.logInfo("Re-processing EPUB to apply changes...")
         val tempDir = File(options.tempDirectory, "epub-reprocess-${UUID.randomUUID()}").apply { mkdirs() }
+        Logger.logDebug { "Created temp directory for EPUB reprocessing: ${tempDir.absolutePath}" }
         return try {
             ZipUtils.extractZip(options.inputFile, tempDir)
 
@@ -88,6 +91,7 @@ class FileConverter {
             processor.createEpubFromFolders(mangaTitle, chapterFolders, outputFile)
             ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
         } finally {
+            Logger.logDebug { "Deleting temp directory: ${tempDir.absolutePath}" }
             tempDir.deleteRecursively()
         }
     }
@@ -100,6 +104,7 @@ class FileConverter {
     ): ProcessResult {
         Logger.logInfo("Converting ${options.inputFile.name} to EPUB format...")
         val tempDir = File(options.tempDirectory, "cbz-to-epub-${UUID.randomUUID()}").apply { mkdirs() }
+        Logger.logDebug { "Created temp directory for CBZ -> EPUB: ${tempDir.absolutePath}" }
         return try {
             ZipUtils.extractZip(options.inputFile, tempDir)
             val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
@@ -110,6 +115,7 @@ class FileConverter {
                 ProcessResult(false, error = "No chapter folders found in CBZ for conversion.")
             }
         } finally {
+            Logger.logDebug { "Deleting temp directory: ${tempDir.absolutePath}" }
             tempDir.deleteRecursively()
         }
     }
@@ -122,6 +128,7 @@ class FileConverter {
     ): ProcessResult {
         Logger.logInfo("Converting ${options.inputFile.name} to CBZ format...")
         val tempDir = File(options.tempDirectory, "epub-to-cbz-${UUID.randomUUID()}").apply { mkdirs() }
+        Logger.logDebug { "Created temp directory for EPUB -> CBZ: ${tempDir.absolutePath}" }
         return try {
             ZipUtils.extractZip(options.inputFile, tempDir)
 
@@ -144,6 +151,7 @@ class FileConverter {
             processor.createCbzFromFolders(mangaTitle, chapterFolders, outputFile)
             ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
         } finally {
+            Logger.logDebug { "Deleting temp directory: ${tempDir.absolutePath}" }
             tempDir.deleteRecursively()
         }
     }

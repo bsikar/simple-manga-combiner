@@ -24,7 +24,6 @@ data class UiState(
     val userAgentName: String = "Chrome (Windows)",
     val perWorkerUserAgent: Boolean = false,
     val debugLog: Boolean = false,
-    val dryRun: Boolean = false,
     val operationState: OperationState = OperationState.IDLE,
     val progress: Float = 0f,
     val progressStatusText: String = "",

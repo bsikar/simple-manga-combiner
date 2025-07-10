@@ -7,20 +7,19 @@ import com.mangacombiner.service.FileConverter
 import com.mangacombiner.service.LocalFileOptions
 import com.mangacombiner.service.ProcessorService
 import com.mangacombiner.service.ScraperService
-import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.createHttpClient
 import com.mangacombiner.util.logOperationSettings
+import com.mangacombiner.util.naturalSortComparator
 import com.mangacombiner.util.titlecase
 import com.mangacombiner.util.toSlug
 import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
 import kotlinx.cli.multiple
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
@@ -97,8 +96,6 @@ fun main(args: Array<String>) {
                             url.trimEnd('/').substringAfterLast('/') !in exclude
                         }
                     }
-
-                    val cliOperationState = MutableStateFlow(OperationState.RUNNING)
                     val seriesSlug = source.toSlug()
                     val downloadDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
 
@@ -118,27 +115,32 @@ fun main(args: Array<String>) {
                             }
                         },
                         outputPath = outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" },
-                        operationState = cliOperationState,
+                        isPaused = { false },
                         dryRun = dryRun,
                         onProgressUpdate = { progress, status ->
                             val percentage = (progress * 100).toInt()
                             val barWidth = 20
                             val doneWidth = (barWidth * progress).toInt()
                             val bar = "[${"#".repeat(doneWidth)}${"-".repeat(barWidth - doneWidth)}]"
-                            print("\r$bar $percentage% - $status      ") // Use carriage return and padding
-                        }
+                            print("\r$bar $percentage% - $status      ")
+                        },
+                        onChapterCompleted = {}
                     )
 
                     logOperationSettings(downloadOptions, chapters.size, userAgentName, perWorkerUserAgent)
 
-                    // Download chapters
+                    if (dryRun) {
+                        Logger.logInfo("\nDRY RUN: Would download ${chapters.size} chapters. No files will be created.")
+                        return@runBlocking
+                    }
+
                     val downloadResult = downloadService.downloadChapters(downloadOptions, downloadDir)
+                    println() // New line after progress bar
 
                     if (downloadResult != null && downloadResult.successfulFolders.isNotEmpty()) {
-                        // Create final output file
                         val mangaTitle = title?.ifBlank { null } ?: source.toSlug().replace('-', ' ').titlecase()
                         val finalOutputPath = downloadOptions.outputPath
-                        val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${format}"
+                        val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.$format"
                         val outputFile = File(finalOutputPath, finalFileName)
 
                         if (outputFile.exists() && !force) {
@@ -178,15 +180,13 @@ fun main(args: Array<String>) {
                     } else {
                         Logger.logError("Download failed or no chapters were successfully downloaded.")
                     }
-
-                    println() // Move to the next line after the progress bar is done
                 }
 
                 File(source).exists() -> {
                     val inputFile = File(source)
                     val mangaTitle = title?.ifBlank { null } ?: inputFile.nameWithoutExtension
                     val finalOutputPath = outputPath.ifBlank { inputFile.parent }
-                    val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${format}"
+                    val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.$format"
                     val outputFile = File(finalOutputPath, finalFileName)
 
                     if (outputFile.exists() && !force) {

@@ -4,6 +4,7 @@ import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
+import com.mangacombiner.util.naturalSortComparator
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -76,20 +77,20 @@ class DownloadService(
                 delay(500)
             }
             coroutineContext.ensureActive()
-
+            Logger.logDebug { "Downloading file: $url with User-Agent: $userAgent" }
             val response: HttpResponse = client.get(url) {
                 header(HttpHeaders.UserAgent, userAgent)
             }
             if (response.status.isSuccess()) {
                 writeChannelToFile(response.bodyAsChannel(), outputFile)
+                Logger.logDebug { "Successfully downloaded ${outputFile.name}" }
                 true
             } else {
                 Logger.logError("Failed to download $url. Status: ${response.status}")
                 false
             }
         } catch (e: IOException) {
-            Logger.logError("Error downloading file $url: ${e.message}")
-            Logger.logDebug { "Full error for $url: ${e.stackTraceToString()}" }
+            Logger.logError("Error downloading file $url", e)
             false
         }
     }
@@ -108,6 +109,7 @@ class DownloadService(
         // It will be deleted only on full success.
         val incompleteMarker = File(chapterDir, INCOMPLETE_MARKER_FILE)
         incompleteMarker.createNewFile()
+        Logger.logDebug { "Created incomplete marker for chapter '$chapterTitle' at: ${incompleteMarker.absolutePath}" }
 
         while (options.isPaused()) {
             delay(1000)
@@ -123,7 +125,7 @@ class DownloadService(
             return ChapterDownloadResult(chapterDir.takeIf { it.exists() }, chapterTitle, listOf("Chapter page might be empty or licensed."))
         }
 
-        Logger.logInfo(" --> Found ${imageUrls.size} images for '$chapterTitle'. Starting download...")
+        Logger.logInfo(" --> Found ${imageUrls.size} images for '$chapterTitle'. Starting download with ${options.getWorkers()} workers...")
         val processedImagesCount = AtomicInteger(0)
         val failedImageUrls = mutableListOf<String>()
         val semaphore = Semaphore(permits = options.getWorkers())
@@ -148,7 +150,7 @@ class DownloadService(
 
                         val currentProcessed = processedImagesCount.incrementAndGet()
                         val imageProgress = currentProcessed.toFloat() / imageUrls.size
-                        val statusText = "Downloading: ${chapterTitle.take(30)}... ($currentProcessed/${imageUrls.size})"
+                        val statusText = "Downloading: ${chapterTitle.take(30)}... (${(imageProgress * 100).toInt()}%)"
                         options.onProgressUpdate(imageProgress, statusText)
                     }
                 }
@@ -157,12 +159,13 @@ class DownloadService(
 
         coroutineContext.ensureActive()
 
-        val downloadedCount = chapterDir.listFiles()?.count { it.isFile } ?: 0
+        val downloadedCount = chapterDir.listFiles()?.count { it.isFile && it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS } ?: 0
         return if (downloadedCount > 0) {
             if (failedImageUrls.isNotEmpty()) {
                 Logger.logError("Warning: Failed to download ${failedImageUrls.size} images for chapter: '$chapterTitle'")
             } else {
                 // Only if there are no failures, delete the marker.
+                Logger.logDebug { "Download of chapter '$chapterTitle' completed successfully. Deleting incomplete marker." }
                 incompleteMarker.delete()
             }
             Logger.logDebug { "Finished download for chapter: '$chapterTitle' ($downloadedCount images)" }
@@ -177,7 +180,7 @@ class DownloadService(
         options: DownloadOptions,
         downloadDir: File
     ): DownloadResult? {
-        val chapterData = options.chaptersToDownload.toList()
+        val chapterData = options.chaptersToDownload.toList().sortedWith(compareBy(naturalSortComparator) { it.second })
         Logger.logInfo("Downloading ${chapterData.size} chapters...")
         val successfulFolders = mutableListOf<File>()
         val failedChapters = mutableMapOf<String, List<String>>()
@@ -203,7 +206,10 @@ class DownloadService(
                 options.onChapterCompleted()
 
                 coroutineContext.ensureActive()
-                delay(CHAPTER_DOWNLOAD_DELAY_MS)
+                if (index < chapterData.lastIndex) {
+                    Logger.logDebug { "Delaying for ${CHAPTER_DOWNLOAD_DELAY_MS}ms before next chapter." }
+                    delay(CHAPTER_DOWNLOAD_DELAY_MS)
+                }
             }
         } finally {
             client.close()

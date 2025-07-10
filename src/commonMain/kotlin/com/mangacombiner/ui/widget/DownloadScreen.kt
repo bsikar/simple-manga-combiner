@@ -1,134 +1,34 @@
 package com.mangacombiner.ui.widget
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.mangacombiner.model.SearchResult
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.OperationState
-import com.mangacombiner.ui.viewmodel.state.SearchSortOption
 import com.mangacombiner.ui.viewmodel.state.UiState
 
 @Composable
 fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
     var formatDropdownExpanded by remember { mutableStateOf(false) }
-    var sortDropdownExpanded by remember { mutableStateOf(false) }
+
+    val isIdle = state.operationState == OperationState.IDLE
+    val isRunning = state.operationState == OperationState.RUNNING || state.operationState == OperationState.PAUSED
 
     Column(modifier = Modifier.fillMaxSize()) {
-        val isIdle = state.operationState == OperationState.IDLE
-        val isRunning = state.operationState == OperationState.RUNNING || state.operationState == OperationState.PAUSED
-
         Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Card(elevation = 4.dp) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Search for a Series", style = MaterialTheme.typography.h6)
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = state.searchQuery,
-                        onValueChange = { onEvent(Event.Search.UpdateQuery(it)) },
-                        label = { Text("Search on MangaRead.org") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = isIdle,
-                        trailingIcon = {
-                            if (state.searchQuery.isNotBlank()) {
-                                IconButton(
-                                    onClick = { onEvent(Event.Search.UpdateQuery("")) },
-                                    enabled = isIdle
-                                ) {
-                                    Icon(Icons.Filled.Clear, "Clear Search")
-                                }
-                            }
-                        }
-                    )
-                    Button(
-                        onClick = { onEvent(Event.Search.Perform) },
-                        enabled = state.searchQuery.isNotBlank() && !state.isSearching && isIdle,
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        if (state.isSearching) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Searching...")
-                        } else {
-                            Text("Search")
-                        }
-                    }
-
-                    AnimatedVisibility(visible = state.searchResults.isNotEmpty() || state.isSearching) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Search Results:", style = MaterialTheme.typography.subtitle1)
-                                Box {
-                                    OutlinedButton(
-                                        onClick = { sortDropdownExpanded = true },
-                                        enabled = !state.isSearching
-                                    ) {
-                                        Icon(Icons.AutoMirrored.Filled.Sort, "Sort Results", modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Sort By")
-                                    }
-                                    DropdownMenu(
-                                        expanded = sortDropdownExpanded,
-                                        onDismissRequest = { sortDropdownExpanded = false }
-                                    ) {
-                                        DropdownMenuItem(onClick = {
-                                            onEvent(Event.Search.SortResults(SearchSortOption.DEFAULT))
-                                            sortDropdownExpanded = false
-                                        }) {
-                                            if (state.searchSortOption == SearchSortOption.DEFAULT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
-                                            Text("Default")
-                                        }
-                                        DropdownMenuItem(onClick = {
-                                            onEvent(Event.Search.SortResults(SearchSortOption.CHAPTER_COUNT))
-                                            sortDropdownExpanded = false
-                                        }) {
-                                            if (state.searchSortOption == SearchSortOption.CHAPTER_COUNT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
-                                            Text("Chapter Count")
-                                        }
-                                        DropdownMenuItem(onClick = {
-                                            onEvent(Event.Search.SortResults(SearchSortOption.ALPHABETICAL))
-                                            sortDropdownExpanded = false
-                                        }) {
-                                            if (state.searchSortOption == SearchSortOption.ALPHABETICAL) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
-                                            Text("Alphabetical")
-                                        }
-                                    }
-                                }
-                            }
-                            Divider()
-                            state.searchResults.forEach { result ->
-                                SearchResultItem(
-                                    result = result,
-                                    onExpandToggle = { onEvent(Event.Search.ToggleResultExpansion(result.url)) },
-                                    onSelect = { onEvent(Event.Search.SelectResult(result.url)) }
-                                )
-                                Divider()
-                            }
-                        }
-                    }
-                }
-            }
-
             Card(elevation = 4.dp) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Download & Sync Options", style = MaterialTheme.typography.h6)
@@ -233,19 +133,6 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                                 enabled = isIdle
                             )
                         }
-
-                        FormControlLabel(
-                            onClick = { onEvent(Event.Download.ToggleDryRun(!state.dryRun)) },
-                            enabled = isIdle,
-                            control = {
-                                Switch(
-                                    checked = state.dryRun,
-                                    onCheckedChange = { onEvent(Event.Download.ToggleDryRun(it)) },
-                                    enabled = isIdle
-                                )
-                            },
-                            label = { Text("Dry Run (Simulate Only)") }
-                        )
 
                         Box(modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(

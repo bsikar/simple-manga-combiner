@@ -86,7 +86,7 @@ class MainViewModel(
             )
         )
         state = _state.asStateFlow()
-
+        Logger.logDebug { "ViewModel initialized with loaded settings." }
         setupListeners()
         processQueue()
     }
@@ -104,9 +104,10 @@ class MainViewModel(
             state
                 .map { it.toAppSettings() }
                 .distinctUntilChanged()
+                .debounce(500)
                 .collect { settingsToSave ->
                     settingsRepository.saveSettings(settingsToSave)
-                    Logger.logDebug { "Settings saved automatically." }
+                    Logger.logDebug { "Settings saved automatically due to state change." }
                 }
         }
         viewModelScope.launch {
@@ -114,9 +115,11 @@ class MainViewModel(
                 updateOverallProgress()
             }
         }
+        Logger.logDebug { "ViewModel listeners set up." }
     }
 
     fun onEvent(event: Event) {
+        Logger.logDebug { "Received event: ${event::class.simpleName}" }
         when (event) {
             is Event.Search -> handleSearchEvent(event)
             is Event.Download -> handleDownloadEvent(event)
@@ -131,10 +134,12 @@ class MainViewModel(
     }
 
     fun onFileSelected(path: String) {
+        Logger.logDebug { "File selected: $path" }
         startFromFile(path)
     }
 
     fun onFolderSelected(path: String, type: FilePickerRequest.PathType) {
+        Logger.logDebug { "Folder selected for type '$type': $path" }
         when (type) {
             FilePickerRequest.PathType.DEFAULT_OUTPUT -> {
                 _state.update { it.copy(outputPath = path) }
@@ -173,13 +178,15 @@ class MainViewModel(
         }
 
         val outputFile = File(File(s.outputPath), "${FileUtils.sanitizeFilename(s.customTitle)}.${s.outputFormat}")
-
+        Logger.logDebug { "Checking for existence of output file: ${outputFile.absolutePath}" }
         if (outputFile.exists()) {
+            Logger.logDebug { "Output file exists." }
             _state.update { it.copy(outputFileExists = true) }
             if (s.sourceFilePath == null) {
                 analyzeLocalFile(outputFile)
             }
         } else {
+            Logger.logDebug { "Output file does not exist." }
             _state.update { it.copy(outputFileExists = false) }
             if (s.sourceFilePath == outputFile.path) {
                 _state.update { it.copy(sourceFilePath = null, localChaptersForSync = emptyMap(), failedItemsForSync = emptyMap()) }
@@ -194,7 +201,7 @@ class MainViewModel(
                 return@launch
             }
             _state.update { it.copy(isAnalyzingFile = true) }
-
+            Logger.logInfo("Analyzing local file: ${file.name}")
             val (chapterSlugs, url, failedItems) = downloadService.processorService.getChaptersAndInfoFromFile(file)
 
             _state.update { currentState ->
@@ -260,12 +267,11 @@ class MainViewModel(
                         isBroken = isBroken
                     )
 
-                    // Determine the source based on pre-selection, then fall back to defaults
                     val initialSource = when {
                         sanitizedTitle in preselectedNames -> {
                             if (isBroken) ChapterSource.WEB else ChapterSource.CACHE
                         }
-                        preselectedNames.isNotEmpty() -> null // If pre-selecting, others are deselected by default
+                        preselectedNames.isNotEmpty() -> null
                         isRetry || isBroken -> ChapterSource.WEB
                         else -> getChapterDefaultSource(chapter)
                     }
@@ -279,7 +285,7 @@ class MainViewModel(
                         isFetchingChapters = false,
                         fetchedChapters = allChapters,
                         showChapterDialog = true,
-                        chaptersToPreselect = emptySet() // Clear after use
+                        chaptersToPreselect = emptySet()
                     )
                 }
             } else {
@@ -432,6 +438,7 @@ class MainViewModel(
     }
 
     internal fun resetUiStateAfterOperation() {
+        Logger.logDebug { "Resetting UI state after operation." }
         _state.update {
             it.copy(
                 activeDownloadOptions = null,
@@ -482,13 +489,11 @@ class MainViewModel(
             },
             outputPath = s.outputPath,
             isPaused = { _operationState.value == OperationState.PAUSED },
-            dryRun = s.dryRun,
+            dryRun = false,
             onProgressUpdate = { progress, status ->
                 _state.update { it.copy(progress = progress, progressStatusText = status) }
             },
-            onChapterCompleted = {
-                // This is a no-op for single, non-queued operations.
-            }
+            onChapterCompleted = {}
         )
     }
 
@@ -522,7 +527,6 @@ class MainViewModel(
             chapters = selectedChapters,
             workers = s.workers,
             userAgents = userAgents,
-            dryRun = s.dryRun
         )
 
         val newJob = DownloadJob(jobId, title, 0f, "Queued", selectedChapters.size, 0)
@@ -539,6 +543,7 @@ class MainViewModel(
                 completionMessage = "$title added to queue."
             )
         }
+        Logger.logInfo("Job '$title' ($jobId) added to queue.")
     }
 
     internal fun cancelJob(jobId: String) {
@@ -551,7 +556,7 @@ class MainViewModel(
             )
         }
         queuedOperationContext.remove(jobId)
-        Logger.logInfo("Job $jobId was cancelled.")
+        Logger.logInfo("Job $jobId was cancelled and removed from queue.")
     }
 
     internal fun clearCompletedJobs() {
@@ -561,6 +566,7 @@ class MainViewModel(
             }
             it.copy(downloadQueue = newQueue)
         }
+        Logger.logInfo("Cleared completed jobs from queue.")
     }
 
     internal fun updateJob(event: Event.Queue.UpdateJob) {
@@ -586,6 +592,7 @@ class MainViewModel(
 
     private fun processQueue() {
         viewModelScope.launch(Dispatchers.IO) {
+            Logger.logDebug { "Queue processor started." }
             val semaphore = Semaphore(state.value.batchWorkers)
 
             state.collect { currentState ->
@@ -593,6 +600,7 @@ class MainViewModel(
 
                 if (nextJob != null) {
                     if (semaphore.tryAcquire()) {
+                        Logger.logDebug { "Acquired semaphore for job ${nextJob.id}. Starting..." }
                         updateJobState(nextJob.id, "Downloading")
                         val jobCoroutine = launch {
                             try {
@@ -601,10 +609,12 @@ class MainViewModel(
                                     runQueuedOperation(op)
                                 } else {
                                     updateJobState(nextJob.id, "Error: Context not found")
+                                    Logger.logError("Could not find operation context for job ${nextJob.id}")
                                 }
                             } finally {
                                 semaphore.release()
                                 runningJobCoroutines.remove(nextJob.id)
+                                Logger.logDebug { "Job ${nextJob.id} finished. Releasing semaphore." }
                             }
                         }
                         runningJobCoroutines[nextJob.id] = jobCoroutine
@@ -617,6 +627,7 @@ class MainViewModel(
     private suspend fun runQueuedOperation(op: QueuedOperation) {
         val webChaptersCompleted = AtomicInteger(0)
         try {
+            Logger.logInfo("--- Starting Queued Job: ${op.customTitle} (${op.jobId}) ---")
             updateJobState(op.jobId, "Starting...", 0.05f)
             val tempDir = File(platformProvider.getTmpDir())
             val seriesSlug = op.seriesUrl.toSlug()
@@ -632,6 +643,7 @@ class MainViewModel(
                 .map { File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)) }
                 .toMutableList()
 
+            Logger.logDebug { "Job ${op.jobId}: ${chaptersFromCache.size} chapters from cache, ${chaptersToDownload.size} chapters to download." }
             var downloadResult: com.mangacombiner.service.DownloadResult? = null
 
             if (chaptersToDownload.isNotEmpty()) {
@@ -646,7 +658,7 @@ class MainViewModel(
                     getUserAgents = { op.userAgents },
                     outputPath = op.outputPath,
                     isPaused = { state.value.downloadQueue.find { it.id == op.jobId }?.isIndividuallyPaused == true },
-                    dryRun = op.dryRun,
+                    dryRun = false,
                     onProgressUpdate = { chapterProgress, status ->
                         val job = state.value.downloadQueue.find { it.id == op.jobId }
                         if (job != null) {
@@ -657,7 +669,9 @@ class MainViewModel(
                     onChapterCompleted = {
                         val job = state.value.downloadQueue.find { it.id == op.jobId }
                         if (job != null) {
-                            updateJobDownloadedChapters(op.jobId, job.downloadedChapters + 1)
+                            val newCount = job.downloadedChapters + 1
+                            updateJobDownloadedChapters(op.jobId, newCount)
+                            Logger.logDebug { "Job ${op.jobId}: Chapter completed. Progress: $newCount/${job.totalChapters}" }
                         }
                         webChaptersCompleted.incrementAndGet()
                     }
@@ -668,7 +682,7 @@ class MainViewModel(
 
             updateJobState(op.jobId, "Packaging...", 0.99f)
             val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
-            val tempOutputFile = File(tempDir, finalFileName) // Create in temp first
+            val tempOutputFile = File(tempDir, finalFileName)
 
             if (op.outputFormat == "cbz") {
                 downloadService.processorService.createCbzFromFolders(
@@ -682,9 +696,11 @@ class MainViewModel(
 
             fileMover.moveToFinalDestination(tempOutputFile, op.outputPath, finalFileName)
             updateJobState(op.jobId, "Completed", 1f)
+            Logger.logInfo("--- Finished Queued Job: ${op.customTitle} ---")
         } catch (e: Exception) {
             if (e is CancellationException) {
                 updateJobState(op.jobId, "Cancelled")
+                Logger.logInfo("Job ${op.jobId} was cancelled by the user.")
                 return
             }
             Logger.logError("Job ${op.jobId} failed", e)

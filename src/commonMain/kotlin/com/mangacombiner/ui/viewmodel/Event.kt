@@ -45,7 +45,6 @@ sealed interface Event {
         data class UpdateCustomTitle(val title: String) : Download
         data class UpdateOutputPath(val path: String) : Download
         data class UpdateFormat(val format: String) : Download
-        data class ToggleDryRun(val isEnabled: Boolean) : Download
         data class UpdateChapterSource(val chapterUrl: String, val source: ChapterSource?) : Download
         data class ToggleChapterSelection(val chapterUrl: String, val select: Boolean) : Download
         data class ToggleChapterRedownload(val chapterUrl: String) : Download

@@ -14,7 +14,6 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         is Event.Download.UpdateUrl -> onUpdateUrl(event.url)
         is Event.Download.UpdateCustomTitle -> onUpdateCustomTitle(event.title)
         is Event.Download.UpdateFormat -> onUpdateFormat(event.format)
-        is Event.Download.ToggleDryRun -> _state.update { it.copy(dryRun = event.isEnabled) }
         is Event.Download.ToggleChapterSelection -> onToggleChapterSelection(event.chapterUrl, event.select)
         is Event.Download.ToggleChapterRedownload -> onToggleChapterRedownload(event.chapterUrl)
         is Event.Download.UpdateChapterSource -> onUpdateChapterSource(event.chapterUrl, event.source)

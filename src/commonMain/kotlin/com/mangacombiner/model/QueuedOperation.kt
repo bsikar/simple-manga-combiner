@@ -14,5 +14,4 @@ data class QueuedOperation(
     val chapters: List<Chapter>,
     val workers: Int,
     val userAgents: List<String>,
-    val dryRun: Boolean,
 )

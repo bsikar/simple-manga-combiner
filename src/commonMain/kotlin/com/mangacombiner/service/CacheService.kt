@@ -36,16 +36,23 @@ class CacheService(private val platformProvider: PlatformProvider) {
     }
 
     fun getCacheContents(): List<CachedSeries> {
+        Logger.logDebug { "Reading cache contents from: ${platformProvider.getTmpDir()}" }
         val temp = File(platformProvider.getTmpDir())
-        if (!temp.exists() || !temp.isDirectory) return emptyList()
+        if (!temp.exists() || !temp.isDirectory) {
+            Logger.logDebug { "Cache directory does not exist." }
+            return emptyList()
+        }
 
         return temp.listFiles(FileFilter { file ->
             file.isDirectory && file.name.startsWith("manga-dl-")
         })?.map { seriesDir ->
+            Logger.logDebug { "Found cached series directory: ${seriesDir.name}" }
             val chapters = seriesDir.listFiles(FileFilter { it.isDirectory })?.mapNotNull { chapterDir ->
                 val files = chapterDir.walk().filter { it.isFile }.toList()
                 if (files.any { it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS }) {
                     val sizeInBytes = files.sumOf { it.length() }
+                    val isBroken = File(chapterDir, ".incomplete").exists()
+                    Logger.logDebug { "Found cached chapter: ${chapterDir.name}, Size: $sizeInBytes, Broken: $isBroken" }
                     CachedChapter(
                         name = chapterDir.name,
                         path = chapterDir.absolutePath,
@@ -53,15 +60,17 @@ class CacheService(private val platformProvider: PlatformProvider) {
                         sizeInBytes = sizeInBytes,
                         pageCount = files.count { it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS },
                         parentPath = seriesDir.absolutePath,
-                        isBroken = File(chapterDir, ".incomplete").exists()
+                        isBroken = isBroken
                     )
                 } else {
+                    Logger.logDebug { "Skipping empty or invalid chapter directory: ${chapterDir.name}" }
                     null
                 }
             }?.sortedWith(CachedChapterNameComparator) ?: emptyList()
 
             val urlFile = File(seriesDir, "url.txt")
             val seriesUrl = if (urlFile.exists()) urlFile.readText().trim() else null
+            Logger.logDebug { "Series URL for ${seriesDir.name}: $seriesUrl" }
 
             CachedSeries(
                 seriesName = seriesDir.name.removePrefix("manga-dl-").replace('-', ' ').titlecase(),
@@ -75,12 +84,15 @@ class CacheService(private val platformProvider: PlatformProvider) {
 
     fun getCachedChapterStatus(seriesSlug: String): Map<String, Boolean> {
         val seriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
+        Logger.logDebug { "Checking cache status for series slug '$seriesSlug' in directory: ${seriesDir.absolutePath}" }
         if (!seriesDir.exists() || !seriesDir.isDirectory) {
+            Logger.logDebug { "Series cache directory not found for slug: $seriesSlug" }
             return emptyMap()
         }
         return seriesDir.listFiles(FileFilter { it.isDirectory })
             ?.associate { chapterDir ->
                 val isComplete = !File(chapterDir, ".incomplete").exists()
+                Logger.logDebug { "Cached chapter '${chapterDir.name}' is complete: $isComplete" }
                 chapterDir.name to isComplete
             } ?: emptyMap()
     }

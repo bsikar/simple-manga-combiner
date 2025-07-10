@@ -2,6 +2,7 @@ package com.mangacombiner.data
 
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.ui.theme.AppTheme
+import com.mangacombiner.util.Logger
 import java.util.prefs.Preferences
 
 actual class SettingsRepository {
@@ -25,6 +26,7 @@ actual class SettingsRepository {
     }
 
     actual fun saveSettings(settings: AppSettings) {
+        Logger.logDebug { "Saving settings to Java Preferences." }
         prefs.put(THEME, settings.theme.name)
         prefs.put(DEFAULT_OUTPUT_LOCATION, settings.defaultOutputLocation)
         prefs.put(CUSTOM_DEFAULT_OUTPUT_PATH, settings.customDefaultOutputPath)
@@ -42,6 +44,7 @@ actual class SettingsRepository {
     }
 
     actual fun loadSettings(): AppSettings {
+        Logger.logDebug { "Loading settings from Java Preferences." }
         return AppSettings(
             theme = AppTheme.valueOf(prefs.get(THEME, AppTheme.LIGHT.name)),
             defaultOutputLocation = prefs.get(DEFAULT_OUTPUT_LOCATION, "Downloads"),

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.ui.theme.AppTheme
+import com.mangacombiner.util.Logger
 
 actual class SettingsRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
@@ -26,7 +27,7 @@ actual class SettingsRepository(private val context: Context) {
     }
 
     actual fun saveSettings(settings: AppSettings) {
-        // Use the KTX edit extension with commit = true for synchronous saving
+        Logger.logDebug { "Saving settings to Android SharedPreferences." }
         prefs.edit(commit = true) {
             putString(THEME, settings.theme.name)
             putString(DEFAULT_OUTPUT_LOCATION, settings.defaultOutputLocation)
@@ -46,6 +47,7 @@ actual class SettingsRepository(private val context: Context) {
     }
 
     actual fun loadSettings(): AppSettings {
+        Logger.logDebug { "Loading settings from Android SharedPreferences." }
         return AppSettings(
             theme = AppTheme.valueOf(prefs.getString(THEME, AppTheme.LIGHT.name) ?: AppTheme.LIGHT.name),
             defaultOutputLocation = prefs.getString(DEFAULT_OUTPUT_LOCATION, "Downloads") ?: "Downloads",

@@ -3,6 +3,7 @@ package com.mangacombiner.ui.viewmodel.handler
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
+import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.SearchSortOption
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.UserAgent
@@ -28,6 +29,9 @@ internal fun MainViewModel.handleSearchEvent(event: Event.Search) {
 private fun MainViewModel.onSelectSearchResult(url: String) {
     _state.update {
         it.copy(
+            // Navigate to Download screen
+            currentScreen = Screen.DOWNLOAD,
+
             // Set new manga context
             seriesUrl = url,
             customTitle = url.substringAfterLast("/manga/", "")

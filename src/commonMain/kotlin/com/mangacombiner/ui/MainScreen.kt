@@ -6,6 +6,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.runtime.Composable
@@ -50,6 +51,15 @@ fun MainScreen(viewModel: MainViewModel) {
                     modifier = Modifier.fillMaxHeight(),
                     backgroundColor = MaterialTheme.colors.surface
                 ) {
+                    PlatformTooltip("Search") {
+                        NavigationRailItem(
+                            selected = state.currentScreen == Screen.SEARCH,
+                            onClick = { viewModel.onEvent(Event.Navigate(Screen.SEARCH)) },
+                            icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                            label = if (showNavLabels) { { Text("Search") } } else null,
+                            alwaysShowLabel = false
+                        )
+                    }
                     PlatformTooltip("Download") {
                         NavigationRailItem(
                             selected = state.currentScreen == Screen.DOWNLOAD,
@@ -95,6 +105,7 @@ fun MainScreen(viewModel: MainViewModel) {
 
                 Box(modifier = Modifier.weight(1f).padding(16.dp)) {
                     when (state.currentScreen) {
+                        Screen.SEARCH -> SearchScreen(state, viewModel::onEvent)
                         Screen.DOWNLOAD -> DownloadScreen(state, viewModel::onEvent)
                         Screen.DOWNLOAD_QUEUE -> DownloadQueueScreen(state, viewModel::onEvent)
                         Screen.LOGS -> LogScreen(state, logs, viewModel::onEvent)

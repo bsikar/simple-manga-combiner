@@ -2,6 +2,7 @@ package com.mangacombiner.ui.viewmodel.state
 
 enum class Screen {
     DOWNLOAD,
+    SEARCH,
     DOWNLOAD_QUEUE,
     LOGS,
     SETTINGS,

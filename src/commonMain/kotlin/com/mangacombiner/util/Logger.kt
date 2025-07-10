@@ -24,7 +24,6 @@ object Logger {
         listeners.forEach { it(message) }
     }
 
-    // 'inline' keyword removed to fix the visibility compilation error
     fun logDebug(message: () -> String) {
         if (isDebugEnabled) {
             broadcast("[DEBUG] ${message()}")
