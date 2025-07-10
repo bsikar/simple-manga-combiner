@@ -52,7 +52,10 @@ private fun MainViewModel.onResumeOperation() {
 
 private fun MainViewModel.onConfirmCancelOperation() {
     _state.update { it.copy(showCancelDialog = false) }
-    _operationState.value = OperationState.CANCELLING
+    if (_operationState.value == OperationState.RUNNING || _operationState.value == OperationState.PAUSED) {
+        _operationState.value = OperationState.CANCELLING
+        activeOperationJob?.cancel()
+    }
 }
 
 private fun MainViewModel.onConfirmBrokenDownload() {

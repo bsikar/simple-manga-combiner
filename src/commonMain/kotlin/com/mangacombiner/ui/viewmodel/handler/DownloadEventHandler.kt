@@ -35,6 +35,9 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         Event.Download.UseAllCached -> onBulkUpdateChapterSource(ChapterSource.CACHE, ChapterSource.CACHE)
         Event.Download.IgnoreAllCached -> onBulkUpdateChapterSource(ChapterSource.CACHE, null)
         Event.Download.RedownloadAllCached -> onBulkUpdateChapterSource(ChapterSource.CACHE, ChapterSource.WEB)
+        Event.Download.UseAllBroken -> onBulkUpdateBrokenChapterSource(ChapterSource.CACHE)
+        Event.Download.IgnoreAllBroken -> onBulkUpdateBrokenChapterSource(null)
+        Event.Download.RedownloadAllBroken -> onBulkUpdateBrokenChapterSource(ChapterSource.WEB)
     }
 }
 
@@ -114,7 +117,11 @@ private fun MainViewModel.onToggleChapterSelection(chapterUrl: String, select: B
     _state.update {
         val updatedChapters = it.fetchedChapters.map { chapter ->
             if (chapter.url == chapterUrl) {
-                val newSource = if (select) getChapterDefaultSource(chapter) else null
+                val newSource = if (select) {
+                    if (chapter.isBroken) ChapterSource.WEB else getChapterDefaultSource(chapter)
+                } else {
+                    null
+                }
                 chapter.copy(selectedSource = newSource)
             } else {
                 chapter
@@ -159,10 +166,14 @@ private fun MainViewModel.onUpdateChapterRange(start: Int, end: Int, action: Ran
         val updatedChapters = it.fetchedChapters.mapIndexed { index, chapter ->
             if (index + 1 in start..end) {
                 when (action) {
-                    RangeAction.SELECT -> chapter.copy(selectedSource = getChapterDefaultSource(chapter))
+                    RangeAction.SELECT -> chapter.copy(selectedSource = if (chapter.isBroken) ChapterSource.WEB else getChapterDefaultSource(chapter))
                     RangeAction.DESELECT -> chapter.copy(selectedSource = null)
                     RangeAction.TOGGLE -> chapter.copy(
-                        selectedSource = if (chapter.selectedSource == null) getChapterDefaultSource(chapter) else null
+                        selectedSource = if (chapter.selectedSource == null) {
+                            if (chapter.isBroken) ChapterSource.WEB else getChapterDefaultSource(chapter)
+                        } else {
+                            null
+                        }
                     )
                 }
             } else {
@@ -176,7 +187,11 @@ private fun MainViewModel.onUpdateChapterRange(start: Int, end: Int, action: Ran
 private fun MainViewModel.onSelectAllChapters(select: Boolean) {
     _state.update {
         it.copy(fetchedChapters = it.fetchedChapters.map { ch ->
-            ch.copy(selectedSource = if (select) getChapterDefaultSource(ch) else null)
+            ch.copy(selectedSource = if (select) {
+                if (ch.isBroken) ChapterSource.WEB else getChapterDefaultSource(ch)
+            } else {
+                null
+            })
         })
     }
 }
@@ -192,8 +207,16 @@ private fun MainViewModel.onBulkUpdateChapterSource(
     }
 }
 
+private fun MainViewModel.onBulkUpdateBrokenChapterSource(sourceToSet: ChapterSource?) {
+    _state.update {
+        it.copy(fetchedChapters = it.fetchedChapters.map { ch ->
+            if (ch.isBroken) ch.copy(selectedSource = sourceToSet) else ch
+        })
+    }
+}
+
+
 private fun MainViewModel.onUpdateOutputPath(path: String) {
     _state.update { it.copy(outputPath = path) }
     checkOutputFileExistence()
 }
-

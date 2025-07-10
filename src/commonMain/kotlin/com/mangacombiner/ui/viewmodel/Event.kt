@@ -64,6 +64,9 @@ sealed interface Event {
         object UseAllCached : Download
         object IgnoreAllCached : Download
         object RedownloadAllCached : Download
+        object UseAllBroken : Download
+        object IgnoreAllBroken : Download
+        object RedownloadAllBroken : Download
     }
 
     sealed interface Operation : Event {

@@ -6,16 +6,16 @@ import com.mangacombiner.util.Logger
 import com.mangacombiner.util.SlugUtils
 import com.mangacombiner.util.ZipUtils
 import com.mangacombiner.util.naturalSortComparator
-import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import net.lingala.zip4j.model.ZipParameters
 import nl.adaptivity.xmlutil.serialization.XML
 import java.io.File
-import java.nio.file.Files
-import kotlin.io.path.nameWithoutExtension
+import kotlin.coroutines.coroutineContext
 
 class ProcessorService(
     private val fileConverter: FileConverter
@@ -51,22 +51,22 @@ class ProcessorService(
         zipFile.addFile(imageFile, zipParams)
     }
 
-    private fun addChaptersToCbz(zipFile: ZipFile, sortedFolders: List<File>, operationState: StateFlow<OperationState>?) {
+    private suspend fun addChaptersToCbz(zipFile: ZipFile, sortedFolders: List<File>) {
         for (folder in sortedFolders) {
-            if (operationState?.value == OperationState.CANCELLING) return
-            folder.listFiles()?.filter { it.isFile && it.name.isImageFile() }?.sorted()?.forEach { imageFile ->
-                if (operationState?.value == OperationState.CANCELLING) return
+            coroutineContext.ensureActive()
+            val imageFiles = folder.listFiles()?.filter { it.isFile && it.name.isImageFile() }?.sorted() ?: continue
+            for (imageFile in imageFiles) {
+                coroutineContext.ensureActive()
                 addImageToCbz(zipFile, folder, imageFile)
             }
         }
     }
 
-    private fun populateCbzFile(
+    private suspend fun populateCbzFile(
         zipFile: ZipFile,
         mangaTitle: String,
         sortedFolders: List<File>,
         seriesUrl: String?,
-        operationState: StateFlow<OperationState>?,
         failedChapters: Map<String, List<String>>? = null
     ) {
         val cbzGenerator = CbzStructureGenerator(xmlSerializer)
@@ -77,49 +77,45 @@ class ProcessorService(
             return
         }
 
+        coroutineContext.ensureActive()
         val comicInfoXml = cbzGenerator.generateComicInfoXml(mangaTitle, bookmarks, totalPageCount, seriesUrl)
         val params = ZipParameters().apply { fileNameInZip = COMIC_INFO_FILE }
         zipFile.addStream(comicInfoXml.byteInputStream(), params)
 
         if (!failedChapters.isNullOrEmpty()) {
+            coroutineContext.ensureActive()
             val failuresJson = jsonSerializer.encodeToString(failedChapters)
             val failuresParams = ZipParameters().apply { fileNameInZip = FAILURES_FILE }
             zipFile.addStream(failuresJson.byteInputStream(), failuresParams)
             Logger.logInfo("Embedding failure metadata into the archive.")
         }
 
-        addChaptersToCbz(zipFile, sortedFolders, operationState)
+        addChaptersToCbz(zipFile, sortedFolders)
     }
 
-    private fun buildCbz(
+    private suspend fun buildCbz(
         outputFile: File,
         mangaTitle: String,
         sortedFolders: List<File>,
         seriesUrl: String?,
-        operationState: StateFlow<OperationState>?,
         failedChapters: Map<String, List<String>>? = null
     ) {
         try {
             ZipFile(outputFile).use { zipFile ->
-                populateCbzFile(zipFile, mangaTitle, sortedFolders, seriesUrl, operationState, failedChapters)
+                populateCbzFile(zipFile, mangaTitle, sortedFolders, seriesUrl, failedChapters)
             }
-            if (operationState?.value == OperationState.CANCELLING) {
-                Logger.logInfo("CBZ creation cancelled. Deleting partial file.")
-                outputFile.delete()
-                return
-            }
+            coroutineContext.ensureActive()
             Logger.logInfo("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
             Logger.logError("Failed to create CBZ file ${outputFile.name}", e)
         }
     }
 
-    fun createCbzFromFolders(
+    suspend fun createCbzFromFolders(
         mangaTitle: String,
         chapterFolders: List<File>,
         outputFile: File,
         seriesUrl: String? = null,
-        operationState: StateFlow<OperationState>? = null,
         failedChapters: Map<String, List<String>>? = null
     ) {
         if (outputFile.exists()) outputFile.delete()
@@ -127,18 +123,17 @@ class ProcessorService(
 
         val sortedFolders = sortChapterFolders(chapterFolders)
         Logger.logInfo("Creating CBZ archive: ${outputFile.name}...")
-        buildCbz(outputFile, mangaTitle, sortedFolders, seriesUrl, operationState, failedChapters)
+        buildCbz(outputFile, mangaTitle, sortedFolders, seriesUrl, failedChapters)
     }
 
-    private fun addChaptersToEpub(
+    private suspend fun addChaptersToEpub(
         epubZip: ZipFile,
         sortedFolders: List<File>,
         epubGenerator: EpubStructureGenerator,
-        metadata: EpubStructureGenerator.EpubMetadata,
-        operationState: StateFlow<OperationState>?
+        metadata: EpubStructureGenerator.EpubMetadata
     ) {
         for (folder in sortedFolders) {
-            if (operationState?.value == OperationState.CANCELLING) return
+            coroutineContext.ensureActive()
             val images = folder.listFiles()?.filter { it.isFile && it.name.isImageFile() }?.sorted()
             if (!images.isNullOrEmpty()) {
                 epubGenerator.addChapterToEpub(images, folder.name, metadata, epubZip)
@@ -146,12 +141,11 @@ class ProcessorService(
         }
     }
 
-    fun createEpubFromFolders(
+    suspend fun createEpubFromFolders(
         mangaTitle: String,
         chapterFolders: List<File>,
         outputFile: File,
         seriesUrl: String? = null,
-        operationState: StateFlow<OperationState>? = null,
         failedChapters: Map<String, List<String>>? = null
     ) {
         if (outputFile.exists()) outputFile.delete()
@@ -165,25 +159,20 @@ class ProcessorService(
         try {
             ZipFile(outputFile).use { epubZip ->
                 epubGenerator.addEpubCoreFiles(epubZip)
-                addChaptersToEpub(epubZip, sortedFolders, epubGenerator, metadata, operationState)
+                addChaptersToEpub(epubZip, sortedFolders, epubGenerator, metadata)
 
-                if (operationState?.value == OperationState.CANCELLING) {
-                    Logger.logInfo("EPUB creation cancelled. Deleting partial file.")
-                } else {
-                    if (!failedChapters.isNullOrEmpty()) {
-                        val failuresJson = jsonSerializer.encodeToString(failedChapters)
-                        val failuresParams = ZipParameters().apply { fileNameInZip = "OEBPS/$FAILURES_FILE" }
-                        epubZip.addStream(failuresJson.byteInputStream(), failuresParams)
-                        metadata.manifestItems.add("""<item id="failures" href="$FAILURES_FILE" media-type="application/json"/>""")
-                        Logger.logInfo("Embedding failure metadata into the archive.")
-                    }
-                    epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, seriesUrl, metadata)
+                coroutineContext.ensureActive()
+
+                if (!failedChapters.isNullOrEmpty()) {
+                    val failuresJson = jsonSerializer.encodeToString(failedChapters)
+                    val failuresParams = ZipParameters().apply { fileNameInZip = "OEBPS/$FAILURES_FILE" }
+                    epubZip.addStream(failuresJson.byteInputStream(), failuresParams)
+                    metadata.manifestItems.add("""<item id="failures" href="$FAILURES_FILE" media-type="application/json"/>""")
+                    Logger.logInfo("Embedding failure metadata into the archive.")
                 }
+                epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, seriesUrl, metadata)
             }
-            if (operationState?.value == OperationState.CANCELLING) {
-                outputFile.delete()
-                return
-            }
+            coroutineContext.ensureActive()
             Logger.logInfo("Successfully created: ${outputFile.name}")
         } catch (e: ZipException) {
             Logger.logError("Failed to create EPUB file ${outputFile.name}", e)

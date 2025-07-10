@@ -9,6 +9,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.SyncProblem
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,7 +20,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.mangacombiner.ui.viewmodel.Event
-import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
 import com.mangacombiner.ui.viewmodel.state.RangeAction
 import com.mangacombiner.ui.viewmodel.state.UiState
@@ -53,6 +53,7 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (Event) -> Unit) {
     var rangeEnd by remember { mutableStateOf("") }
     val hasCachedChapters = state.fetchedChapters.any { it.availableSources.contains(ChapterSource.CACHE) }
     val hasLocalChapters = state.fetchedChapters.any { it.availableSources.contains(ChapterSource.LOCAL) }
+    val hasBrokenChapters = state.fetchedChapters.any { it.isBroken }
     val isSyncMode = state.sourceFilePath != null
 
     Dialog(onDismissRequest = { onEvent(Event.Download.CancelChapterSelection) }) {
@@ -74,13 +75,15 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (Event) -> Unit) {
 
                     if (hasLocalChapters) {
                         Button(onClick = { onEvent(Event.Download.UseAllLocal) }) { Text("Use All (Local)") }
-                        Button(onClick = { onEvent(Event.Download.IgnoreAllLocal) }) { Text("Ignore All (Local)") }
                         Button(onClick = { onEvent(Event.Download.RedownloadAllLocal) }) { Text("Re-download All (Local)") }
                     }
                     if (hasCachedChapters) {
                         Button(onClick = { onEvent(Event.Download.UseAllCached) }) { Text("Use All (Cached)") }
-                        Button(onClick = { onEvent(Event.Download.IgnoreAllCached) }) { Text("Ignore All (Cached)") }
                         Button(onClick = { onEvent(Event.Download.RedownloadAllCached) }) { Text("Re-download All (Cached)") }
+                    }
+                    if (hasBrokenChapters) {
+                        Button(onClick = { onEvent(Event.Download.RedownloadAllBroken) }) { Text("Re-download All (Broken)") }
+                        Button(onClick = { onEvent(Event.Download.IgnoreAllBroken) }) { Text("Ignore All (Broken)") }
                     }
                 }
 
@@ -160,11 +163,15 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (Event) -> Unit) {
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        if (isLocal) {
-                                            StatusIndicator("Local", Icons.Default.Save, MaterialTheme.colors.primary)
-                                        }
-                                        if (isCached) {
-                                            StatusIndicator("Cached", Icons.Default.Cloud, MaterialTheme.colors.secondary)
+                                        if (chapter.isBroken) {
+                                            StatusIndicator("Broken", Icons.Default.SyncProblem, MaterialTheme.colors.error)
+                                        } else {
+                                            if (isLocal) {
+                                                StatusIndicator("Local", Icons.Default.Save, MaterialTheme.colors.primary)
+                                            }
+                                            if (isCached) {
+                                                StatusIndicator("Cached", Icons.Default.Cloud, MaterialTheme.colors.secondary)
+                                            }
                                         }
                                     }
 

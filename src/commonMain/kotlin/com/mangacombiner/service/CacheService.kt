@@ -24,9 +24,6 @@ data class CachedSeries(
     val totalSizeFormatted: String
 )
 
-/**
- * A service class for managing the application's cache of partial downloads.
- */
 class CacheService(private val platformProvider: PlatformProvider) {
 
     private fun formatSize(bytes: Long): String {
@@ -37,9 +34,6 @@ class CacheService(private val platformProvider: PlatformProvider) {
         }
     }
 
-    /**
-     * Scans the temporary directory and returns a structured list of cached series and their chapters.
-     */
     fun getCacheContents(): List<CachedSeries> {
         val temp = File(platformProvider.getTmpDir())
         if (!temp.exists() || !temp.isDirectory) return emptyList()
@@ -77,19 +71,18 @@ class CacheService(private val platformProvider: PlatformProvider) {
         }?.sortedBy { it.seriesName } ?: emptyList()
     }
 
-    fun getCachedChapterNamesForSeries(seriesSlug: String): Set<String> {
+    fun getCachedChapterStatus(seriesSlug: String): Map<String, Boolean> {
         val seriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
         if (!seriesDir.exists() || !seriesDir.isDirectory) {
-            return emptySet()
+            return emptyMap()
         }
         return seriesDir.listFiles(FileFilter { it.isDirectory })
-            ?.map { it.name }
-            ?.toSet() ?: emptySet()
+            ?.associate { chapterDir ->
+                val isComplete = !File(chapterDir, ".incomplete").exists()
+                chapterDir.name to isComplete
+            } ?: emptyMap()
     }
 
-    /**
-     * Deletes a list of specified files or directories.
-     */
     fun deleteCacheItems(pathsToDelete: List<String>) {
         if (pathsToDelete.isEmpty()) {
             Logger.logInfo("No cache items selected for deletion.")
@@ -114,16 +107,22 @@ class CacheService(private val platformProvider: PlatformProvider) {
             }
         }
 
-        // Clean up parent directories if they are now empty (or only contain our metadata files)
+        // Clean up parent directories if they are now empty of chapters
         parentDirs.forEach { dirPath ->
             val dir = File(dirPath)
             if (dir.exists() && dir.isDirectory) {
-                val remainingFiles = dir.listFiles()
-                // Check if the directory is empty OR only contains our metadata file.
-                if (remainingFiles.isNullOrEmpty() || remainingFiles.all { it.name == "url.txt" }) {
-                    Logger.logDebug { "Cleaning up empty or near-empty parent directory: ${dir.name}" }
-                    // deleteRecursively will handle the directory and any remaining files (like url.txt)
-                    dir.deleteRecursively()
+                val remainingEntries = dir.listFiles()
+                if (remainingEntries.isNullOrEmpty()) {
+                    // Directory is completely empty, safe to delete
+                    Logger.logDebug { "Parent directory is empty. Deleting: ${dir.name}" }
+                    dir.delete()
+                } else {
+                    // Directory is not empty, check if it contains only files (no subdirectories)
+                    val hasNoSubdirectories = remainingEntries.none { it.isDirectory }
+                    if (hasNoSubdirectories) {
+                        Logger.logDebug { "Parent directory contains only files (no chapters). Deleting recursively: ${dir.name}" }
+                        dir.deleteRecursively()
+                    }
                 }
             }
         }
@@ -131,16 +130,40 @@ class CacheService(private val platformProvider: PlatformProvider) {
         Logger.logInfo("Successfully deleted $successCount item(s), freeing up ${formatSize(spaceFreed)} of space.")
     }
 
-    /**
-     * Deletes all temporary application data.
-     */
     fun clearAllAppCache() {
         Logger.logInfo("Clearing all application cache...")
-        val allSeries = getCacheContents()
-        if (allSeries.isEmpty()) {
+        val tempDir = File(platformProvider.getTmpDir())
+        if (!tempDir.exists() || !tempDir.isDirectory) {
+            Logger.logInfo("Cache directory not found.")
+            return
+        }
+
+        val seriesDirs = tempDir.listFiles { file ->
+            file.isDirectory && file.name.startsWith("manga-dl-")
+        }
+
+        if (seriesDirs.isNullOrEmpty()) {
             Logger.logInfo("No cache directories found to clear.")
             return
         }
-        deleteCacheItems(allSeries.flatMap { series -> series.chapters.map { chapter -> chapter.path } })
+
+        var allSucceeded = true
+        var spaceFreed = 0L
+        seriesDirs.forEach { dir ->
+            val sizeOfDir = dir.walk().sumOf { it.length() }
+            if (dir.deleteRecursively()) {
+                Logger.logDebug { "Deleted: ${dir.path}" }
+                spaceFreed += sizeOfDir
+            } else {
+                Logger.logError("Failed to delete cache directory: ${dir.path}")
+                allSucceeded = false
+            }
+        }
+
+        if (allSucceeded) {
+            Logger.logInfo("Successfully cleared all application cache, freeing up ${formatSize(spaceFreed)}.")
+        } else {
+            Logger.logError("Failed to clear some cache directories.")
+        }
     }
 }

@@ -8,7 +8,7 @@ import java.util.Locale
 import java.util.UUID
 
 class FileConverter {
-    fun process(
+    suspend fun process(
         options: LocalFileOptions,
         mangaTitle: String,
         outputFile: File,
@@ -36,7 +36,7 @@ class FileConverter {
         }
     }
 
-    private fun reprocessCbz(
+    private suspend fun reprocessCbz(
         options: LocalFileOptions,
         mangaTitle: String,
         outputFile: File,
@@ -58,7 +58,7 @@ class FileConverter {
         }
     }
 
-    private fun reprocessEpub(
+    private suspend fun reprocessEpub(
         options: LocalFileOptions,
         mangaTitle: String,
         outputFile: File,
@@ -92,7 +92,7 @@ class FileConverter {
         }
     }
 
-    private fun processCbzToEpub(
+    private suspend fun processCbzToEpub(
         options: LocalFileOptions,
         mangaTitle: String,
         outputFile: File,
@@ -114,7 +114,7 @@ class FileConverter {
         }
     }
 
-    private fun processEpubToCbz(
+    private suspend fun processEpubToCbz(
         options: LocalFileOptions,
         mangaTitle: String,
         outputFile: File,

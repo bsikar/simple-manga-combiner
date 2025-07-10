@@ -4,8 +4,6 @@ import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
-import com.mangacombiner.util.titlecase
-import com.mangacombiner.util.toSlug
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -16,31 +14,26 @@ import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.core.isNotEmpty
 import io.ktor.utils.io.core.readBytes
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.io.IOException
-import java.util.Locale
+import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.coroutineContext
 
-// New data class to hold the result for a single chapter
 data class ChapterDownloadResult(
     val chapterDir: File?,
     val chapterTitle: String,
     val failedImageUrls: List<String>
 )
 
-// New data class to hold the result for the entire download operation
 data class DownloadResult(
     val successfulFolders: List<File>,
     val failedChapters: Map<String, List<String>> // Map of Chapter Title -> List of failed image URLs
 )
 
-// Updated status to include partial success
 enum class DownloadCompletionStatus {
     SUCCESS,
     PARTIAL_SUCCESS,
@@ -56,11 +49,13 @@ class DownloadService(
         const val IMAGE_DOWNLOAD_DELAY_MS = 500L
         const val CHAPTER_DOWNLOAD_DELAY_MS = 1000L
         const val BUFFER_SIZE = 4096
+        const val INCOMPLETE_MARKER_FILE = ".incomplete"
     }
 
     private suspend fun writeChannelToFile(channel: ByteReadChannel, file: File) {
         file.outputStream().use { output ->
             while (!channel.isClosedForRead) {
+                coroutineContext.ensureActive()
                 val packet = channel.readRemaining(BUFFER_SIZE.toLong())
                 while (packet.isNotEmpty) {
                     val bytes = packet.readBytes()
@@ -94,7 +89,6 @@ class DownloadService(
         }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun downloadChapter(
         options: DownloadOptions,
         chapterUrl: String,
@@ -107,61 +101,67 @@ class DownloadService(
         val chapterDir = File(baseDir, FileUtils.sanitizeFilename(chapterTitle))
         if (!chapterDir.exists()) chapterDir.mkdirs()
 
+        // Create a marker file to indicate this chapter is being downloaded.
+        // It will be deleted only on full success.
+        val incompleteMarker = File(chapterDir, INCOMPLETE_MARKER_FILE)
+        incompleteMarker.createNewFile()
+
         while (options.operationState.value == OperationState.PAUSED) {
             delay(1000)
         }
-        if (options.operationState.value != OperationState.RUNNING) {
-            return ChapterDownloadResult(null, chapterTitle, emptyList())
-        }
+        coroutineContext.ensureActive()
 
         val scraperUserAgent = options.getUserAgents().random()
         val imageUrls = scraperService.findImageUrls(client, chapterUrl, scraperUserAgent)
         if (imageUrls.isEmpty()) {
             Logger.logInfo(" --> Warning: No images found for chapter '$chapterTitle'. It might be empty or licensed.")
+            // Chapter is not "broken" if there were no images to begin with
+            incompleteMarker.delete()
             return ChapterDownloadResult(chapterDir.takeIf { it.exists() }, chapterTitle, listOf("Chapter page might be empty or licensed."))
         }
 
         Logger.logInfo(" --> Found ${imageUrls.size} images for '$chapterTitle'. Starting download...")
-        val dispatcher = Dispatchers.IO.limitedParallelism(options.getWorkers())
-        val downloadedImagesCount = AtomicInteger(0)
+        val processedImagesCount = AtomicInteger(0)
         val failedImageUrls = mutableListOf<String>()
+        val semaphore = Semaphore(permits = options.getWorkers())
 
         coroutineScope {
             imageUrls.mapIndexed { index, imageUrl ->
-                launch(dispatcher) {
-                    while (options.operationState.value == OperationState.PAUSED) {
-                        delay(500)
-                    }
-                    if (options.operationState.value == OperationState.RUNNING) {
+                launch(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        while (options.operationState.value == OperationState.PAUSED) {
+                            delay(500)
+                        }
+                        coroutineContext.ensureActive()
+
                         delay(IMAGE_DOWNLOAD_DELAY_MS)
                         val imageUserAgent = options.getUserAgents().random()
-                        Logger.logDebug { "Downloading image ${index + 1}/${imageUrls.size}: $imageUrl" }
                         val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
                         val outputFile = File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
 
-                        if (downloadFile(client, imageUrl, outputFile, imageUserAgent)) {
-                            downloadedImagesCount.incrementAndGet()
-                        } else {
+                        if (!downloadFile(client, imageUrl, outputFile, imageUserAgent)) {
                             failedImageUrls.add(imageUrl)
                         }
 
-                        val imageProgress = (index + 1).toFloat() / imageUrls.size
+                        val currentProcessed = processedImagesCount.incrementAndGet()
+                        val imageProgress = currentProcessed.toFloat() / imageUrls.size
                         val currentTotalProgress = baseProgress + (imageProgress * progressWeight)
-                        val statusText = "Downloading: ${chapterTitle.take(30)}... (${index + 1}/${imageUrls.size})"
+                        val statusText = "Downloading: ${chapterTitle.take(30)}... ($currentProcessed/${imageUrls.size})"
                         options.onProgressUpdate(currentTotalProgress, statusText)
                     }
                 }
             }.joinAll()
         }
 
-        if (options.operationState.value != OperationState.RUNNING) {
-            return ChapterDownloadResult(null, chapterTitle, failedImageUrls)
-        }
+        coroutineContext.ensureActive()
 
         val downloadedCount = chapterDir.listFiles()?.count { it.isFile } ?: 0
         return if (downloadedCount > 0) {
             if (failedImageUrls.isNotEmpty()) {
                 Logger.logError("Warning: Failed to download ${failedImageUrls.size} images for chapter: '$chapterTitle'")
+            } else {
+                // Only if there are no failures, delete the marker.
+                incompleteMarker.delete()
             }
             Logger.logDebug { "Finished download for chapter: '$chapterTitle' ($downloadedCount images)" }
             ChapterDownloadResult(chapterDir, chapterTitle, failedImageUrls)
@@ -188,9 +188,7 @@ class DownloadService(
                 while (options.operationState.value == OperationState.PAUSED) {
                     delay(1000)
                 }
-                if (options.operationState.value != OperationState.RUNNING) {
-                    return null
-                }
+                coroutineContext.ensureActive()
 
                 Logger.logInfo("--> Processing chapter ${index + 1}/${chapterData.size}: $title")
                 val baseProgress = index.toFloat() / chapterData.size
@@ -203,7 +201,7 @@ class DownloadService(
                     failedChapters[title] = result.failedImageUrls
                 }
 
-                if (options.operationState.value != OperationState.RUNNING) return null
+                coroutineContext.ensureActive()
                 delay(CHAPTER_DOWNLOAD_DELAY_MS)
             }
         } finally {

@@ -18,14 +18,10 @@ import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.ui.viewmodel.state.toAppSettings
 import com.mangacombiner.util.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.io.path.nameWithoutExtension
 import kotlin.random.Random
 
@@ -49,6 +45,8 @@ class MainViewModel(
 
     internal val _logs = MutableStateFlow(listOf("Welcome to Manga Combiner!"))
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
+
+    internal var activeOperationJob: Job? = null
 
     init {
         val savedSettings = settingsRepository.loadSettings()
@@ -221,7 +219,7 @@ class MainViewModel(
         viewModelScope.launch {
             _state.update { it.copy(isFetchingChapters = true) }
             val seriesSlug = url.toSlug()
-            val cachedChapterNames = cacheService.getCachedChapterNamesForSeries(seriesSlug)
+            val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
             val localChapterMap = _state.value.localChaptersForSync
             val failedChapterTitles = _state.value.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
 
@@ -236,24 +234,30 @@ class MainViewModel(
                     val sanitizedTitle = FileUtils.sanitizeFilename(title)
                     val comparableKey = SlugUtils.toComparableKey(title)
                     val originalLocalSlug = localChapterMap[comparableKey]
+
                     val isLocal = originalLocalSlug != null
-                    val isCached = sanitizedTitle in cachedChapterNames
+                    val isCached = cachedChapterStatus.containsKey(sanitizedTitle)
+                    val isBroken = isCached && cachedChapterStatus[sanitizedTitle] == false
                     val isRetry = comparableKey in failedChapterTitles
 
                     val sources = mutableSetOf(ChapterSource.WEB)
                     if (isLocal) sources.add(ChapterSource.LOCAL)
                     if (isCached) sources.add(ChapterSource.CACHE)
 
-                    val initialSource = if (isRetry) ChapterSource.WEB else getChapterDefaultSource(Chapter(chapUrl, title, sources, null, originalLocalSlug, false))
-
-                    Chapter(
+                    val chapter = Chapter(
                         url = chapUrl,
                         title = title,
                         availableSources = sources,
-                        selectedSource = initialSource,
+                        selectedSource = null, // Set later
                         localSlug = originalLocalSlug,
-                        isRetry = isRetry
+                        isRetry = isRetry,
+                        isBroken = isBroken
                     )
+
+                    val initialSource = if (isRetry || isBroken) ChapterSource.WEB else getChapterDefaultSource(chapter)
+
+                    chapter.copy(selectedSource = initialSource)
+
                 }.sortedWith(compareBy(naturalSortComparator) { it.title })
 
                 _state.update {
@@ -267,14 +271,14 @@ class MainViewModel(
     }
 
     internal fun startOperation(isRetry: Boolean = false) {
-        viewModelScope.launch(Dispatchers.IO) {
-            _operationState.value = OperationState.RUNNING
-            _state.update { it.copy(progress = 0f, progressStatusText = "Starting operation...") }
-            val s = _state.value
-            val tempDir = File(platformProvider.getTmpDir())
-            val tempUpdateDir = File(tempDir, "manga-update-${System.currentTimeMillis()}").apply { mkdirs() }
-
+        activeOperationJob = viewModelScope.launch(Dispatchers.IO) {
             try {
+                _operationState.value = OperationState.RUNNING
+                _state.update { it.copy(progress = 0f, progressStatusText = "Starting operation...") }
+                val s = _state.value
+                val tempDir = File(platformProvider.getTmpDir())
+                val tempUpdateDir = File(tempDir, "manga-update-${System.currentTimeMillis()}").apply { mkdirs() }
+
                 val chaptersForOperation = if (isRetry) {
                     val failedTitles = s.lastDownloadResult?.failedChapters?.keys ?: emptySet()
                     s.fetchedChapters.filter { it.title in failedTitles }
@@ -284,7 +288,6 @@ class MainViewModel(
 
                 if (chaptersForOperation.isEmpty()) {
                     Logger.logError("No chapters selected for operation. Aborting.")
-                    _operationState.value = OperationState.IDLE
                     return@launch
                 }
 
@@ -333,13 +336,30 @@ class MainViewModel(
                     }
                 }
 
-                if (_operationState.value == OperationState.RUNNING) {
-                    packageFinalFile(allChapterFolders)
+                ensureActive()
+                packageFinalFile(allChapterFolders)
+
+            } catch (e: CancellationException) {
+                Logger.logInfo("Operation cancelled by user.")
+                if (_state.value.deleteCacheOnCancel) {
+                    val seriesSlug = if (_state.value.seriesUrl.isNotBlank()) _state.value.seriesUrl.toSlug() else ""
+                    if (seriesSlug.isNotBlank()) {
+                        val tempSeriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
+                        if (tempSeriesDir.exists()) {
+                            Logger.logInfo("Deleting temporary files for cancelled job...")
+                            tempSeriesDir.deleteRecursively()
+                        }
+                    }
                 }
+                throw e
             } finally {
-                if (_operationState.value == OperationState.IDLE) {
-                    tempUpdateDir.deleteRecursively()
-                    resetUiStateAfterOperation()
+                withContext(NonCancellable) {
+                    _operationState.value = OperationState.IDLE
+                    // Only reset the UI if the operation didn't complete with a result dialog showing.
+                    if (!_state.value.showCompletionDialog && !_state.value.showBrokenDownloadDialog) {
+                        resetUiStateAfterOperation()
+                    }
+                    activeOperationJob = null
                 }
             }
         }
@@ -360,12 +380,14 @@ class MainViewModel(
                 val tempOutputFile = File(platformProvider.getTmpDir(), finalFileName)
 
                 if (s.outputFormat == "cbz") {
-                    downloadService.processorService.createCbzFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, _operationState, failedChapters)
+                    downloadService.processorService.createCbzFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, failedChapters)
                 } else {
-                    downloadService.processorService.createEpubFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, _operationState, failedChapters)
+                    downloadService.processorService.createEpubFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, failedChapters)
                 }
 
-                if (_operationState.value == OperationState.RUNNING && tempOutputFile.exists() && tempOutputFile.length() > 0) {
+                ensureActive()
+
+                if (tempOutputFile.exists() && tempOutputFile.length() > 0) {
                     _state.update { it.copy(progress = 1.0f, progressStatusText = "Moving final file...") }
                     val finalPath = fileMover.moveToFinalDestination(tempOutputFile, finalOutputPath, finalFileName)
                     val message = if (finalPath.isNotBlank()) {
@@ -383,21 +405,12 @@ class MainViewModel(
             } else {
                 Logger.logInfo("No chapters to process. Operation finished.")
             }
-            resetUiStateAfterOperation()
             _operationState.value = OperationState.IDLE
+            resetUiStateAfterOperation()
         }
     }
 
     internal fun resetUiStateAfterOperation() {
-        val seriesSlug = if (_state.value.seriesUrl.isNotBlank()) _state.value.seriesUrl.toSlug() else ""
-        if (seriesSlug.isNotBlank()) {
-            val tempSeriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
-            if (tempSeriesDir.exists()) {
-                Logger.logInfo("Cleaning up temporary series directory...")
-                tempSeriesDir.deleteRecursively()
-            }
-        }
-
         _state.update {
             it.copy(
                 activeDownloadOptions = null,
