@@ -23,6 +23,7 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         is Event.Settings.UpdateDefaultOutputLocation -> onUpdateDefaultOutputLocation(event.location)
         is Event.Settings.ToggleDebugLog -> onToggleDebugLog(event.isEnabled)
         is Event.Settings.UpdateWorkers -> _state.update { it.copy(workers = event.count.coerceIn(1, 16)) }
+        is Event.Settings.UpdateBatchWorkers -> _state.update { it.copy(batchWorkers = event.count.coerceIn(1, 8)) }
         is Event.Settings.UpdateUserAgent -> _state.update { it.copy(userAgentName = event.name) }
         is Event.Settings.TogglePerWorkerUserAgent -> _state.update { it.copy(perWorkerUserAgent = event.isEnabled) }
         Event.Settings.PickCustomDefaultPath -> viewModelScope.launch {

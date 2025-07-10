@@ -114,7 +114,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 Box(modifier = Modifier.weight(1f).padding(16.dp)) {
                     when (state.currentScreen) {
                         Screen.DOWNLOAD -> DownloadScreen(state, viewModel::onEvent)
-                        Screen.DOWNLOAD_QUEUE -> DownloadQueueScreen(state)
+                        Screen.DOWNLOAD_QUEUE -> DownloadQueueScreen(state, viewModel::onEvent)
                         Screen.LOGS -> LogScreen(state, logs, viewModel::onEvent)
                         Screen.ADVANCED_SETTINGS -> AdvancedSettingsScreen(state, viewModel::onEvent)
                         Screen.SETTINGS -> SettingsScreen(state, viewModel::onEvent)

@@ -6,12 +6,7 @@ import com.mangacombiner.service.CacheService
 import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadService
 import com.mangacombiner.service.ScraperService
-import com.mangacombiner.ui.viewmodel.handler.handleCacheEvent
-import com.mangacombiner.ui.viewmodel.handler.handleDownloadEvent
-import com.mangacombiner.ui.viewmodel.handler.handleLogEvent
-import com.mangacombiner.ui.viewmodel.handler.handleOperationEvent
-import com.mangacombiner.ui.viewmodel.handler.handleSearchEvent
-import com.mangacombiner.ui.viewmodel.handler.handleSettingsEvent
+import com.mangacombiner.ui.viewmodel.handler.*
 import com.mangacombiner.ui.viewmodel.state.Chapter
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
@@ -20,11 +15,26 @@ import com.mangacombiner.ui.viewmodel.state.toAppSettings
 import com.mangacombiner.util.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Semaphore
 import java.io.File
+import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.io.path.nameWithoutExtension
 import kotlin.random.Random
+
+internal data class QueuedOperation(
+    val jobId: String,
+    val seriesUrl: String,
+    val customTitle: String,
+    val outputFormat: String,
+    val outputPath: String,
+    val chapters: List<Chapter>,
+    val workers: Int,
+    val userAgents: List<String>,
+    val dryRun: Boolean,
+)
 
 @OptIn(FlowPreview::class)
 class MainViewModel(
@@ -48,6 +58,8 @@ class MainViewModel(
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
 
     internal var activeOperationJob: Job? = null
+    private val queuedOperationContext = ConcurrentHashMap<String, QueuedOperation>()
+    private val runningJobCoroutines = ConcurrentHashMap<String, Job>()
 
     init {
         val savedSettings = settingsRepository.loadSettings()
@@ -67,6 +79,7 @@ class MainViewModel(
                 defaultOutputLocation = effectiveDefaultLocation,
                 customDefaultOutputPath = savedSettings.customDefaultOutputPath,
                 workers = savedSettings.workers,
+                batchWorkers = savedSettings.batchWorkers,
                 outputFormat = savedSettings.outputFormat,
                 userAgentName = savedSettings.userAgentName,
                 perWorkerUserAgent = savedSettings.perWorkerUserAgent,
@@ -85,7 +98,7 @@ class MainViewModel(
         state = _state.asStateFlow()
 
         setupListeners()
-        setPlaceholderQueue()
+        processQueue()
     }
 
     private fun setupListeners() {
@@ -108,19 +121,6 @@ class MainViewModel(
         }
     }
 
-    private fun setPlaceholderQueue() {
-        _state.update {
-            it.copy(
-                downloadQueue = listOf(
-                    DownloadJob(id = "1", title = "One-Punch Man", progress = 0.25f, status = "Downloading", totalChapters = 180, downloadedChapters = 45),
-                    DownloadJob(id = "2", title = "Jujutsu Kaisen", progress = 0f, status = "Queued", totalChapters = 230, downloadedChapters = 0),
-                    DownloadJob(id = "3", title = "My Hero Academia", progress = 0.5f, status = "Paused", totalChapters = 420, downloadedChapters = 210),
-                    DownloadJob(id = "4", title = "Solo Leveling", progress = 1f, status = "Completed", totalChapters = 179, downloadedChapters = 179),
-                )
-            )
-        }
-    }
-
     fun onEvent(event: Event) {
         when (event) {
             is Event.Search -> handleSearchEvent(event)
@@ -128,6 +128,7 @@ class MainViewModel(
             is Event.Settings -> handleSettingsEvent(event)
             is Event.Cache -> handleCacheEvent(event)
             is Event.Operation -> handleOperationEvent(event)
+            is Event.Queue -> handleQueueEvent(event)
             is Event.Log -> handleLogEvent(event)
             is Event.Navigate -> _state.update { it.copy(currentScreen = event.screen) }
             is Event.ToggleAboutDialog -> _state.update { it.copy(showAboutDialog = event.show) }
@@ -459,6 +460,189 @@ class MainViewModel(
             }
             _state.update { it.copy(customTitle = file.toPath().nameWithoutExtension.toString()) }
             analyzeLocalFile(file)
+        }
+    }
+
+    // --- Queue Logic ---
+
+    internal fun addCurrentJobToQueue() {
+        val s = state.value
+        val selectedChapters = s.fetchedChapters.filter { it.selectedSource != null }
+        if (selectedChapters.isEmpty()) {
+            Logger.logError("No chapters selected to add to the queue.")
+            return
+        }
+
+        val jobId = UUID.randomUUID().toString()
+        val title = s.customTitle.ifBlank { s.seriesUrl.toSlug().replace('-', ' ').titlecase() }
+
+        val userAgents = when {
+            s.perWorkerUserAgent -> List(s.workers) { UserAgent.browsers.values.random(Random) }
+            s.userAgentName == "Random" -> listOf(UserAgent.browsers.values.random(Random))
+            else -> listOf(UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first())
+        }
+
+        queuedOperationContext[jobId] = QueuedOperation(
+            jobId = jobId,
+            seriesUrl = s.seriesUrl,
+            customTitle = title,
+            outputFormat = s.outputFormat,
+            outputPath = s.outputPath,
+            chapters = selectedChapters,
+            workers = s.workers,
+            userAgents = userAgents,
+            dryRun = s.dryRun
+        )
+
+        val newJob = DownloadJob(jobId, title, 0f, "Queued", selectedChapters.size, 0)
+        _state.update {
+            it.copy(
+                downloadQueue = it.downloadQueue + newJob,
+                seriesUrl = "",
+                customTitle = "",
+                fetchedChapters = emptyList(),
+                sourceFilePath = null,
+                localChaptersForSync = emptyMap(),
+                failedItemsForSync = emptyMap(),
+                outputFileExists = false,
+                completionMessage = "$title added to queue."
+            )
+        }
+    }
+
+    internal fun cancelJob(jobId: String) {
+        runningJobCoroutines[jobId]?.cancel()
+        _state.update {
+            it.copy(
+                downloadQueue = it.downloadQueue.filterNot { job -> job.id == jobId }
+            )
+        }
+        queuedOperationContext.remove(jobId)
+        Logger.logInfo("Job $jobId was cancelled.")
+    }
+
+    internal fun clearCompletedJobs() {
+        _state.update {
+            val newQueue = it.downloadQueue.filter { job ->
+                job.status != "Completed" && !job.status.startsWith("Error")
+            }
+            it.copy(downloadQueue = newQueue)
+        }
+    }
+
+    private fun processQueue() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val semaphore = Semaphore(state.value.batchWorkers)
+
+            state.collect { currentState ->
+                if (!currentState.isQueuePaused) {
+                    val nextJob = currentState.downloadQueue.firstOrNull { it.status == "Queued" }
+                    if (nextJob != null) {
+                        if (semaphore.tryAcquire()) {
+                            updateJobState(nextJob.id, "Starting...")
+                            val jobCoroutine = launch {
+                                try {
+                                    val op = queuedOperationContext[nextJob.id]
+                                    if (op != null) {
+                                        runQueuedOperation(op)
+                                    } else {
+                                        updateJobState(nextJob.id, "Error: Context not found")
+                                    }
+                                } finally {
+                                    semaphore.release()
+                                    runningJobCoroutines.remove(nextJob.id)
+                                }
+                            }
+                            runningJobCoroutines[nextJob.id] = jobCoroutine
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun runQueuedOperation(op: QueuedOperation) {
+        try {
+            updateJobState(op.jobId, "Downloading", 0.05f)
+            val tempDir = File(platformProvider.getTmpDir())
+            val seriesSlug = op.seriesUrl.toSlug()
+            val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
+
+            if (op.seriesUrl.isNotBlank() && tempSeriesDir.name.startsWith("manga-dl-")) {
+                File(tempSeriesDir, "url.txt").writeText(op.seriesUrl)
+            }
+
+            val chaptersToDownload = op.chapters.filter { it.selectedSource == ChapterSource.WEB }
+            val allChapterFolders = op.chapters
+                .filter { it.selectedSource == ChapterSource.CACHE }
+                .map { File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)) }
+                .toMutableList()
+
+            var downloadResult: com.mangacombiner.service.DownloadResult? = null
+
+            if (chaptersToDownload.isNotEmpty()) {
+                val operationState = MutableStateFlow(if (state.value.isQueuePaused) OperationState.PAUSED else OperationState.RUNNING)
+                val downloadOptions = DownloadOptions(
+                    seriesUrl = op.seriesUrl,
+                    chaptersToDownload = chaptersToDownload.associate { it.url to it.title },
+                    cliTitle = op.customTitle,
+                    getWorkers = { op.workers },
+                    exclude = emptyList(),
+                    format = op.outputFormat,
+                    tempDir = tempDir,
+                    getUserAgents = { op.userAgents },
+                    outputPath = op.outputPath,
+                    operationState = operationState,
+                    dryRun = op.dryRun,
+                    onProgressUpdate = { progress, status ->
+                        val job = state.value.downloadQueue.find { it.id == op.jobId }
+                        if (job != null) {
+                            val completedWebChapters = job.downloadedChapters - (job.totalChapters - chaptersToDownload.size)
+                            val overallProgress = ((completedWebChapters + progress) / job.totalChapters).toFloat()
+                            updateJobState(op.jobId, status, overallProgress)
+                        }
+                    }
+                )
+                downloadResult = downloadService.downloadChapters(downloadOptions, tempSeriesDir)
+                downloadResult?.successfulFolders?.let { allChapterFolders.addAll(it) }
+            }
+
+            updateJobState(op.jobId, "Packaging...", 0.99f)
+            val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
+            val finalOutputFile = File(op.outputPath, finalFileName)
+
+            if (op.outputFormat == "cbz") {
+                downloadService.processorService.createCbzFromFolders(
+                    op.customTitle, allChapterFolders, finalOutputFile, op.seriesUrl, downloadResult?.failedChapters
+                )
+            } else {
+                downloadService.processorService.createEpubFromFolders(
+                    op.customTitle, allChapterFolders, finalOutputFile, op.seriesUrl, downloadResult?.failedChapters
+                )
+            }
+            updateJobState(op.jobId, "Completed", 1f)
+        } catch (e: Exception) {
+            if (e is CancellationException) {
+                updateJobState(op.jobId, "Cancelled")
+                return
+            }
+            Logger.logError("Job ${op.jobId} failed", e)
+            updateJobState(op.jobId, "Error: ${e.message?.take(30) ?: "Unknown"}")
+        } finally {
+            queuedOperationContext.remove(op.jobId)
+        }
+    }
+
+    private fun updateJobState(jobId: String, status: String, progress: Float? = null) {
+        _state.update { state ->
+            val updatedQueue = state.downloadQueue.map { job ->
+                if (job.id == jobId) {
+                    job.copy(status = status, progress = progress ?: job.progress)
+                } else {
+                    job
+                }
+            }
+            state.copy(downloadQueue = updatedQueue)
         }
     }
 

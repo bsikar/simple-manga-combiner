@@ -13,6 +13,7 @@ actual class SettingsRepository(private val context: Context) {
         private const val DEFAULT_OUTPUT_LOCATION = "default_output_location"
         private const val CUSTOM_DEFAULT_OUTPUT_PATH = "custom_default_output_path"
         private const val WORKERS = "workers"
+        private const val BATCH_WORKERS = "batch_workers"
         private const val OUTPUT_FORMAT = "output_format"
         private const val USER_AGENT_NAME = "user_agent_name"
         private const val PER_WORKER_USER_AGENT = "per_worker_user_agent"
@@ -31,6 +32,7 @@ actual class SettingsRepository(private val context: Context) {
             putString(DEFAULT_OUTPUT_LOCATION, settings.defaultOutputLocation)
             putString(CUSTOM_DEFAULT_OUTPUT_PATH, settings.customDefaultOutputPath)
             putInt(WORKERS, settings.workers)
+            putInt(BATCH_WORKERS, settings.batchWorkers)
             putString(OUTPUT_FORMAT, settings.outputFormat)
             putString(USER_AGENT_NAME, settings.userAgentName)
             putBoolean(PER_WORKER_USER_AGENT, settings.perWorkerUserAgent)
@@ -49,6 +51,7 @@ actual class SettingsRepository(private val context: Context) {
             defaultOutputLocation = prefs.getString(DEFAULT_OUTPUT_LOCATION, "Downloads") ?: "Downloads",
             customDefaultOutputPath = prefs.getString(CUSTOM_DEFAULT_OUTPUT_PATH, "") ?: "",
             workers = prefs.getInt(WORKERS, 4),
+            batchWorkers = prefs.getInt(BATCH_WORKERS, 1),
             outputFormat = prefs.getString(OUTPUT_FORMAT, "epub") ?: "epub",
             userAgentName = prefs.getString(USER_AGENT_NAME, "Chrome (Windows)") ?: "Chrome (Windows)",
             perWorkerUserAgent = prefs.getBoolean(PER_WORKER_USER_AGENT, false),

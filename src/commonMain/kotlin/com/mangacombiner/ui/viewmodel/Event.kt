@@ -19,6 +19,7 @@ sealed interface Event {
         data class UpdateDefaultOutputLocation(val location: String) : Settings
         data class ToggleDebugLog(val isEnabled: Boolean) : Settings
         data class UpdateWorkers(val count: Int) : Settings
+        data class UpdateBatchWorkers(val count: Int) : Settings
         data class UpdateUserAgent(val name: String) : Settings
         data class TogglePerWorkerUserAgent(val isEnabled: Boolean) : Settings
         object PickCustomDefaultPath : Settings
@@ -99,6 +100,14 @@ sealed interface Event {
         object CancelDeleteSelected : Cache
         object SelectAll : Cache
         object DeselectAll : Cache
+    }
+
+    sealed interface Queue : Event {
+        object Add : Queue
+        object PauseAll : Queue
+        object ResumeAll : Queue
+        object ClearCompleted : Queue
+        data class CancelJob(val jobId: String) : Queue
     }
 
     sealed interface Log : Event {

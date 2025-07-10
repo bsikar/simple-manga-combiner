@@ -288,9 +288,16 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
         ) {
             when (state.operationState) {
                 OperationState.IDLE -> {
-                    val buttonText = if (state.sourceFilePath != null) "Sync & Update File" else "Start Download"
+                    val buttonText = if (state.sourceFilePath != null) "Sync & Update File" else "Add to Queue"
                     Button(
-                        onClick = { onEvent(Event.Operation.RequestStart) },
+                        onClick = {
+                            if (state.sourceFilePath != null) {
+                                // Sync/update is an immediate, singular operation, not queued.
+                                onEvent(Event.Operation.RequestStart)
+                            } else {
+                                onEvent(Event.Queue.Add)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = state.fetchedChapters.any { it.selectedSource != null }
                     ) {

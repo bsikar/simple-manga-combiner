@@ -11,7 +11,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
-import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.UserAgent
@@ -29,7 +28,29 @@ fun AdvancedSettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     ) {
         Card(elevation = 4.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Advanced Options", style = MaterialTheme.typography.h6)
+                Text("Queue Settings", style = MaterialTheme.typography.h6)
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Concurrent Series Downloads:",
+                        style = MaterialTheme.typography.body1,
+                        modifier = Modifier.weight(1f)
+                    )
+                    NumberStepper(
+                        value = state.batchWorkers,
+                        onValueChange = { onEvent(Event.Settings.UpdateBatchWorkers(it)) },
+                        range = 1..8,
+                        enabled = true
+                    )
+                }
+
+                Divider()
+
+                Text("Download Settings", style = MaterialTheme.typography.h6)
 
                 FormControlLabel(
                     onClick = { onEvent(Event.Download.ToggleDryRun(!state.dryRun)) },

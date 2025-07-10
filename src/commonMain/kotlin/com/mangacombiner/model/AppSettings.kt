@@ -10,6 +10,7 @@ data class AppSettings(
     val defaultOutputLocation: String = "Downloads",
     val customDefaultOutputPath: String = "",
     val workers: Int = 4,
+    val batchWorkers: Int = 1,
     val outputFormat: String = "epub",
     val userAgentName: String = "Chrome (Windows)",
     val perWorkerUserAgent: Boolean = false,
