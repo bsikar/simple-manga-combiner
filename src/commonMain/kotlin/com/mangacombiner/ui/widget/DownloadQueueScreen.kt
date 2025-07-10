@@ -1,15 +1,20 @@
 package com.mangacombiner.ui.widget
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -17,29 +22,153 @@ import androidx.compose.ui.unit.dp
 import com.mangacombiner.model.DownloadJob
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.UiState
+import com.mangacombiner.util.UserAgent
 import kotlin.math.roundToInt
 
 @Composable
 fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
+    var showAdvancedSettings by remember { mutableStateOf(false) }
+    var browserDropdownExpanded by remember { mutableStateOf(false) }
+    val browserImpersonationOptions = listOf("Random") + UserAgent.browsers.keys.toList()
+
     Column(modifier = Modifier.fillMaxSize()) {
         Text("Download Queue", style = MaterialTheme.typography.h5)
         Spacer(Modifier.height(8.dp))
+
+        // Control buttons for the queue
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            TextButton(onClick = { onEvent(Event.Queue.ClearCompleted) }) {
+            OutlinedButton(
+                onClick = { showAdvancedSettings = !showAdvancedSettings },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Advanced Settings")
+                Icon(
+                    if (showAdvancedSettings) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Toggle Advanced Settings"
+                )
+            }
+            TextButton(
+                onClick = { onEvent(Event.Queue.ClearCompleted) },
+                modifier = Modifier.weight(1f)
+            ) {
                 Text("Clear Completed")
             }
-            Spacer(Modifier.width(8.dp))
+
             if (state.isQueuePaused) {
-                Button(onClick = { onEvent(Event.Queue.ResumeAll) }) {
-                    Text("Resume")
+                Button(
+                    onClick = { onEvent(Event.Queue.ResumeAll) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Resume All")
                 }
             } else {
-                OutlinedButton(onClick = { onEvent(Event.Queue.PauseAll) }) {
-                    Text("Pause")
+                OutlinedButton(
+                    onClick = { onEvent(Event.Queue.PauseAll) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Pause All")
+                }
+            }
+        }
+
+        // Animated visibility for Advanced Settings
+        AnimatedVisibility(visible = showAdvancedSettings) {
+            Card(
+                elevation = 4.dp,
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text("Settings for New Queue Items", style = MaterialTheme.typography.h6)
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Concurrent Series Downloads:",
+                            style = MaterialTheme.typography.body1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        NumberStepper(
+                            value = state.batchWorkers,
+                            onValueChange = { onEvent(Event.Settings.UpdateBatchWorkers(it)) },
+                            range = 1..8,
+                            enabled = true
+                        )
+                    }
+
+                    Divider()
+
+                    FormControlLabel(
+                        onClick = { onEvent(Event.Download.ToggleDryRun(!state.dryRun)) },
+                        enabled = true,
+                        control = {
+                            Switch(
+                                checked = state.dryRun,
+                                onCheckedChange = { onEvent(Event.Download.ToggleDryRun(it)) },
+                                enabled = true
+                            )
+                        },
+                        label = { Text("Dry Run (Simulate Only)") }
+                    )
+
+                    FormControlLabel(
+                        onClick = { onEvent(Event.Settings.TogglePerWorkerUserAgent(!state.perWorkerUserAgent)) },
+                        enabled = true,
+                        control = {
+                            Switch(
+                                checked = state.perWorkerUserAgent,
+                                onCheckedChange = { onEvent(Event.Settings.TogglePerWorkerUserAgent(it)) },
+                                enabled = true
+                            )
+                        },
+                        label = { Text("Randomize browser per worker") }
+                    )
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Impersonate Browser:",
+                            style = MaterialTheme.typography.body1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Box {
+                            OutlinedButton(
+                                onClick = { browserDropdownExpanded = true },
+                                enabled = !state.perWorkerUserAgent
+                            ) {
+                                Text(state.userAgentName)
+                                Icon(Icons.Default.ArrowDropDown, "Impersonate Browser")
+                            }
+                            DropdownMenu(
+                                expanded = browserDropdownExpanded,
+                                onDismissRequest = { browserDropdownExpanded = false },
+                                modifier = Modifier.widthIn(max = 280.dp)
+                            ) {
+                                Box(modifier = Modifier.heightIn(max = 400.dp)) {
+                                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                        browserImpersonationOptions.forEach { name ->
+                                            DropdownMenuItem(onClick = {
+                                                onEvent(Event.Settings.UpdateUserAgent(name))
+                                                browserDropdownExpanded = false
+                                            }) { Text(name) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

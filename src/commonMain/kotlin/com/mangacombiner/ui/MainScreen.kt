@@ -8,7 +8,6 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -69,15 +68,6 @@ fun MainScreen(viewModel: MainViewModel) {
                             alwaysShowLabel = false
                         )
                     }
-                    PlatformTooltip("Advanced") {
-                        NavigationRailItem(
-                            selected = state.currentScreen == Screen.ADVANCED_SETTINGS,
-                            onClick = { viewModel.onEvent(Event.Navigate(Screen.ADVANCED_SETTINGS)) },
-                            icon = { Icon(Icons.Default.Tune, contentDescription = "Advanced Settings") },
-                            label = if (showNavLabels) { { Text("Advanced") } } else null,
-                            alwaysShowLabel = false
-                        )
-                    }
                     PlatformTooltip("Cache") {
                         NavigationRailItem(
                             selected = state.currentScreen == Screen.CACHE_VIEWER,
@@ -108,7 +98,6 @@ fun MainScreen(viewModel: MainViewModel) {
                         Screen.DOWNLOAD -> DownloadScreen(state, viewModel::onEvent)
                         Screen.DOWNLOAD_QUEUE -> DownloadQueueScreen(state, viewModel::onEvent)
                         Screen.LOGS -> LogScreen(state, logs, viewModel::onEvent)
-                        Screen.ADVANCED_SETTINGS -> AdvancedSettingsScreen(state, viewModel::onEvent)
                         Screen.SETTINGS -> SettingsScreen(state, viewModel::onEvent)
                         Screen.CACHE_VIEWER -> CacheViewerScreen(state, viewModel::onEvent)
                     }

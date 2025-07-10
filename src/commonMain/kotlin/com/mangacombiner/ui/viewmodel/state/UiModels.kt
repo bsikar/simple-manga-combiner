@@ -4,7 +4,6 @@ enum class Screen {
     DOWNLOAD,
     DOWNLOAD_QUEUE,
     LOGS,
-    ADVANCED_SETTINGS,
     SETTINGS,
     CACHE_VIEWER
 }
