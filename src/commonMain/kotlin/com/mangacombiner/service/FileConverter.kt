@@ -1,6 +1,7 @@
 package com.mangacombiner.service
 
 import com.mangacombiner.util.Logger
+import com.mangacombiner.util.ZipUtils
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -44,7 +45,7 @@ class FileConverter {
         Logger.logInfo("Re-processing to fix structure...")
         val tempDir = File(options.tempDirectory, "cbz-reprocess-${UUID.randomUUID()}").apply { mkdirs() }
         return try {
-            processor.extractZip(options.inputFile, tempDir)
+            ZipUtils.extractZip(options.inputFile, tempDir)
             val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
             if (chapterFolders.isNotEmpty()) {
                 processor.createCbzFromFolders(mangaTitle, chapterFolders, outputFile)
@@ -66,7 +67,7 @@ class FileConverter {
         Logger.logInfo("Re-processing EPUB to apply changes...")
         val tempDir = File(options.tempDirectory, "epub-reprocess-${UUID.randomUUID()}").apply { mkdirs() }
         return try {
-            processor.extractZip(options.inputFile, tempDir)
+            ZipUtils.extractZip(options.inputFile, tempDir)
 
             val imageFiles = tempDir.walk()
                 .filter { it.isFile && it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS }
@@ -100,7 +101,7 @@ class FileConverter {
         Logger.logInfo("Converting ${options.inputFile.name} to EPUB format...")
         val tempDir = File(options.tempDirectory, "cbz-to-epub-${UUID.randomUUID()}").apply { mkdirs() }
         return try {
-            processor.extractZip(options.inputFile, tempDir)
+            ZipUtils.extractZip(options.inputFile, tempDir)
             val chapterFolders = tempDir.listFiles()?.filter { it.isDirectory }?.toList() ?: emptyList()
             if (chapterFolders.isNotEmpty()) {
                 processor.createEpubFromFolders(mangaTitle, chapterFolders, outputFile)
@@ -122,7 +123,7 @@ class FileConverter {
         Logger.logInfo("Converting ${options.inputFile.name} to CBZ format...")
         val tempDir = File(options.tempDirectory, "epub-to-cbz-${UUID.randomUUID()}").apply { mkdirs() }
         return try {
-            processor.extractZip(options.inputFile, tempDir)
+            ZipUtils.extractZip(options.inputFile, tempDir)
 
             val imageFiles = tempDir.walk()
                 .filter { it.isFile && it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS }

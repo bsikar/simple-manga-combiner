@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.mangacombiner.util.AppVersion
 
 @Composable
 fun AboutDialog(onDismissRequest: () -> Unit) {
@@ -32,7 +33,7 @@ fun AboutDialog(onDismissRequest: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text("Manga Combiner", style = MaterialTheme.typography.h4)
-                Text("Version 2.0.0", style = MaterialTheme.typography.body1)
+                Text("Version ${AppVersion.NAME}", style = MaterialTheme.typography.body1)
                 Text(
                     "A tool to download and combine manga chapters from the web or update local files.",
                     style = MaterialTheme.typography.body2

@@ -1,37 +1,12 @@
 package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Card
-import androidx.compose.material.CircularProgressIndicator
-import androidx.compose.material.Divider
-import androidx.compose.material.DropdownMenu
-import androidx.compose.material.DropdownMenuItem
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
-import androidx.compose.material.LinearProgressIndicator
-import androidx.compose.material.LocalContentColor
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.OutlinedButton
-import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.Text
+import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -40,22 +15,18 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.model.SearchResult
-import com.mangacombiner.ui.viewmodel.MainViewModel
+import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.OperationState
-import com.mangacombiner.ui.viewmodel.SearchSortOption
-import com.mangacombiner.ui.viewmodel.UiState
+import com.mangacombiner.ui.viewmodel.state.SearchSortOption
+import com.mangacombiner.ui.viewmodel.state.UiState
 
 @Composable
-fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
+fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
     var formatDropdownExpanded by remember { mutableStateOf(false) }
     var sortDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -74,7 +45,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = state.searchQuery,
-                        onValueChange = { onEvent(MainViewModel.Event.UpdateSearchQuery(it)) },
+                        onValueChange = { onEvent(Event.Search.UpdateQuery(it)) },
                         label = { Text("Search on MangaRead.org") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -82,7 +53,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         trailingIcon = {
                             if (state.searchQuery.isNotBlank()) {
                                 IconButton(
-                                    onClick = { onEvent(MainViewModel.Event.UpdateSearchQuery("")) },
+                                    onClick = { onEvent(Event.Search.UpdateQuery("")) },
                                     enabled = isIdle
                                 ) {
                                     Icon(Icons.Filled.Clear, "Clear Search")
@@ -91,7 +62,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         }
                     )
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.PerformSearch) },
+                        onClick = { onEvent(Event.Search.Perform) },
                         enabled = state.searchQuery.isNotBlank() && !state.isSearching && isIdle,
                         modifier = Modifier.align(Alignment.End)
                     ) {
@@ -126,21 +97,21 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                                         onDismissRequest = { sortDropdownExpanded = false }
                                     ) {
                                         DropdownMenuItem(onClick = {
-                                            onEvent(MainViewModel.Event.SortSearchResults(SearchSortOption.DEFAULT))
+                                            onEvent(Event.Search.SortResults(SearchSortOption.DEFAULT))
                                             sortDropdownExpanded = false
                                         }) {
                                             if (state.searchSortOption == SearchSortOption.DEFAULT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
                                             Text("Default")
                                         }
                                         DropdownMenuItem(onClick = {
-                                            onEvent(MainViewModel.Event.SortSearchResults(SearchSortOption.CHAPTER_COUNT))
+                                            onEvent(Event.Search.SortResults(SearchSortOption.CHAPTER_COUNT))
                                             sortDropdownExpanded = false
                                         }) {
                                             if (state.searchSortOption == SearchSortOption.CHAPTER_COUNT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
                                             Text("Chapter Count")
                                         }
                                         DropdownMenuItem(onClick = {
-                                            onEvent(MainViewModel.Event.SortSearchResults(SearchSortOption.ALPHABETICAL))
+                                            onEvent(Event.Search.SortResults(SearchSortOption.ALPHABETICAL))
                                             sortDropdownExpanded = false
                                         }) {
                                             if (state.searchSortOption == SearchSortOption.ALPHABETICAL) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
@@ -153,8 +124,8 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                             state.searchResults.forEach { result ->
                                 SearchResultItem(
                                     result = result,
-                                    onExpandToggle = { onEvent(MainViewModel.Event.ToggleSearchResultExpansion(result.url)) },
-                                    onSelect = { onEvent(MainViewModel.Event.SelectSearchResult(result.url)) }
+                                    onExpandToggle = { onEvent(Event.Search.ToggleResultExpansion(result.url)) },
+                                    onSelect = { onEvent(Event.Search.SelectResult(result.url)) }
                                 )
                                 Divider()
                             }
@@ -170,7 +141,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
 
                     OutlinedTextField(
                         value = state.seriesUrl,
-                        onValueChange = { onEvent(MainViewModel.Event.UpdateUrl(it)) },
+                        onValueChange = { onEvent(Event.Download.UpdateUrl(it)) },
                         label = { Text("Series URL") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -178,7 +149,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         trailingIcon = {
                             if (state.seriesUrl.isNotBlank()) {
                                 IconButton(
-                                    onClick = { onEvent(MainViewModel.Event.ClearDownloadInputs) },
+                                    onClick = { onEvent(Event.Download.ClearInputs) },
                                     enabled = isIdle
                                 ) {
                                     Icon(
@@ -195,14 +166,14 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedButton(
-                            onClick = { onEvent(MainViewModel.Event.PickLocalFile) },
+                            onClick = { onEvent(Event.Download.PickLocalFile) },
                             enabled = isIdle
                         ) {
                             Text("Update Local File...")
                         }
 
                         Button(
-                            onClick = { onEvent(MainViewModel.Event.FetchChapters) },
+                            onClick = { onEvent(Event.Download.FetchChapters) },
                             enabled = state.seriesUrl.isNotBlank() && !state.isFetchingChapters && isIdle,
                         ) {
                             if (state.isFetchingChapters) {
@@ -227,7 +198,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
 
                     OutlinedTextField(
                         value = state.customTitle,
-                        onValueChange = { onEvent(MainViewModel.Event.UpdateCustomTitle(it)) },
+                        onValueChange = { onEvent(Event.Download.UpdateCustomTitle(it)) },
                         label = { Text("Output Filename (without extension)") },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = isProcessing
@@ -235,7 +206,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
 
                     OutlinedTextField(
                         value = state.outputPath,
-                        onValueChange = { onEvent(MainViewModel.Event.UpdateOutputPath(it)) },
+                        onValueChange = { onEvent(Event.Download.UpdateOutputPath(it)) },
                         label = { Text("Output Directory") },
                         placeholder = { Text("Default: Your Downloads folder") },
                         modifier = Modifier.fillMaxWidth(),
@@ -254,7 +225,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                             Text("Workers:", style = MaterialTheme.typography.body1)
                             NumberStepper(
                                 value = state.workers,
-                                onValueChange = { onEvent(MainViewModel.Event.UpdateWorkers(it)) },
+                                onValueChange = { onEvent(Event.Settings.UpdateWorkers(it)) },
                                 range = 1..16,
                                 enabled = isProcessing
                             )
@@ -274,11 +245,11 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                                 onDismissRequest = { formatDropdownExpanded = false }
                             ) {
                                 DropdownMenuItem(onClick = {
-                                    onEvent(MainViewModel.Event.UpdateFormat("cbz"))
+                                    onEvent(Event.Download.UpdateFormat("cbz"))
                                     formatDropdownExpanded = false
                                 }) { Text("CBZ") }
                                 DropdownMenuItem(onClick = {
-                                    onEvent(MainViewModel.Event.UpdateFormat("epub"))
+                                    onEvent(Event.Download.UpdateFormat("epub"))
                                     formatDropdownExpanded = false
                                 }) { Text("EPUB") }
                             }
@@ -289,13 +260,17 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
         }
 
         if (isRunning) {
+            val animatedProgress by animateFloatAsState(
+                targetValue = state.progress,
+                animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
+            )
             Column(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 LinearProgressIndicator(
-                    progress = state.progress,
+                    progress = animatedProgress,
                     modifier = Modifier.fillMaxWidth().height(8.dp)
                 )
                 Text(
@@ -315,7 +290,7 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 OperationState.IDLE -> {
                     val buttonText = if (state.sourceFilePath != null) "Sync & Update File" else "Start Download"
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.RequestStartOperation) },
+                        onClick = { onEvent(Event.Operation.RequestStart) },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = state.fetchedChapters.any { it.selectedSource != null }
                     ) {
@@ -324,13 +299,13 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 }
                 OperationState.RUNNING -> {
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.PauseOperation) },
+                        onClick = { onEvent(Event.Operation.Pause) },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Pause")
                     }
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.RequestCancelOperation) },
+                        onClick = { onEvent(Event.Operation.RequestCancel) },
                         colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error),
                         modifier = Modifier.weight(1f)
                     ) {
@@ -339,13 +314,13 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                 }
                 OperationState.PAUSED -> {
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.ResumeOperation) },
+                        onClick = { onEvent(Event.Operation.Resume) },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Resume")
                     }
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.RequestCancelOperation) },
+                        onClick = { onEvent(Event.Operation.RequestCancel) },
                         colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error),
                         modifier = Modifier.weight(1f)
                     ) {
@@ -361,75 +336,6 @@ fun DownloadScreen(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
                         Text("Cancelling...")
                         Spacer(Modifier.width(8.dp))
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SearchResultItem(
-    result: SearchResult,
-    onExpandToggle: () -> Unit,
-    onSelect: () -> Unit
-) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onExpandToggle() }
-                .padding(vertical = 8.dp, horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(result.title, style = MaterialTheme.typography.body1)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (result.isFetchingDetails) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Loading chapters...", style = MaterialTheme.typography.caption)
-                    } else {
-                        Text(
-                            text = "${result.chapterCount ?: 0} chapters",
-                            style = MaterialTheme.typography.caption,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        result.chapterRange?.let {
-                            Text(
-                                text = it,
-                                style = MaterialTheme.typography.caption,
-                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.width(8.dp))
-            PlatformTooltip("Select this series for download") {
-                IconButton(onClick = onSelect) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Select this series")
-                }
-            }
-            PlatformTooltip(if (result.isExpanded) "Collapse" else "Expand to see chapters") {
-                Icon(
-                    imageVector = if (result.isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Expand/Collapse"
-                )
-            }
-        }
-        AnimatedVisibility(result.isExpanded && !result.isFetchingDetails) {
-            Column(
-                modifier = Modifier
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
-                    .heightIn(max = 200.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                if (result.chapters.isEmpty()) {
-                    Text("No chapters found for this entry.", style = MaterialTheme.typography.body2)
-                } else {
-                    result.chapters.forEach { chapter ->
-                        Text("• ${chapter.second}", style = MaterialTheme.typography.body2)
                     }
                 }
             }

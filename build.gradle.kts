@@ -11,6 +11,9 @@ plugins {
     alias(libs.plugins.shadow.jar)
 }
 
+val appVersionName: String by project
+val appVersionCode: String by project
+
 val kotlin: org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension by project
 
 kotlin {
@@ -32,6 +35,7 @@ kotlin {
 
     sourceSets {
         val commonMain by getting {
+            kotlin.srcDir(layout.buildDirectory.dir("generated/version/commonMain"))
             dependencies {
                 api(compose.runtime)
                 api(compose.foundation)
@@ -44,6 +48,7 @@ kotlin {
 
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.core)
+                implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.cli)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.plugins)
@@ -60,6 +65,7 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 implementation("androidx.activity:activity-compose:1.9.0")
+                implementation(libs.google.material)
                 api(libs.koin.android)
                 implementation(libs.ktor.client.cio)
                 implementation(libs.androidx.documentfile)
@@ -84,8 +90,8 @@ android {
         applicationId = "com.mangacombiner"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = appVersionCode.toInt()
+        versionName = appVersionName
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -111,9 +117,20 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "MangaCombiner"
-            packageVersion = "2.0.0"
+            packageVersion = appVersionName
             description = "A tool to download and combine manga chapters."
             vendor = "MangaCombiner"
+
+            // Add icon configuration
+            macOS {
+                iconFile.set(project.file("src/desktopMain/resources/SMC.png"))
+            }
+            windows {
+                iconFile.set(project.file("src/desktopMain/resources/SMC.png"))
+            }
+            linux {
+                iconFile.set(project.file("src/desktopMain/resources/SMC.png"))
+            }
         }
     }
 }
@@ -124,7 +141,7 @@ tasks.register<ShadowJar>("cliJar") {
 
     archiveBaseName.set("manga-combiner-cli")
     archiveClassifier.set("")
-    archiveVersion.set("2.0.0")
+    archiveVersion.set(appVersionName)
 
     manifest {
         attributes["Main-Class"] = "com.mangacombiner.desktop.CliRunnerKt"
@@ -134,4 +151,30 @@ tasks.register<ShadowJar>("cliJar") {
     from(project.configurations.named("desktopRuntimeClasspath"))
 
     mergeServiceFiles()
+}
+
+val generateVersionFile by tasks.register("generateVersionFile") {
+    val outputDir = project.layout.buildDirectory.get().dir("generated/version/commonMain/com/mangacombiner/util")
+    val outputFile = outputDir.file("AppVersion.kt")
+    outputs.file(outputFile)
+    group = "build"
+    description = "Generates a file with the app version."
+
+    doLast {
+        outputDir.asFile.mkdirs()
+        outputFile.asFile.writeText("""
+        package com.mangacombiner.util
+
+        /**
+         * An object that holds the application's version name, generated at build time.
+         */
+        object AppVersion {
+            const val NAME = "$appVersionName"
+        }
+        """.trimIndent())
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(generateVersionFile)
 }

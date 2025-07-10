@@ -3,15 +3,19 @@ package com.mangacombiner.desktop
 import com.mangacombiner.di.appModule
 import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadService
+import com.mangacombiner.service.FileConverter
 import com.mangacombiner.service.LocalFileOptions
 import com.mangacombiner.service.ProcessorService
 import com.mangacombiner.service.ScraperService
 import com.mangacombiner.ui.viewmodel.OperationState
+import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.createHttpClient
 import com.mangacombiner.util.logOperationSettings
+import com.mangacombiner.util.titlecase
+import com.mangacombiner.util.toSlug
 import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
@@ -51,7 +55,6 @@ fun main(args: Array<String>) {
         description = "Use a different random user agent for each worker."
     ).default(false)
 
-
     try {
         parser.parse(args)
     } catch (e: Exception) {
@@ -71,11 +74,13 @@ fun main(args: Array<String>) {
     val processorService: ProcessorService = get(ProcessorService::class.java)
     val scraperService: ScraperService = get(ScraperService::class.java)
     val platformProvider: PlatformProvider = get(PlatformProvider::class.java)
+    val fileConverter: FileConverter = get(FileConverter::class.java)
 
     runBlocking {
         val defaultUserAgent = UserAgent.browsers["Chrome (Windows)"]!!
         val listClient = createHttpClient("")
         val tempDir = File(platformProvider.getTmpDir())
+
         try {
             when {
                 source.startsWith("http", ignoreCase = true) -> {
@@ -94,6 +99,8 @@ fun main(args: Array<String>) {
                     }
 
                     val cliOperationState = MutableStateFlow(OperationState.RUNNING)
+                    val seriesSlug = source.toSlug()
+                    val downloadDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
 
                     val downloadOptions = DownloadOptions(
                         seriesUrl = source,
@@ -110,7 +117,7 @@ fun main(args: Array<String>) {
                                 else -> listOf(UserAgent.browsers[userAgentName] ?: defaultUserAgent)
                             }
                         },
-                        outputPath = outputPath,
+                        outputPath = outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" },
                         operationState = cliOperationState,
                         dryRun = dryRun,
                         onProgressUpdate = { progress, status ->
@@ -124,26 +131,102 @@ fun main(args: Array<String>) {
 
                     logOperationSettings(downloadOptions, chapters.size, userAgentName, perWorkerUserAgent)
 
-                    downloadService.downloadNewSeries(downloadOptions)
+                    // Download chapters
+                    val downloadResult = downloadService.downloadChapters(downloadOptions, downloadDir)
+
+                    if (downloadResult != null && downloadResult.successfulFolders.isNotEmpty()) {
+                        // Create final output file
+                        val mangaTitle = title?.ifBlank { null } ?: source.toSlug().replace('-', ' ').titlecase()
+                        val finalOutputPath = downloadOptions.outputPath
+                        val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${format}"
+                        val outputFile = File(finalOutputPath, finalFileName)
+
+                        if (outputFile.exists() && !force) {
+                            Logger.logError("Output file already exists: ${outputFile.absolutePath}. Use --force to overwrite.")
+                            return@runBlocking
+                        }
+
+                        Logger.logInfo("Creating ${format.uppercase()} archive: ${outputFile.name}...")
+
+                        if (format == "cbz") {
+                            processorService.createCbzFromFolders(
+                                mangaTitle,
+                                downloadResult.successfulFolders,
+                                outputFile,
+                                source,
+                                null,
+                                downloadResult.failedChapters
+                            )
+                        } else {
+                            processorService.createEpubFromFolders(
+                                mangaTitle,
+                                downloadResult.successfulFolders,
+                                outputFile,
+                                source,
+                                null,
+                                downloadResult.failedChapters
+                            )
+                        }
+
+                        if (outputFile.exists() && outputFile.length() > 0) {
+                            Logger.logInfo("Successfully created: ${outputFile.absolutePath}")
+
+                            if (downloadResult.failedChapters.isNotEmpty()) {
+                                Logger.logInfo("Note: ${downloadResult.failedChapters.size} chapters had download failures and are embedded in the archive metadata.")
+                            }
+                        } else {
+                            Logger.logError("Failed to create output file.")
+                        }
+                    } else {
+                        Logger.logError("Download failed or no chapters were successfully downloaded.")
+                    }
+
                     println() // Move to the next line after the progress bar is done
                 }
 
                 File(source).exists() -> {
-                    processorService.processLocalFile(
-                        LocalFileOptions(
-                            inputFile = File(source),
-                            customTitle = title,
-                            outputFormat = format,
-                            forceOverwrite = force,
-                            deleteOriginal = deleteOriginal,
-                            useStreamingConversion = false,
-                            useTrueStreaming = false,
-                            useTrueDangerousMode = false,
-                            skipIfTargetExists = !force,
-                            tempDirectory = platformProvider.getTmpDir(),
-                            dryRun = dryRun
-                        )
+                    val inputFile = File(source)
+                    val mangaTitle = title?.ifBlank { null } ?: inputFile.nameWithoutExtension
+                    val finalOutputPath = outputPath.ifBlank { inputFile.parent }
+                    val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${format}"
+                    val outputFile = File(finalOutputPath, finalFileName)
+
+                    if (outputFile.exists() && !force) {
+                        Logger.logError("Output file already exists: ${outputFile.absolutePath}. Use --force to overwrite.")
+                        return@runBlocking
+                    }
+
+                    if (dryRun) {
+                        Logger.logInfo("DRY RUN: Would process ${inputFile.name} -> ${outputFile.name}")
+                        return@runBlocking
+                    }
+
+                    Logger.logInfo("Processing local file: ${inputFile.name}")
+
+                    val localFileOptions = LocalFileOptions(
+                        inputFile = inputFile,
+                        customTitle = mangaTitle,
+                        outputFormat = format,
+                        forceOverwrite = force,
+                        deleteOriginal = deleteOriginal,
+                        useStreamingConversion = false,
+                        useTrueStreaming = false,
+                        useTrueDangerousMode = false,
+                        skipIfTargetExists = !force,
+                        tempDirectory = platformProvider.getTmpDir(),
+                        dryRun = dryRun
                     )
+
+                    val result = fileConverter.process(localFileOptions, mangaTitle, outputFile, processorService)
+
+                    if (result.success) {
+                        Logger.logInfo("Successfully processed: ${result.outputFile?.absolutePath}")
+                        if (deleteOriginal && inputFile.delete()) {
+                            Logger.logInfo("Deleted original file: ${inputFile.name}")
+                        }
+                    } else {
+                        Logger.logError("Processing failed: ${result.error}")
+                    }
                 }
 
                 else -> Logger.logError("Source is not a valid URL or existing file path.")

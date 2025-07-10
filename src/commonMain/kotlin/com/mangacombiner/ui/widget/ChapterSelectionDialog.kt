@@ -1,39 +1,15 @@
 package com.mangacombiner.ui.widget
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.Button
-import androidx.compose.material.Checkbox
-import androidx.compose.material.Divider
-import androidx.compose.material.Icon
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.OutlinedTextField
-import androidx.compose.material.Surface
-import androidx.compose.material.Switch
-import androidx.compose.material.Text
-import androidx.compose.material.TextButton
+import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,10 +18,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.mangacombiner.ui.viewmodel.ChapterSource
+import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
-import com.mangacombiner.ui.viewmodel.RangeAction
-import com.mangacombiner.ui.viewmodel.UiState
+import com.mangacombiner.ui.viewmodel.state.ChapterSource
+import com.mangacombiner.ui.viewmodel.state.RangeAction
+import com.mangacombiner.ui.viewmodel.state.UiState
 
 @Composable
 private fun StatusIndicator(text: String, icon: ImageVector, color: Color) {
@@ -70,7 +47,7 @@ private fun StatusIndicator(text: String, icon: ImageVector, color: Color) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Unit) {
+fun ChapterSelectionDialog(state: UiState, onEvent: (Event) -> Unit) {
     val selectedCount = state.fetchedChapters.count { it.selectedSource != null }
     var rangeStart by remember { mutableStateOf("") }
     var rangeEnd by remember { mutableStateOf("") }
@@ -78,7 +55,7 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
     val hasLocalChapters = state.fetchedChapters.any { it.availableSources.contains(ChapterSource.LOCAL) }
     val isSyncMode = state.sourceFilePath != null
 
-    Dialog(onDismissRequest = { onEvent(MainViewModel.Event.CancelChapterSelection) }) {
+    Dialog(onDismissRequest = { onEvent(Event.Download.CancelChapterSelection) }) {
         Surface(
             modifier = Modifier.width(600.dp).heightIn(max = 700.dp),
             shape = MaterialTheme.shapes.medium
@@ -92,18 +69,18 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Button(onClick = { onEvent(MainViewModel.Event.SelectAllChapters) }) { Text("Select All") }
-                    Button(onClick = { onEvent(MainViewModel.Event.DeselectAllChapters) }) { Text("Deselect All") }
+                    Button(onClick = { onEvent(Event.Download.SelectAllChapters) }) { Text("Select All") }
+                    Button(onClick = { onEvent(Event.Download.DeselectAllChapters) }) { Text("Deselect All") }
 
                     if (hasLocalChapters) {
-                        Button(onClick = { onEvent(MainViewModel.Event.UseAllLocal) }) { Text("Use All (Local)") }
-                        Button(onClick = { onEvent(MainViewModel.Event.IgnoreAllLocal) }) { Text("Ignore All (Local)") }
-                        Button(onClick = { onEvent(MainViewModel.Event.RedownloadAllLocal) }) { Text("Re-download All (Local)") }
+                        Button(onClick = { onEvent(Event.Download.UseAllLocal) }) { Text("Use All (Local)") }
+                        Button(onClick = { onEvent(Event.Download.IgnoreAllLocal) }) { Text("Ignore All (Local)") }
+                        Button(onClick = { onEvent(Event.Download.RedownloadAllLocal) }) { Text("Re-download All (Local)") }
                     }
                     if (hasCachedChapters) {
-                        Button(onClick = { onEvent(MainViewModel.Event.UseAllCached) }) { Text("Use All (Cached)") }
-                        Button(onClick = { onEvent(MainViewModel.Event.IgnoreAllCached) }) { Text("Ignore All (Cached)") }
-                        Button(onClick = { onEvent(MainViewModel.Event.RedownloadAllCached) }) { Text("Re-download All (Cached)") }
+                        Button(onClick = { onEvent(Event.Download.UseAllCached) }) { Text("Use All (Cached)") }
+                        Button(onClick = { onEvent(Event.Download.IgnoreAllCached) }) { Text("Ignore All (Cached)") }
+                        Button(onClick = { onEvent(Event.Download.RedownloadAllCached) }) { Text("Re-download All (Cached)") }
                     }
                 }
 
@@ -135,17 +112,17 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                 ) {
                     val rangeIsSet = rangeStart.isNotBlank() && rangeEnd.isNotBlank()
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.UpdateChapterRange(rangeStart.toInt(), rangeEnd.toInt(), RangeAction.SELECT)) },
+                        onClick = { onEvent(Event.Download.UpdateChapterRange(rangeStart.toInt(), rangeEnd.toInt(), RangeAction.SELECT)) },
                         enabled = rangeIsSet,
                         modifier = Modifier.weight(1f)
                     ) { Text("Select") }
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.UpdateChapterRange(rangeStart.toInt(), rangeEnd.toInt(), RangeAction.DESELECT)) },
+                        onClick = { onEvent(Event.Download.UpdateChapterRange(rangeStart.toInt(), rangeEnd.toInt(), RangeAction.DESELECT)) },
                         enabled = rangeIsSet,
                         modifier = Modifier.weight(1f)
                     ) { Text("Deselect") }
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.UpdateChapterRange(rangeStart.toInt(), rangeEnd.toInt(), RangeAction.TOGGLE)) },
+                        onClick = { onEvent(Event.Download.UpdateChapterRange(rangeStart.toInt(), rangeEnd.toInt(), RangeAction.TOGGLE)) },
                         enabled = rangeIsSet,
                         modifier = Modifier.weight(1f)
                     ) { Text("Toggle") }
@@ -163,7 +140,7 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(
                                     checked = isSelected,
-                                    onCheckedChange = { onEvent(MainViewModel.Event.ToggleChapterSelection(chapter.url, it)) }
+                                    onCheckedChange = { onEvent(Event.Download.ToggleChapterSelection(chapter.url, it)) }
                                 )
                                 Text(
                                     text = "${index + 1}. ${chapter.title}",
@@ -196,7 +173,7 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                                         Spacer(Modifier.width(4.dp))
                                         Switch(
                                             checked = chapter.selectedSource == ChapterSource.WEB,
-                                            onCheckedChange = { onEvent(MainViewModel.Event.ToggleChapterRedownload(chapter.url)) },
+                                            onCheckedChange = { onEvent(Event.Download.ToggleChapterRedownload(chapter.url)) },
                                             enabled = isSelected
                                         )
                                     }
@@ -217,12 +194,12 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (MainViewModel.Event) -> Uni
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = { onEvent(MainViewModel.Event.CancelChapterSelection) }) {
+                    TextButton(onClick = { onEvent(Event.Download.CancelChapterSelection) }) {
                         Text("Cancel")
                     }
                     Spacer(Modifier.width(8.dp))
                     Button(
-                        onClick = { onEvent(MainViewModel.Event.ConfirmChapterSelection) },
+                        onClick = { onEvent(Event.Download.ConfirmChapterSelection) },
                         enabled = selectedCount > 0
                     ) {
                         val buttonText = if (isSyncMode) "Confirm Selections" else "Confirm ($selectedCount Selected)"
