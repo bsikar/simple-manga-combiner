@@ -1,6 +1,7 @@
 package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,11 +17,13 @@ import androidx.compose.ui.unit.dp
 import com.mangacombiner.model.DownloadJob
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.UiState
+import kotlin.math.roundToInt
 
 @Composable
 fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text("Download Queue", style = MaterialTheme.typography.h5)
+        Spacer(Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -41,6 +44,27 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
             }
         }
         Spacer(Modifier.height(16.dp))
+
+        if (state.downloadQueue.isNotEmpty()) {
+            val overallProgress by animateFloatAsState(
+                targetValue = state.overallQueueProgress,
+                animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                LinearProgressIndicator(
+                    progress = overallProgress,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "${(overallProgress * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.caption
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+        }
 
         if (state.downloadQueue.isEmpty()) {
             Box(
@@ -75,9 +99,8 @@ private fun DownloadJobItem(job: DownloadJob, onEvent: (Event) -> Unit) {
         MaterialTheme.colors.surface
     }
 
-
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable { onEvent(Event.Queue.RequestEditJob(job.id)) },
         elevation = 2.dp,
         backgroundColor = cardColor
     ) {

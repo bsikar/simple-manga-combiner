@@ -11,5 +11,8 @@ internal fun MainViewModel.handleQueueEvent(event: Event.Queue) {
         is Event.Queue.ResumeAll -> _state.update { it.copy(isQueuePaused = false) }
         is Event.Queue.ClearCompleted -> clearCompletedJobs()
         is Event.Queue.CancelJob -> cancelJob(event.jobId)
+        is Event.Queue.RequestEditJob -> _state.update { it.copy(editingJobId = event.jobId, editingJobContext = getJobContext(event.jobId)) }
+        is Event.Queue.CancelEditJob -> _state.update { it.copy(editingJobId = null, editingJobContext = null) }
+        is Event.Queue.UpdateJob -> updateJob(event)
     }
 }

@@ -2,6 +2,7 @@ package com.mangacombiner.ui.viewmodel.state
 
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.DownloadJob
+import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.CachedSeries
 import com.mangacombiner.service.DownloadOptions
@@ -62,6 +63,9 @@ data class UiState(
     val isSearching: Boolean = false,
     val searchSortOption: SearchSortOption = SearchSortOption.DEFAULT,
     val downloadQueue: List<DownloadJob> = emptyList(),
+    val overallQueueProgress: Float = 0f,
+    val editingJobId: String? = null,
+    val editingJobContext: QueuedOperation? = null,
     val isQueuePaused: Boolean = false,
     val showBrokenDownloadDialog: Boolean = false,
     val showCompletionDialog: Boolean = false,

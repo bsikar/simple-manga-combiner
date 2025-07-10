@@ -2,6 +2,7 @@ package com.mangacombiner.ui.viewmodel
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.model.DownloadJob
+import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.service.CacheService
 import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadService
@@ -23,18 +24,6 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.io.path.nameWithoutExtension
 import kotlin.random.Random
-
-internal data class QueuedOperation(
-    val jobId: String,
-    val seriesUrl: String,
-    val customTitle: String,
-    val outputFormat: String,
-    val outputPath: String,
-    val chapters: List<Chapter>,
-    val workers: Int,
-    val userAgents: List<String>,
-    val dryRun: Boolean,
-)
 
 @OptIn(FlowPreview::class)
 class MainViewModel(
@@ -118,6 +107,11 @@ class MainViewModel(
                     settingsRepository.saveSettings(settingsToSave)
                     Logger.logDebug { "Settings saved automatically." }
                 }
+        }
+        viewModelScope.launch {
+            state.map { it.downloadQueue }.collect {
+                updateOverallProgress()
+            }
         }
     }
 
@@ -463,7 +457,34 @@ class MainViewModel(
         }
     }
 
+    private fun createDownloadOptions(s: UiState, seriesUrl: String, chaptersToDownload: List<Chapter>): DownloadOptions {
+        return DownloadOptions(
+            seriesUrl = seriesUrl,
+            chaptersToDownload = chaptersToDownload.associate { it.url to it.title },
+            cliTitle = null,
+            getWorkers = { s.workers },
+            format = s.outputFormat,
+            exclude = emptyList(),
+            tempDir = File(platformProvider.getTmpDir()),
+            getUserAgents = {
+                when {
+                    s.perWorkerUserAgent -> List(s.workers) { UserAgent.browsers.values.random(Random) }
+                    s.userAgentName == "Random" -> listOf(UserAgent.browsers.values.random(Random))
+                    else -> listOf(UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first())
+                }
+            },
+            outputPath = s.outputPath,
+            operationState = _operationState,
+            dryRun = s.dryRun,
+            onProgressUpdate = { progress, status ->
+                _state.update { it.copy(progress = progress, progressStatusText = status) }
+            }
+        )
+    }
+
     // --- Queue Logic ---
+
+    internal fun getJobContext(jobId: String): QueuedOperation? = queuedOperationContext[jobId]
 
     internal fun addCurrentJobToQueue() {
         val s = state.value
@@ -521,12 +542,30 @@ class MainViewModel(
         Logger.logInfo("Job $jobId was cancelled.")
     }
 
+
     internal fun clearCompletedJobs() {
         _state.update {
             val newQueue = it.downloadQueue.filter { job ->
                 job.status != "Completed" && !job.status.startsWith("Error")
             }
             it.copy(downloadQueue = newQueue)
+        }
+    }
+
+    internal fun updateJob(event: Event.Queue.UpdateJob) {
+        val oldContext = queuedOperationContext[event.jobId] ?: return
+        queuedOperationContext[event.jobId] = oldContext.copy(
+            customTitle = event.title,
+            outputPath = event.outputPath,
+            outputFormat = event.format,
+            workers = event.workers
+        )
+        _state.update {
+            it.copy(
+                downloadQueue = it.downloadQueue.map { job ->
+                    if (job.id == event.jobId) job.copy(title = event.title) else job
+                }
+            )
         }
     }
 
@@ -646,28 +685,15 @@ class MainViewModel(
         }
     }
 
-    private fun createDownloadOptions(s: UiState, seriesUrl: String, chaptersToDownload: List<Chapter>): DownloadOptions {
-        return DownloadOptions(
-            seriesUrl = seriesUrl,
-            chaptersToDownload = chaptersToDownload.associate { it.url to it.title },
-            cliTitle = null,
-            getWorkers = { s.workers },
-            format = s.outputFormat,
-            exclude = emptyList(),
-            tempDir = File(platformProvider.getTmpDir()),
-            getUserAgents = {
-                when {
-                    s.perWorkerUserAgent -> List(s.workers) { UserAgent.browsers.values.random(Random) }
-                    s.userAgentName == "Random" -> listOf(UserAgent.browsers.values.random(Random))
-                    else -> listOf(UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first())
-                }
-            },
-            outputPath = s.outputPath,
-            operationState = _operationState,
-            dryRun = s.dryRun,
-            onProgressUpdate = { progress, status ->
-                _state.update { it.copy(progress = progress, progressStatusText = status) }
+    private fun updateOverallProgress() {
+        _state.update {
+            val queue = it.downloadQueue
+            if (queue.isEmpty()) {
+                it.copy(overallQueueProgress = 0f)
+            } else {
+                val totalProgress = queue.sumOf { job -> job.progress.toDouble() }.toFloat()
+                it.copy(overallQueueProgress = totalProgress / queue.size)
             }
-        )
+        }
     }
 }

@@ -18,18 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.Screen
-import com.mangacombiner.ui.widget.AboutDialog
-import com.mangacombiner.ui.widget.AdvancedSettingsScreen
-import com.mangacombiner.ui.widget.BrokenDownloadDialog
-import com.mangacombiner.ui.widget.CacheViewerScreen
-import com.mangacombiner.ui.widget.ChapterSelectionDialog
-import com.mangacombiner.ui.widget.CompletionDialog
-import com.mangacombiner.ui.widget.DownloadQueueScreen
-import com.mangacombiner.ui.widget.DownloadScreen
-import com.mangacombiner.ui.widget.FormControlLabel
-import com.mangacombiner.ui.widget.LogScreen
-import com.mangacombiner.ui.widget.PlatformTooltip
-import com.mangacombiner.ui.widget.SettingsScreen
+import com.mangacombiner.ui.widget.*
 
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
@@ -123,6 +112,9 @@ fun MainScreen(viewModel: MainViewModel) {
                 }
             }
 
+            if (state.editingJobId != null) {
+                JobEditDialog(state, viewModel::onEvent)
+            }
             if (state.showChapterDialog) {
                 ChapterSelectionDialog(state, viewModel::onEvent)
             }

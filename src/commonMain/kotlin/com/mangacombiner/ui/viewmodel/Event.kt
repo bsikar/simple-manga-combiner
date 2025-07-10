@@ -107,6 +107,15 @@ sealed interface Event {
         object PauseAll : Queue
         object ResumeAll : Queue
         object ClearCompleted : Queue
+        data class RequestEditJob(val jobId: String) : Queue
+        data class UpdateJob(
+            val jobId: String,
+            val title: String,
+            val outputPath: String,
+            val format: String,
+            val workers: Int
+        ) : Queue
+        object CancelEditJob : Queue
         data class CancelJob(val jobId: String) : Queue
     }
 
