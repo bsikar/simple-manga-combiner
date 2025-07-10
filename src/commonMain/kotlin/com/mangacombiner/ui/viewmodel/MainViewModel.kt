@@ -20,6 +20,7 @@ import kotlinx.coroutines.sync.Semaphore
 import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.io.path.nameWithoutExtension
@@ -144,6 +145,13 @@ class MainViewModel(
                     outputPath = path,
                     defaultOutputLocation = "Custom"
                 ) }
+            }
+            FilePickerRequest.PathType.JOB_OUTPUT -> {
+                val jobId = _state.value.editingJobId ?: return
+                val oldContext = queuedOperationContext[jobId] ?: return
+                val newContext = oldContext.copy(outputPath = path)
+                queuedOperationContext[jobId] = newContext
+                _state.update { it.copy(editingJobContext = newContext) }
             }
         }
         checkOutputFileExistence()
@@ -311,7 +319,6 @@ class MainViewModel(
                 val seriesSlug = if (s.seriesUrl.isNotBlank()) s.seriesUrl.toSlug() else ""
                 val tempSeriesDir = if (seriesSlug.isNotBlank()) File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() } else tempDir
 
-                // Save the URL to the cache directory so it can be used later
                 if (s.seriesUrl.isNotBlank() && tempSeriesDir.name.startsWith("manga-dl-")) {
                     File(tempSeriesDir, "url.txt").writeText(s.seriesUrl)
                     Logger.logDebug { "Wrote series URL to ${tempSeriesDir.name}/url.txt" }
@@ -478,6 +485,9 @@ class MainViewModel(
             dryRun = s.dryRun,
             onProgressUpdate = { progress, status ->
                 _state.update { it.copy(progress = progress, progressStatusText = status) }
+            },
+            onChapterCompleted = {
+                // This is a no-op for single, non-queued operations.
             }
         )
     }
@@ -535,13 +545,14 @@ class MainViewModel(
         runningJobCoroutines[jobId]?.cancel()
         _state.update {
             it.copy(
-                downloadQueue = it.downloadQueue.filterNot { job -> job.id == jobId }
+                downloadQueue = it.downloadQueue.filterNot { job -> job.id == jobId },
+                editingJobId = if (it.editingJobId == jobId) null else it.editingJobId,
+                editingJobContext = if (it.editingJobId == jobId) null else it.editingJobContext
             )
         }
         queuedOperationContext.remove(jobId)
         Logger.logInfo("Job $jobId was cancelled.")
     }
-
 
     internal fun clearCompletedJobs() {
         _state.update {
@@ -561,9 +572,30 @@ class MainViewModel(
             workers = event.workers
         )
         _state.update {
+            val updatedQueue = it.downloadQueue.map { job ->
+                if (job.id == event.jobId) job.copy(title = event.title) else job
+            }
             it.copy(
+                downloadQueue = updatedQueue,
+                editingJobId = null,
+                editingJobContext = null
+            )
+        }
+        Logger.logInfo("Updated settings for job: ${event.title}")
+    }
+
+    internal fun pauseAllJobs(pause: Boolean) {
+        _state.update {
+            it.copy(
+                isQueuePaused = pause,
                 downloadQueue = it.downloadQueue.map { job ->
-                    if (job.id == event.jobId) job.copy(title = event.title) else job
+                    if (pause && job.status == "Downloading") {
+                        job.copy(status = "Paused")
+                    } else if (!pause && job.status == "Paused") {
+                        job.copy(status = "Queued")
+                    } else {
+                        job
+                    }
                 }
             )
         }
@@ -601,6 +633,7 @@ class MainViewModel(
     }
 
     private suspend fun runQueuedOperation(op: QueuedOperation) {
+        val webChaptersCompleted = AtomicInteger(0)
         try {
             updateJobState(op.jobId, "Downloading", 0.05f)
             val tempDir = File(platformProvider.getTmpDir())
@@ -612,15 +645,21 @@ class MainViewModel(
             }
 
             val chaptersToDownload = op.chapters.filter { it.selectedSource == ChapterSource.WEB }
-            val allChapterFolders = op.chapters
-                .filter { it.selectedSource == ChapterSource.CACHE }
+            val chaptersFromCache = op.chapters.filter { it.selectedSource == ChapterSource.CACHE }
+            val allChapterFolders = chaptersFromCache
                 .map { File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)) }
                 .toMutableList()
 
             var downloadResult: com.mangacombiner.service.DownloadResult? = null
 
             if (chaptersToDownload.isNotEmpty()) {
-                val operationState = MutableStateFlow(if (state.value.isQueuePaused) OperationState.PAUSED else OperationState.RUNNING)
+                val operationStateFlow = MutableStateFlow(if (state.value.isQueuePaused) OperationState.PAUSED else OperationState.RUNNING)
+                val pauseCollector = viewModelScope.launch {
+                    state.map { it.isQueuePaused }.distinctUntilChanged().collect { isPaused ->
+                        operationStateFlow.value = if (isPaused) OperationState.PAUSED else OperationState.RUNNING
+                    }
+                }
+
                 val downloadOptions = DownloadOptions(
                     seriesUrl = op.seriesUrl,
                     chaptersToDownload = chaptersToDownload.associate { it.url to it.title },
@@ -631,18 +670,26 @@ class MainViewModel(
                     tempDir = tempDir,
                     getUserAgents = { op.userAgents },
                     outputPath = op.outputPath,
-                    operationState = operationState,
+                    operationState = operationStateFlow,
                     dryRun = op.dryRun,
-                    onProgressUpdate = { progress, status ->
+                    onProgressUpdate = { chapterProgress, status ->
                         val job = state.value.downloadQueue.find { it.id == op.jobId }
                         if (job != null) {
-                            val completedWebChapters = job.downloadedChapters - (job.totalChapters - chaptersToDownload.size)
-                            val overallProgress = ((completedWebChapters + progress) / job.totalChapters).toFloat()
-                            updateJobState(op.jobId, status, overallProgress)
+                            val overallProgress = (chaptersFromCache.size + webChaptersCompleted.get() + chapterProgress) / job.totalChapters
+                            val currentStatus = if (state.value.isQueuePaused) "Paused" else status
+                            updateJobState(op.jobId, currentStatus, overallProgress)
                         }
+                    },
+                    onChapterCompleted = {
+                        val job = state.value.downloadQueue.find { it.id == op.jobId }
+                        if (job != null) {
+                            updateJobDownloadedChapters(op.jobId, job.downloadedChapters + 1)
+                        }
+                        webChaptersCompleted.incrementAndGet()
                     }
                 )
                 downloadResult = downloadService.downloadChapters(downloadOptions, tempSeriesDir)
+                pauseCollector.cancel()
                 downloadResult?.successfulFolders?.let { allChapterFolders.addAll(it) }
             }
 
@@ -676,7 +723,25 @@ class MainViewModel(
         _state.update { state ->
             val updatedQueue = state.downloadQueue.map { job ->
                 if (job.id == jobId) {
-                    job.copy(status = status, progress = progress ?: job.progress)
+                    val newDownloadedChapters = if (status == "Completed") job.totalChapters else job.downloadedChapters
+                    job.copy(
+                        status = status,
+                        progress = progress ?: job.progress,
+                        downloadedChapters = newDownloadedChapters
+                    )
+                } else {
+                    job
+                }
+            }
+            state.copy(downloadQueue = updatedQueue)
+        }
+    }
+
+    private fun updateJobDownloadedChapters(jobId: String, chaptersDone: Int) {
+        _state.update { state ->
+            val updatedQueue = state.downloadQueue.map { job ->
+                if (job.id == jobId) {
+                    job.copy(downloadedChapters = chaptersDone)
                 } else {
                     job
                 }

@@ -10,11 +10,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,7 +29,6 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         val isIdle = state.operationState == OperationState.IDLE
         val isRunning = state.operationState == OperationState.RUNNING || state.operationState == OperationState.PAUSED
-        val isProcessing = state.operationState != OperationState.CANCELLING
 
         Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
@@ -201,7 +196,7 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                         onValueChange = { onEvent(Event.Download.UpdateCustomTitle(it)) },
                         label = { Text("Output Filename (without extension)") },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = isProcessing
+                        enabled = isIdle
                     )
 
                     OutlinedTextField(
@@ -210,7 +205,15 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                         label = { Text("Output Directory") },
                         placeholder = { Text("Default: Your Downloads folder") },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = isProcessing
+                        enabled = isIdle,
+                        trailingIcon = {
+                            IconButton(
+                                onClick = { onEvent(Event.Download.PickOutputPath) },
+                                enabled = isIdle
+                            ) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = "Browse for output directory")
+                            }
+                        }
                     )
 
                     Column(
@@ -227,7 +230,7 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                                 value = state.workers,
                                 onValueChange = { onEvent(Event.Settings.UpdateWorkers(it)) },
                                 range = 1..16,
-                                enabled = isProcessing
+                                enabled = isIdle
                             )
                         }
 
@@ -235,7 +238,7 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                             OutlinedButton(
                                 onClick = { formatDropdownExpanded = true },
                                 modifier = Modifier.fillMaxWidth(),
-                                enabled = isProcessing
+                                enabled = isIdle
                             ) {
                                 Text("Format: ${state.outputFormat.uppercase()}")
                                 Icon(Icons.Default.ArrowDropDown, "Format")
@@ -259,7 +262,7 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
             }
         }
 
-        if (isRunning) {
+        if (isRunning && state.activeDownloadOptions != null) {
             val animatedProgress by animateFloatAsState(
                 targetValue = state.progress,
                 animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
@@ -292,7 +295,6 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                     Button(
                         onClick = {
                             if (state.sourceFilePath != null) {
-                                // Sync/update is an immediate, singular operation, not queued.
                                 onEvent(Event.Operation.RequestStart)
                             } else {
                                 onEvent(Event.Queue.Add)

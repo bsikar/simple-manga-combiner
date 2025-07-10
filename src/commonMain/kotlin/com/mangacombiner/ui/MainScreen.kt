@@ -112,8 +112,23 @@ fun MainScreen(viewModel: MainViewModel) {
                 }
             }
 
-            if (state.editingJobId != null) {
-                JobEditDialog(state, viewModel::onEvent)
+            val editingJobId = state.editingJobId
+            if (editingJobId != null) {
+                val job = state.downloadQueue.find { it.id == editingJobId }
+                if (job != null && (job.status == "Queued" || job.status == "Paused")) {
+                    JobEditDialog(state, viewModel::onEvent)
+                } else if (job != null) {
+                    AlertDialog(
+                        onDismissRequest = { viewModel.onEvent(Event.Queue.CancelEditJob) },
+                        title = { Text("Cannot Edit Running Job") },
+                        text = { Text("Please pause the download queue to edit this job's settings.") },
+                        confirmButton = {
+                            TextButton(onClick = { viewModel.onEvent(Event.Queue.CancelEditJob) }) {
+                                Text("OK")
+                            }
+                        }
+                    )
+                }
             }
             if (state.showChapterDialog) {
                 ChapterSelectionDialog(state, viewModel::onEvent)

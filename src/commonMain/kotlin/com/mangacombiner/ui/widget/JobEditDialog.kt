@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,19 +21,19 @@ fun JobEditDialog(
     val jobContext = state.editingJobContext ?: return
     val job = state.downloadQueue.find { it.id == jobContext.jobId }
 
-    var title by remember { mutableStateOf(jobContext.customTitle) }
-    var outputPath by remember { mutableStateOf(jobContext.outputPath) }
-    var format by remember { mutableStateOf(jobContext.outputFormat) }
-    var workers by remember { mutableStateOf(jobContext.workers) }
+    var title by remember(jobContext.customTitle) { mutableStateOf(jobContext.customTitle) }
+    var outputPath by remember(jobContext.outputPath) { mutableStateOf(jobContext.outputPath) }
+    var format by remember(jobContext.outputFormat) { mutableStateOf(jobContext.outputFormat) }
+    var workers by remember(jobContext.workers) { mutableStateOf(jobContext.workers) }
     var formatDropdownExpanded by remember { mutableStateOf(false) }
 
-    val isEditable = job?.status == "Queued"
+    val isEditable = job?.status == "Queued" || job?.status == "Paused"
 
     Dialog(onDismissRequest = { onEvent(Event.Queue.CancelEditJob) }) {
         Surface(
             modifier = Modifier.width(600.dp),
             shape = MaterialTheme.shapes.large,
-            elevation = 8.dp
+            elevation = 24.dp
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
@@ -53,7 +54,15 @@ fun JobEditDialog(
                     onValueChange = { outputPath = it },
                     label = { Text("Output Directory") },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = isEditable
+                    enabled = isEditable,
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { onEvent(Event.Queue.PickJobOutputPath) },
+                            enabled = isEditable
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = "Browse for output directory")
+                        }
+                    }
                 )
 
                 Row(
@@ -116,7 +125,6 @@ fun JobEditDialog(
                     Button(
                         onClick = {
                             onEvent(Event.Queue.UpdateJob(jobContext.jobId, title, outputPath, format, workers))
-                            onEvent(Event.Queue.CancelEditJob)
                         },
                         enabled = isEditable
                     ) {

@@ -81,18 +81,23 @@ fun AppTheme(
 ) {
     val isSystemDark = isSystemInDarkTheme()
 
-    val resolvedTheme = when (settingsTheme) {
-        AppTheme.SYSTEM -> if (isSystemDark) systemDarkTheme else systemLightTheme
-        else -> settingsTheme
+    // 1. Determine the theme to be used (e.g., DARK, LIGHT, OCEAN), resolving SYSTEM first.
+    val resolvedTheme = if (settingsTheme == AppTheme.SYSTEM) {
+        if (isSystemDark) systemDarkTheme else systemLightTheme
+    } else {
+        settingsTheme
     }
 
+    // 2. Select the color palette based on the resolved theme.
     val colors = when (resolvedTheme) {
         AppTheme.LIGHT -> LightColorPalette
+        AppTheme.OCEAN -> OceanColorPalette
         AppTheme.DARK -> DarkColorPalette
         AppTheme.MIDNIGHT -> MidnightColorPalette
         AppTheme.FOREST -> ForestColorPalette
-        AppTheme.OCEAN -> OceanColorPalette
-        AppTheme.SYSTEM -> if (isSystemDark) DarkColorPalette else LightColorPalette // Fallback
+        // This fallback should only be hit if the user manually sets their system light/dark
+        // theme preferences to "System", which the UI prevents.
+        AppTheme.SYSTEM -> if (isSystemDark) DarkColorPalette else LightColorPalette
     }
 
     MaterialTheme(

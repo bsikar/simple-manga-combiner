@@ -95,8 +95,6 @@ class DownloadService(
         chapterTitle: String,
         baseDir: File,
         client: HttpClient,
-        baseProgress: Float,
-        progressWeight: Float
     ): ChapterDownloadResult {
         val chapterDir = File(baseDir, FileUtils.sanitizeFilename(chapterTitle))
         if (!chapterDir.exists()) chapterDir.mkdirs()
@@ -145,9 +143,8 @@ class DownloadService(
 
                         val currentProcessed = processedImagesCount.incrementAndGet()
                         val imageProgress = currentProcessed.toFloat() / imageUrls.size
-                        val currentTotalProgress = baseProgress + (imageProgress * progressWeight)
                         val statusText = "Downloading: ${chapterTitle.take(30)}... ($currentProcessed/${imageUrls.size})"
-                        options.onProgressUpdate(currentTotalProgress, statusText)
+                        options.onProgressUpdate(imageProgress, statusText)
                     }
                 }
             }.joinAll()
@@ -191,15 +188,14 @@ class DownloadService(
                 coroutineContext.ensureActive()
 
                 Logger.logInfo("--> Processing chapter ${index + 1}/${chapterData.size}: $title")
-                val baseProgress = index.toFloat() / chapterData.size
-                val progressWeight = 1f / chapterData.size
 
-                val result = downloadChapter(options, url, title, downloadDir, client, baseProgress, progressWeight)
+                val result = downloadChapter(options, url, title, downloadDir, client)
 
                 result.chapterDir?.let { successfulFolders.add(it) }
                 if (result.failedImageUrls.isNotEmpty()) {
                     failedChapters[title] = result.failedImageUrls
                 }
+                options.onChapterCompleted()
 
                 coroutineContext.ensureActive()
                 delay(CHAPTER_DOWNLOAD_DELAY_MS)

@@ -116,6 +116,7 @@ sealed interface Event {
             val workers: Int
         ) : Queue
         object CancelEditJob : Queue
+        object PickJobOutputPath : Queue
         data class CancelJob(val jobId: String) : Queue
     }
 
