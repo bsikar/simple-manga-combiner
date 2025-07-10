@@ -5,15 +5,12 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,50 +29,26 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
     val browserImpersonationOptions = listOf("Random") + UserAgent.browsers.keys.toList()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Text("Download Queue", style = MaterialTheme.typography.h5)
-        Spacer(Modifier.height(8.dp))
-
-        // Control buttons for the queue
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = { showAdvancedSettings = !showAdvancedSettings },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Advanced Settings")
-                Icon(
-                    if (showAdvancedSettings) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Toggle Advanced Settings"
-                )
-            }
-            TextButton(
-                onClick = { onEvent(Event.Queue.ClearCompleted) },
-                modifier = Modifier.weight(1f)
-            ) {
+        // --- Header and Global Controls ---
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Download Queue", style = MaterialTheme.typography.h5, modifier = Modifier.weight(1f))
+            TextButton(onClick = { onEvent(Event.Queue.ClearCompleted) }) {
                 Text("Clear Completed")
             }
-
-            if (state.isQueuePaused) {
-                Button(
-                    onClick = { onEvent(Event.Queue.ResumeAll) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Resume All")
-                }
-            } else {
-                OutlinedButton(
-                    onClick = { onEvent(Event.Queue.PauseAll) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Pause All")
-                }
-            }
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { showAdvancedSettings = !showAdvancedSettings },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Advanced Settings")
+            Icon(
+                if (showAdvancedSettings) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = "Toggle Advanced Settings"
+            )
         }
 
-        // Animated visibility for Advanced Settings
+        // --- Advanced Settings Panel ---
         AnimatedVisibility(visible = showAdvancedSettings) {
             Card(
                 elevation = 4.dp,
@@ -86,7 +59,6 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Text("Settings for New Queue Items", style = MaterialTheme.typography.h6)
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -104,35 +76,18 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
                             enabled = true
                         )
                     }
-
                     Divider()
-
-                    FormControlLabel(
-                        onClick = { onEvent(Event.Download.ToggleDryRun(!state.dryRun)) },
-                        enabled = true,
-                        control = {
-                            Switch(
-                                checked = state.dryRun,
-                                onCheckedChange = { onEvent(Event.Download.ToggleDryRun(it)) },
-                                enabled = true
-                            )
-                        },
-                        label = { Text("Dry Run (Simulate Only)") }
-                    )
-
                     FormControlLabel(
                         onClick = { onEvent(Event.Settings.TogglePerWorkerUserAgent(!state.perWorkerUserAgent)) },
                         enabled = true,
                         control = {
                             Switch(
                                 checked = state.perWorkerUserAgent,
-                                onCheckedChange = { onEvent(Event.Settings.TogglePerWorkerUserAgent(it)) },
-                                enabled = true
+                                onCheckedChange = { onEvent(Event.Settings.TogglePerWorkerUserAgent(it)) }
                             )
                         },
                         label = { Text("Randomize browser per worker") }
                     )
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -174,6 +129,7 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
 
+        // --- Overall Progress ---
         if (state.downloadQueue.isNotEmpty()) {
             val overallProgress by animateFloatAsState(
                 targetValue = state.overallQueueProgress,
@@ -195,6 +151,7 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
             Spacer(Modifier.height(16.dp))
         }
 
+        // --- Queue List ---
         if (state.downloadQueue.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -207,8 +164,13 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(state.downloadQueue, key = { it.id }) { job ->
-                    DownloadJobItem(job, onEvent)
+                itemsIndexed(state.downloadQueue, key = { _, item -> item.id }) { index, job ->
+                    DownloadJobItem(
+                        job = job,
+                        onEvent = onEvent,
+                        isFirst = index == 0,
+                        isLast = index == state.downloadQueue.lastIndex
+                    )
                 }
             }
         }
@@ -216,70 +178,94 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
 }
 
 @Composable
-private fun DownloadJobItem(job: DownloadJob, onEvent: (Event) -> Unit) {
+private fun DownloadJobItem(job: DownloadJob, onEvent: (Event) -> Unit, isFirst: Boolean, isLast: Boolean) {
     val animatedProgress by animateFloatAsState(
         targetValue = job.progress,
         animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
     )
-    val isDone = job.status == "Completed" || job.status.startsWith("Error")
-    val cardColor = if (isDone) {
-        MaterialTheme.colors.surface.copy(alpha = 0.5f)
-    } else {
-        MaterialTheme.colors.surface
-    }
+    val isFinished = job.status == "Completed" || job.status.startsWith("Error") || job.status == "Cancelled"
+    val isRunning = job.status == "Downloading" || job.status == "Pausing..." || job.status == "Packaging..."
 
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onEvent(Event.Queue.RequestEditJob(job.id)) },
-        elevation = 2.dp,
-        backgroundColor = cardColor
+        modifier = Modifier.fillMaxWidth(),
+        elevation = 2.dp
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = job.title,
-                    style = MaterialTheme.typography.h6,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                if (!isDone) {
-                    IconButton(onClick = { onEvent(Event.Queue.CancelJob(job.id)) }) {
-                        Icon(Icons.Default.Cancel, "Cancel Job")
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "${job.downloadedChapters} / ${job.totalChapters} Chapters",
-                    style = MaterialTheme.typography.body2
-                )
-                Text(
-                    text = job.status,
-                    style = MaterialTheme.typography.body2,
-                    color = when (job.status) {
-                        "Downloading" -> MaterialTheme.colors.primary
-                        "Paused" -> MaterialTheme.colors.secondary
-                        "Completed" -> MaterialTheme.colors.primary.copy(alpha = 0.7f)
-                        else -> LocalContentColor.current
+                // Reorder Controls
+                Column {
+                    IconButton(
+                        onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.UP)) },
+                        enabled = !isFirst
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowUp, "Move Up")
                     }
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            if (job.progress < 1f && job.status != "Queued") {
-                LinearProgressIndicator(
-                    progress = animatedProgress,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    IconButton(
+                        onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.DOWN)) },
+                        enabled = !isLast
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowDown, "Move Down")
+                    }
+                }
+
+                // Job Info
+                Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp).clickable {
+                    if (!isFinished) onEvent(Event.Queue.RequestEditJob(job.id))
+                }) {
+                    Text(
+                        text = job.title,
+                        style = MaterialTheme.typography.h6,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "${job.downloadedChapters} / ${job.totalChapters} Chapters",
+                        style = MaterialTheme.typography.body2
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (job.progress < 1f && job.status != "Queued" && !isFinished) {
+                        LinearProgressIndicator(
+                            progress = animatedProgress,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        // Spacer to keep height consistent
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+
+                // Action Controls
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = job.status,
+                        style = MaterialTheme.typography.caption,
+                        color = when (job.status) {
+                            "Downloading" -> MaterialTheme.colors.primary
+                            "Paused", "Pausing..." -> MaterialTheme.colors.secondary
+                            else -> LocalContentColor.current.copy(alpha = 0.7f)
+                        }
+                    )
+                    Row {
+                        if (!isFinished) {
+                            IconButton(onClick = { onEvent(Event.Queue.TogglePauseJob(job.id)) }) {
+                                Icon(
+                                    if (job.isIndividuallyPaused || job.status == "Paused") Icons.Default.PlayArrow else Icons.Default.Pause,
+                                    if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job"
+                                )
+                            }
+                            IconButton(onClick = { onEvent(Event.Queue.CancelJob(job.id)) }) {
+                                Icon(Icons.Default.Cancel, "Cancel Job")
+                            }
+                        } else {
+                            // Placeholder to maintain layout
+                            Spacer(Modifier.width(96.dp))
+                        }
+                    }
+                }
             }
         }
     }

@@ -1,6 +1,5 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.ui.viewmodel.OperationState
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
@@ -14,7 +13,7 @@ data class DownloadOptions(
     val tempDir: File,
     val getUserAgents: () -> List<String>,
     val outputPath: String,
-    val operationState: StateFlow<OperationState>,
+    val isPaused: () -> Boolean,
     val dryRun: Boolean = false,
     val onProgressUpdate: (progress: Float, status: String) -> Unit,
     val onChapterCompleted: () -> Unit

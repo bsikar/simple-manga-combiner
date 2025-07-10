@@ -65,13 +65,18 @@ class DownloadService(
         }
     }
 
-    private suspend fun downloadFile(client: HttpClient, url: String, outputFile: File, userAgent: String): Boolean {
+    private suspend fun downloadFile(client: HttpClient, url: String, outputFile: File, userAgent: String, isPaused: () -> Boolean): Boolean {
         if (outputFile.exists()) {
             Logger.logDebug { "File already exists, skipping: ${outputFile.name}" }
             return true
         }
 
         return try {
+            while (isPaused()) {
+                delay(500)
+            }
+            coroutineContext.ensureActive()
+
             val response: HttpResponse = client.get(url) {
                 header(HttpHeaders.UserAgent, userAgent)
             }
@@ -104,7 +109,7 @@ class DownloadService(
         val incompleteMarker = File(chapterDir, INCOMPLETE_MARKER_FILE)
         incompleteMarker.createNewFile()
 
-        while (options.operationState.value == OperationState.PAUSED) {
+        while (options.isPaused()) {
             delay(1000)
         }
         coroutineContext.ensureActive()
@@ -127,7 +132,7 @@ class DownloadService(
             imageUrls.mapIndexed { index, imageUrl ->
                 launch(Dispatchers.IO) {
                     semaphore.withPermit {
-                        while (options.operationState.value == OperationState.PAUSED) {
+                        while (options.isPaused()) {
                             delay(500)
                         }
                         coroutineContext.ensureActive()
@@ -137,7 +142,7 @@ class DownloadService(
                         val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
                         val outputFile = File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
 
-                        if (!downloadFile(client, imageUrl, outputFile, imageUserAgent)) {
+                        if (!downloadFile(client, imageUrl, outputFile, imageUserAgent, options.isPaused)) {
                             failedImageUrls.add(imageUrl)
                         }
 
@@ -182,7 +187,7 @@ class DownloadService(
         try {
             for ((index, chapter) in chapterData.withIndex()) {
                 val (url, title) = chapter
-                while (options.operationState.value == OperationState.PAUSED) {
+                while (options.isPaused()) {
                     delay(1000)
                 }
                 coroutineContext.ensureActive()

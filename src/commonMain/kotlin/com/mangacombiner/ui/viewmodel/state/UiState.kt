@@ -66,7 +66,6 @@ data class UiState(
     val overallQueueProgress: Float = 0f,
     val editingJobId: String? = null,
     val editingJobContext: QueuedOperation? = null,
-    val isQueuePaused: Boolean = false,
     val showBrokenDownloadDialog: Boolean = false,
     val showCompletionDialog: Boolean = false,
     val lastDownloadResult: DownloadResult? = null,

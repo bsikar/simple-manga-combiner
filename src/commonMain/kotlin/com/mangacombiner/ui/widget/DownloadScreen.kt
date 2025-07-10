@@ -234,6 +234,19 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                             )
                         }
 
+                        FormControlLabel(
+                            onClick = { onEvent(Event.Download.ToggleDryRun(!state.dryRun)) },
+                            enabled = isIdle,
+                            control = {
+                                Switch(
+                                    checked = state.dryRun,
+                                    onCheckedChange = { onEvent(Event.Download.ToggleDryRun(it)) },
+                                    enabled = isIdle
+                                )
+                            },
+                            label = { Text("Dry Run (Simulate Only)") }
+                        )
+
                         Box(modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 onClick = { formatDropdownExpanded = true },

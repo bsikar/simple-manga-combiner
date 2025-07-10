@@ -481,7 +481,7 @@ class MainViewModel(
                 }
             },
             outputPath = s.outputPath,
-            operationState = _operationState,
+            isPaused = { _operationState.value == OperationState.PAUSED },
             dryRun = s.dryRun,
             onProgressUpdate = { progress, status ->
                 _state.update { it.copy(progress = progress, progressStatusText = status) }
@@ -584,48 +584,30 @@ class MainViewModel(
         Logger.logInfo("Updated settings for job: ${event.title}")
     }
 
-    internal fun pauseAllJobs(pause: Boolean) {
-        _state.update {
-            it.copy(
-                isQueuePaused = pause,
-                downloadQueue = it.downloadQueue.map { job ->
-                    if (pause && job.status == "Downloading") {
-                        job.copy(status = "Paused")
-                    } else if (!pause && job.status == "Paused") {
-                        job.copy(status = "Queued")
-                    } else {
-                        job
-                    }
-                }
-            )
-        }
-    }
-
     private fun processQueue() {
         viewModelScope.launch(Dispatchers.IO) {
             val semaphore = Semaphore(state.value.batchWorkers)
 
             state.collect { currentState ->
-                if (!currentState.isQueuePaused) {
-                    val nextJob = currentState.downloadQueue.firstOrNull { it.status == "Queued" }
-                    if (nextJob != null) {
-                        if (semaphore.tryAcquire()) {
-                            updateJobState(nextJob.id, "Starting...")
-                            val jobCoroutine = launch {
-                                try {
-                                    val op = queuedOperationContext[nextJob.id]
-                                    if (op != null) {
-                                        runQueuedOperation(op)
-                                    } else {
-                                        updateJobState(nextJob.id, "Error: Context not found")
-                                    }
-                                } finally {
-                                    semaphore.release()
-                                    runningJobCoroutines.remove(nextJob.id)
+                val nextJob = currentState.downloadQueue.firstOrNull { it.status == "Queued" && !it.isIndividuallyPaused }
+
+                if (nextJob != null) {
+                    if (semaphore.tryAcquire()) {
+                        updateJobState(nextJob.id, "Downloading")
+                        val jobCoroutine = launch {
+                            try {
+                                val op = queuedOperationContext[nextJob.id]
+                                if (op != null) {
+                                    runQueuedOperation(op)
+                                } else {
+                                    updateJobState(nextJob.id, "Error: Context not found")
                                 }
+                            } finally {
+                                semaphore.release()
+                                runningJobCoroutines.remove(nextJob.id)
                             }
-                            runningJobCoroutines[nextJob.id] = jobCoroutine
                         }
+                        runningJobCoroutines[nextJob.id] = jobCoroutine
                     }
                 }
             }
@@ -635,7 +617,7 @@ class MainViewModel(
     private suspend fun runQueuedOperation(op: QueuedOperation) {
         val webChaptersCompleted = AtomicInteger(0)
         try {
-            updateJobState(op.jobId, "Downloading", 0.05f)
+            updateJobState(op.jobId, "Starting...", 0.05f)
             val tempDir = File(platformProvider.getTmpDir())
             val seriesSlug = op.seriesUrl.toSlug()
             val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
@@ -653,13 +635,6 @@ class MainViewModel(
             var downloadResult: com.mangacombiner.service.DownloadResult? = null
 
             if (chaptersToDownload.isNotEmpty()) {
-                val operationStateFlow = MutableStateFlow(if (state.value.isQueuePaused) OperationState.PAUSED else OperationState.RUNNING)
-                val pauseCollector = viewModelScope.launch {
-                    state.map { it.isQueuePaused }.distinctUntilChanged().collect { isPaused ->
-                        operationStateFlow.value = if (isPaused) OperationState.PAUSED else OperationState.RUNNING
-                    }
-                }
-
                 val downloadOptions = DownloadOptions(
                     seriesUrl = op.seriesUrl,
                     chaptersToDownload = chaptersToDownload.associate { it.url to it.title },
@@ -670,14 +645,13 @@ class MainViewModel(
                     tempDir = tempDir,
                     getUserAgents = { op.userAgents },
                     outputPath = op.outputPath,
-                    operationState = operationStateFlow,
+                    isPaused = { state.value.downloadQueue.find { it.id == op.jobId }?.isIndividuallyPaused == true },
                     dryRun = op.dryRun,
                     onProgressUpdate = { chapterProgress, status ->
                         val job = state.value.downloadQueue.find { it.id == op.jobId }
                         if (job != null) {
                             val overallProgress = (chaptersFromCache.size + webChaptersCompleted.get() + chapterProgress) / job.totalChapters
-                            val currentStatus = if (state.value.isQueuePaused) "Paused" else status
-                            updateJobState(op.jobId, currentStatus, overallProgress)
+                            updateJobState(op.jobId, if (job.isIndividuallyPaused) "Paused" else status, overallProgress)
                         }
                     },
                     onChapterCompleted = {
@@ -689,23 +663,24 @@ class MainViewModel(
                     }
                 )
                 downloadResult = downloadService.downloadChapters(downloadOptions, tempSeriesDir)
-                pauseCollector.cancel()
                 downloadResult?.successfulFolders?.let { allChapterFolders.addAll(it) }
             }
 
             updateJobState(op.jobId, "Packaging...", 0.99f)
             val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
-            val finalOutputFile = File(op.outputPath, finalFileName)
+            val tempOutputFile = File(tempDir, finalFileName) // Create in temp first
 
             if (op.outputFormat == "cbz") {
                 downloadService.processorService.createCbzFromFolders(
-                    op.customTitle, allChapterFolders, finalOutputFile, op.seriesUrl, downloadResult?.failedChapters
+                    op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters
                 )
             } else {
                 downloadService.processorService.createEpubFromFolders(
-                    op.customTitle, allChapterFolders, finalOutputFile, op.seriesUrl, downloadResult?.failedChapters
+                    op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters
                 )
             }
+
+            fileMover.moveToFinalDestination(tempOutputFile, op.outputPath, finalFileName)
             updateJobState(op.jobId, "Completed", 1f)
         } catch (e: Exception) {
             if (e is CancellationException) {

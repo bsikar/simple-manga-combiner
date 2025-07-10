@@ -9,5 +9,6 @@ data class DownloadJob(
     val progress: Float,
     val status: String,
     val totalChapters: Int,
-    val downloadedChapters: Int
+    val downloadedChapters: Int,
+    val isIndividuallyPaused: Boolean = false,
 )
