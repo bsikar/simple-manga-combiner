@@ -259,7 +259,9 @@ class MainViewModel(
 
                     // Determine the source based on pre-selection, then fall back to defaults
                     val initialSource = when {
-                        sanitizedTitle in preselectedNames -> ChapterSource.CACHE
+                        sanitizedTitle in preselectedNames -> {
+                            if (isBroken) ChapterSource.WEB else ChapterSource.CACHE
+                        }
                         preselectedNames.isNotEmpty() -> null // If pre-selecting, others are deselected by default
                         isRetry || isBroken -> ChapterSource.WEB
                         else -> getChapterDefaultSource(chapter)
@@ -313,6 +315,12 @@ class MainViewModel(
 
                 val seriesSlug = if (s.seriesUrl.isNotBlank()) s.seriesUrl.toSlug() else ""
                 val tempSeriesDir = if (seriesSlug.isNotBlank()) File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() } else tempDir
+
+                // Save the URL to the cache directory so it can be used later
+                if (s.seriesUrl.isNotBlank() && tempSeriesDir.name.startsWith("manga-dl-")) {
+                    File(tempSeriesDir, "url.txt").writeText(s.seriesUrl)
+                    Logger.logDebug { "Wrote series URL to ${tempSeriesDir.name}/url.txt" }
+                }
 
                 if (!isRetry) {
                     val chaptersToExtract = chaptersForOperation.filter { it.selectedSource == ChapterSource.LOCAL }

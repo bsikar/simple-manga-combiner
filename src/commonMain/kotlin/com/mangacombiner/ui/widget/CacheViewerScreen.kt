@@ -123,6 +123,7 @@ fun CacheViewerScreen(state: UiState, onEvent: (Event) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CacheSeriesItem(
     series: CachedSeries,
@@ -162,15 +163,6 @@ private fun CacheSeriesItem(
                         "${series.chapters.size} chapter(s) - ${series.totalSizeFormatted}",
                         style = MaterialTheme.typography.caption
                     )
-                }
-
-                if (series.seriesUrl != null) {
-                    Button(
-                        onClick = { onEvent(Event.Cache.LoadCachedSeries(series.path)) },
-                        enabled = selectedChaptersInSeries.isNotEmpty()
-                    ) {
-                        Text("Load in Downloader")
-                    }
                 }
 
                 Box {
@@ -216,9 +208,9 @@ private fun CacheSeriesItem(
             AnimatedVisibility(visible = isExpanded) {
                 Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 16.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { onEvent(Event.Cache.SelectAllChapters(series.path, true)) }) { Text("Select All", softWrap = false) }
-                            Button(onClick = { onEvent(Event.Cache.SelectAllChapters(series.path, false)) }) { Text("Deselect All", softWrap = false) }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onEvent(Event.Cache.SelectAllChapters(series.path, true)) }) { Text("Select All") }
+                            Button(onClick = { onEvent(Event.Cache.SelectAllChapters(series.path, false)) }) { Text("Deselect All") }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
@@ -236,25 +228,41 @@ private fun CacheSeriesItem(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             val startInt = rangeStart.toIntOrNull()
                             val endInt = rangeEnd.toIntOrNull()
                             val rangeIsSet = startInt != null && endInt != null && startInt <= endInt && endInt <= series.chapters.size
                             Button(
                                 onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.SELECT)) },
                                 enabled = rangeIsSet,
-                                modifier = Modifier.weight(1f)
-                            ) { Text("Select", softWrap = false) }
+                            ) { Text("Select") }
                             Button(
                                 onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.DESELECT)) },
                                 enabled = rangeIsSet,
-                                modifier = Modifier.weight(1f)
-                            ) { Text("Deselect", softWrap = false) }
+                            ) { Text("Deselect") }
                             Button(
                                 onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.TOGGLE)) },
                                 enabled = rangeIsSet,
-                                modifier = Modifier.weight(1f)
-                            ) { Text("Toggle", softWrap = false) }
+                            ) { Text("Toggle") }
+                        }
+                    }
+
+                    if (series.seriesUrl != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Button(
+                                onClick = { onEvent(Event.Cache.LoadCachedSeries(series.path)) },
+                                enabled = selectedChaptersInSeries.isNotEmpty()
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = "Import", modifier = Modifier.size(ButtonDefaults.IconSize))
+                                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                                Text("Import to Downloader (${selectedChaptersInSeries.size})")
+                            }
                         }
                     }
 
