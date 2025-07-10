@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
@@ -25,18 +24,20 @@ import com.mangacombiner.util.CachedChapterNameComparator
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CacheViewerScreen(state: UiState, onEvent: (Event) -> Unit) {
+    val allSeriesPaths = remember(state.cacheContents) { state.cacheContents.map { it.path }.toSet() }
+    val seriesMap = remember(state.cacheContents) { state.cacheContents.associateBy { it.path } }
+
+    val selectedChapterCount = state.cacheItemsToDelete.count { it !in allSeriesPaths }
+    val selectedEmptySeriesCount = state.cacheItemsToDelete.count {
+        it in allSeriesPaths && seriesMap[it]?.chapters?.isEmpty() == true
+    }
+    val displayCount = selectedChapterCount + selectedEmptySeriesCount
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { onEvent(Event.Navigate(Screen.SETTINGS)) }) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back to Settings",
-                    tint = MaterialTheme.colors.onBackground
-                )
-            }
             Text(
                 text = "Cached Downloads",
                 style = MaterialTheme.typography.h5,
@@ -97,7 +98,7 @@ fun CacheViewerScreen(state: UiState, onEvent: (Event) -> Unit) {
             ) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Delete Selected (${state.cacheItemsToDelete.size})")
+                Text("Delete Selected ($displayCount)")
             }
         }
     }
@@ -141,6 +142,8 @@ private fun CacheSeriesItem(
     val selectedChaptersInSeries = remember(selectedPaths, seriesChapterPaths) {
         seriesChapterPaths.intersect(selectedPaths)
     }
+    val isSeriesChecked = selectedPaths.contains(series.path) ||
+            (seriesChapterPaths.isNotEmpty() && selectedPaths.containsAll(seriesChapterPaths))
 
     Card(elevation = 4.dp) {
         Column {
@@ -151,7 +154,7 @@ private fun CacheSeriesItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
-                    checked = seriesChapterPaths.isNotEmpty() && selectedPaths.containsAll(seriesChapterPaths),
+                    checked = isSeriesChecked,
                     onCheckedChange = { onEvent(Event.Cache.SelectAllChapters(series.path, it)) }
                 )
                 Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
@@ -286,13 +289,18 @@ private fun CacheSeriesItem(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onEvent(Event.Cache.ToggleItemForDeletion(chapter.path)) }
+                                    .clickable {
+                                        val currentlySelected = selectedPaths.contains(chapter.path)
+                                        onEvent(Event.Cache.SetItemForDeletion(chapter.path, !currentlySelected))
+                                    }
                                     .padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
                                     checked = selectedPaths.contains(chapter.path),
-                                    onCheckedChange = { onEvent(Event.Cache.ToggleItemForDeletion(chapter.path)) }
+                                    onCheckedChange = { isSelected ->
+                                        onEvent(Event.Cache.SetItemForDeletion(chapter.path, isSelected))
+                                    }
                                 )
                                 Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -16,9 +16,13 @@ internal fun MainViewModel.handleCacheEvent(event: Event.Cache) {
             if (event.sortState == null) newSortMap.remove(event.seriesPath) else newSortMap[event.seriesPath] = event.sortState
             it.copy(cacheSortState = newSortMap)
         }
-        is Event.Cache.ToggleItemForDeletion -> _state.update {
+        is Event.Cache.SetItemForDeletion -> _state.update {
             val newSet = it.cacheItemsToDelete.toMutableSet()
-            if (newSet.contains(event.path)) newSet.remove(event.path) else newSet.add(event.path)
+            if (event.select) {
+                newSet.add(event.path)
+            } else {
+                newSet.remove(event.path)
+            }
             it.copy(cacheItemsToDelete = newSet)
         }
         is Event.Cache.ToggleSeries -> _state.update {
@@ -37,8 +41,10 @@ internal fun MainViewModel.handleCacheEvent(event: Event.Cache) {
         Event.Cache.RequestClearAll -> _state.update { it.copy(showClearCacheDialog = true) }
         Event.Cache.RequestDeleteSelected -> _state.update { it.copy(showDeleteCacheConfirmationDialog = true) }
         Event.Cache.SelectAll -> _state.update {
-            val allChapterPaths = it.cacheContents.flatMap { series -> series.chapters.map { chapter -> chapter.path } }
-            it.copy(cacheItemsToDelete = allChapterPaths.toSet())
+            val allPaths = it.cacheContents.flatMap { series ->
+                series.chapters.map { chapter -> chapter.path } + series.path
+            }
+            it.copy(cacheItemsToDelete = allPaths.toSet())
         }
     }
 }
@@ -46,12 +52,12 @@ internal fun MainViewModel.handleCacheEvent(event: Event.Cache) {
 private fun MainViewModel.onSelectAllCachedChapters(seriesPath: String, select: Boolean) {
     _state.update { uiState ->
         val series = uiState.cacheContents.find { it.path == seriesPath } ?: return@update uiState
-        val chapterPaths = series.chapters.map { it.path }.toSet()
+        val pathsToModify = series.chapters.map { it.path }.toSet() + series.path
         val currentSelection = uiState.cacheItemsToDelete.toMutableSet()
         if (select) {
-            currentSelection.addAll(chapterPaths)
+            currentSelection.addAll(pathsToModify)
         } else {
-            currentSelection.removeAll(chapterPaths)
+            currentSelection.removeAll(pathsToModify)
         }
         uiState.copy(cacheItemsToDelete = currentSelection)
     }

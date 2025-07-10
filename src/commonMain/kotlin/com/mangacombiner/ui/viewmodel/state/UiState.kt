@@ -66,7 +66,8 @@ data class UiState(
     val showBrokenDownloadDialog: Boolean = false,
     val showCompletionDialog: Boolean = false,
     val lastDownloadResult: DownloadResult? = null,
-    val chaptersToPreselect: Set<String> = emptySet()
+    val chaptersToPreselect: Set<String> = emptySet(),
+    val isOfflineMode: Boolean = false
 )
 
 internal fun UiState.toAppSettings() = AppSettings(
