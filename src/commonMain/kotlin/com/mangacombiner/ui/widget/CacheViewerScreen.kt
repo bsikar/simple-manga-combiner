@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.service.CachedSeries
@@ -100,7 +101,7 @@ fun CacheViewerScreen(state: UiState, onEvent: (Event) -> Unit) {
             ) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Delete Selected (${state.cacheItemsToDelete.size})", softWrap = false)
+                Text("Delete Selected (${state.cacheItemsToDelete.size})")
             }
         }
     }
@@ -154,7 +155,11 @@ private fun CacheSeriesItem(
                     onCheckedChange = { onEvent(Event.Cache.SelectAllChapters(series.path, !isSeriesSelected)) }
                 )
                 Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                    Text(series.seriesName, style = MaterialTheme.typography.h6)
+                    Text(
+                        series.seriesName,
+                        style = MaterialTheme.typography.subtitle1,
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(
                         "${series.chapters.size} chapter(s) - ${series.totalSizeFormatted}",
                         style = MaterialTheme.typography.caption
@@ -217,8 +222,8 @@ private fun CacheSeriesItem(
                 Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 16.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { onEvent(Event.Cache.SelectAllChapters(series.path, true)) }) { Text("Select All") }
-                            Button(onClick = { onEvent(Event.Cache.SelectAllChapters(series.path, false)) }) { Text("Deselect All") }
+                            Button(onClick = { onEvent(Event.Cache.SelectAllChapters(series.path, true)) }) { Text("Select All", softWrap = false) }
+                            Button(onClick = { onEvent(Event.Cache.SelectAllChapters(series.path, false)) }) { Text("Deselect All", softWrap = false) }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
@@ -244,17 +249,17 @@ private fun CacheSeriesItem(
                                 onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.SELECT)) },
                                 enabled = rangeIsSet,
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Select") }
+                            ) { Text("Select", softWrap = false) }
                             Button(
                                 onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.DESELECT)) },
                                 enabled = rangeIsSet,
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Deselect") }
+                            ) { Text("Deselect", softWrap = false) }
                             Button(
                                 onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.TOGGLE)) },
                                 enabled = rangeIsSet,
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Toggle") }
+                            ) { Text("Toggle", softWrap = false) }
                         }
                     }
 
@@ -278,16 +283,28 @@ private fun CacheSeriesItem(
 
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         chaptersToDisplay.forEachIndexed { index, chapter ->
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 16.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onEvent(Event.Cache.ToggleItemForDeletion(chapter.path)) }
+                                    .padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Checkbox(
                                     checked = selectedPaths.contains(chapter.path),
                                     onCheckedChange = { onEvent(Event.Cache.ToggleItemForDeletion(chapter.path)) }
                                 )
-                                Text("${index + 1}. ${chapter.name}", modifier = Modifier.weight(1f))
-                                Text(
-                                    "${chapter.pageCount} pages (${chapter.sizeFormatted})",
-                                    style = MaterialTheme.typography.body2
-                                )
+                                Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                                    Text(
+                                        text = "${index + 1}. ${chapter.name}",
+                                        style = MaterialTheme.typography.body1
+                                    )
+                                    Text(
+                                        text = "${chapter.pageCount} pages (${chapter.sizeFormatted})",
+                                        style = MaterialTheme.typography.body2,
+                                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+                                    )
+                                }
                             }
                         }
                     }

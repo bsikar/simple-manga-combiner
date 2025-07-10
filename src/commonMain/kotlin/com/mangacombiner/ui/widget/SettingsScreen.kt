@@ -203,20 +203,28 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     softWrap = true
                 )
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     Button(
-                        onClick = { onEvent(Event.Navigate(Screen.CACHE_VIEWER)) },
+                        onClick = {
+                            onEvent(Event.Cache.RefreshView)
+                            onEvent(Event.Navigate(Screen.CACHE_VIEWER))
+                        },
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Text("View Cached Downloads", softWrap = false)
+                        Text("View Cache")
                     }
                     Button(
                         onClick = { onEvent(Event.Cache.RequestClearAll) },
                         colors = ButtonDefaults.buttonColors(
                             backgroundColor = MaterialTheme.colors.error,
                             contentColor = MaterialTheme.colors.onError
-                        )
+                        ),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Text("Clear All Cache", softWrap = false)
+                        Text("Clear Cache")
                     }
                 }
             }
