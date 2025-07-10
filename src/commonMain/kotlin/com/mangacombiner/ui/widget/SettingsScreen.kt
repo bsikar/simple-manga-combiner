@@ -1,6 +1,5 @@
 package com.mangacombiner.ui.widget
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,8 +20,6 @@ import com.mangacombiner.util.AppVersion
 @Composable
 fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     var themeDropdownExpanded by remember { mutableStateOf(false) }
-    var systemLightThemeDropdownExpanded by remember { mutableStateOf(false) }
-    var systemDarkThemeDropdownExpanded by remember { mutableStateOf(false) }
     var outputDropdownExpanded by remember { mutableStateOf(false) }
     var fontSizeDropdownExpanded by remember { mutableStateOf(false) }
     val outputLocations = listOf("Downloads", "Documents", "Desktop", "Custom").filter {
@@ -30,7 +27,6 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
         !(it == "Desktop" && System.getProperty("java.runtime.name")?.contains("Android") == true)
     }
     val themeOptions = remember { AppTheme.values().toList() }
-    val systemThemeOptions = remember { themeOptions.filter { it != AppTheme.SYSTEM } }
     val fontPresets = listOf("XX-Small", "X-Small", "Small", "Medium", "Large", "X-Large", "XX-Large")
 
     Column(
@@ -61,59 +57,6 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                                     onEvent(Event.Settings.UpdateTheme(theme))
                                     themeDropdownExpanded = false
                                 }) { Text(theme.name.lowercase().replaceFirstChar { it.titlecase() }) }
-                            }
-                        }
-                    }
-                }
-
-                AnimatedVisibility(visible = state.theme == AppTheme.SYSTEM) {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Light Mode Theme:", style = MaterialTheme.typography.body1)
-                            Box {
-                                OutlinedButton(onClick = { systemLightThemeDropdownExpanded = true }) {
-                                    Text(state.systemLightTheme.name.lowercase().replaceFirstChar { it.titlecase() })
-                                    Icon(Icons.Default.ArrowDropDown, "Light Theme")
-                                }
-                                DropdownMenu(
-                                    expanded = systemLightThemeDropdownExpanded,
-                                    onDismissRequest = { systemLightThemeDropdownExpanded = false }
-                                ) {
-                                    systemThemeOptions.forEach { theme ->
-                                        DropdownMenuItem(onClick = {
-                                            onEvent(Event.Settings.UpdateSystemLightTheme(theme))
-                                            systemLightThemeDropdownExpanded = false
-                                        }) { Text(theme.name.lowercase().replaceFirstChar { it.titlecase() }) }
-                                    }
-                                }
-                            }
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Dark Mode Theme:", style = MaterialTheme.typography.body1)
-                            Box {
-                                OutlinedButton(onClick = { systemDarkThemeDropdownExpanded = true }) {
-                                    Text(state.systemDarkTheme.name.lowercase().replaceFirstChar { it.titlecase() })
-                                    Icon(Icons.Default.ArrowDropDown, "Dark Theme")
-                                }
-                                DropdownMenu(
-                                    expanded = systemDarkThemeDropdownExpanded,
-                                    onDismissRequest = { systemDarkThemeDropdownExpanded = false }
-                                ) {
-                                    systemThemeOptions.forEach { theme ->
-                                        DropdownMenuItem(onClick = {
-                                            onEvent(Event.Settings.UpdateSystemDarkTheme(theme))
-                                            systemDarkThemeDropdownExpanded = false
-                                        }) { Text(theme.name.lowercase().replaceFirstChar { it.titlecase() }) }
-                                    }
-                                }
                             }
                         }
                     }

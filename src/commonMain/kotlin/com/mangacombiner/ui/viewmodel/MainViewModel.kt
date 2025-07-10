@@ -80,8 +80,6 @@ class MainViewModel(
                 cachePath = platformProvider.getTmpDir(),
                 zoomFactor = savedSettings.zoomFactor,
                 fontSizePreset = savedSettings.fontSizePreset,
-                systemLightTheme = savedSettings.systemLightTheme,
-                systemDarkTheme = savedSettings.systemDarkTheme,
                 outputPath = initialOutputPath
             )
         )

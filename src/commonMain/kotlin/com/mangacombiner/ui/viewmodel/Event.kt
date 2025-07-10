@@ -13,8 +13,6 @@ sealed interface Event {
 
     sealed interface Settings : Event {
         data class UpdateTheme(val theme: AppTheme) : Settings
-        data class UpdateSystemLightTheme(val theme: AppTheme) : Settings
-        data class UpdateSystemDarkTheme(val theme: AppTheme) : Settings
         data class UpdateFontSizePreset(val preset: String) : Settings
         data class UpdateDefaultOutputLocation(val location: String) : Settings
         data class ToggleDebugLog(val isEnabled: Boolean) : Settings

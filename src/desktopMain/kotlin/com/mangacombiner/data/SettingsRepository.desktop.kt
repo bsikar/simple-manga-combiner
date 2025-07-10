@@ -21,8 +21,6 @@ actual class SettingsRepository {
         private const val LOG_AUTOSCROLL = "log_autoscroll"
         private const val ZOOM_FACTOR = "zoom_factor"
         private const val FONT_SIZE_PRESET = "font_size_preset"
-        private const val SYSTEM_LIGHT_THEME = "system_light_theme"
-        private const val SYSTEM_DARK_THEME = "system_dark_theme"
     }
 
     actual fun saveSettings(settings: AppSettings) {
@@ -39,8 +37,6 @@ actual class SettingsRepository {
         prefs.putBoolean(LOG_AUTOSCROLL, settings.logAutoscrollEnabled)
         prefs.putFloat(ZOOM_FACTOR, settings.zoomFactor)
         prefs.put(FONT_SIZE_PRESET, settings.fontSizePreset)
-        prefs.put(SYSTEM_LIGHT_THEME, settings.systemLightTheme.name)
-        prefs.put(SYSTEM_DARK_THEME, settings.systemDarkTheme.name)
     }
 
     actual fun loadSettings(): AppSettings {
@@ -57,9 +53,7 @@ actual class SettingsRepository {
             debugLog = prefs.getBoolean(DEBUG_LOG, false),
             logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, true),
             zoomFactor = prefs.getFloat(ZOOM_FACTOR, 1.0f),
-            fontSizePreset = prefs.get(FONT_SIZE_PRESET, "Medium"),
-            systemLightTheme = AppTheme.valueOf(prefs.get(SYSTEM_LIGHT_THEME, AppTheme.LIGHT.name)),
-            systemDarkTheme = AppTheme.valueOf(prefs.get(SYSTEM_DARK_THEME, AppTheme.DARK.name))
+            fontSizePreset = prefs.get(FONT_SIZE_PRESET, "Medium")
         )
     }
 }

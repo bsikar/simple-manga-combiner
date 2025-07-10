@@ -1,7 +1,6 @@
 package com.mangacombiner.ui.viewmodel.handler
 
 import com.mangacombiner.model.AppSettings
-import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
@@ -13,12 +12,6 @@ import kotlinx.coroutines.launch
 internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
     when (event) {
         is Event.Settings.UpdateTheme -> _state.update { it.copy(theme = event.theme) }
-        is Event.Settings.UpdateSystemLightTheme -> if (event.theme != AppTheme.SYSTEM) {
-            _state.update { it.copy(systemLightTheme = event.theme) }
-        }
-        is Event.Settings.UpdateSystemDarkTheme -> if (event.theme != AppTheme.SYSTEM) {
-            _state.update { it.copy(systemDarkTheme = event.theme) }
-        }
         is Event.Settings.UpdateFontSizePreset -> _state.update { it.copy(fontSizePreset = event.preset) }
         is Event.Settings.UpdateDefaultOutputLocation -> onUpdateDefaultOutputLocation(event.location)
         is Event.Settings.ToggleDebugLog -> onToggleDebugLog(event.isEnabled)
@@ -73,9 +66,7 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
             debugLog = defaultSettings.debugLog,
             logAutoscrollEnabled = defaultSettings.logAutoscrollEnabled,
             zoomFactor = defaultSettings.zoomFactor,
-            fontSizePreset = defaultSettings.fontSizePreset,
-            systemLightTheme = defaultSettings.systemLightTheme,
-            systemDarkTheme = defaultSettings.systemDarkTheme
+            fontSizePreset = defaultSettings.fontSizePreset
         )
     }
     Logger.logInfo("All settings restored to default values.")

@@ -50,8 +50,6 @@ data class UiState(
     val cachePath: String = "",
     val zoomFactor: Float = 1.0f,
     val fontSizePreset: String = "Medium",
-    val systemLightTheme: AppTheme = AppTheme.LIGHT,
-    val systemDarkTheme: AppTheme = AppTheme.DARK,
     val showRestoreDefaultsDialog: Boolean = false,
     val outputFileExists: Boolean = false,
     val showOverwriteConfirmationDialog: Boolean = false,
@@ -83,7 +81,5 @@ internal fun UiState.toAppSettings() = AppSettings(
     debugLog = this.debugLog,
     logAutoscrollEnabled = this.logAutoscrollEnabled,
     zoomFactor = this.zoomFactor,
-    fontSizePreset = this.fontSizePreset,
-    systemLightTheme = this.systemLightTheme,
-    systemDarkTheme = this.systemDarkTheme
+    fontSizePreset = this.fontSizePreset
 )

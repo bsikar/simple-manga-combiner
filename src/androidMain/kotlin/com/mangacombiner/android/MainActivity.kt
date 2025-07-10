@@ -87,11 +87,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             CompositionLocalProvider(LocalDensity provides newDensity) {
-                AppTheme(
-                    settingsTheme = state.theme,
-                    systemLightTheme = state.systemLightTheme,
-                    systemDarkTheme = state.systemDarkTheme
-                ) {
+                AppTheme(settingsTheme = state.theme) {
                     MainScreen(viewModel)
                 }
             }

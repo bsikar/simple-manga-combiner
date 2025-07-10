@@ -17,7 +17,5 @@ data class AppSettings(
     val debugLog: Boolean = false,
     val logAutoscrollEnabled: Boolean = true,
     val zoomFactor: Float = 1.0f,
-    val fontSizePreset: String = "Medium",
-    val systemLightTheme: AppTheme = AppTheme.LIGHT,
-    val systemDarkTheme: AppTheme = AppTheme.DARK
+    val fontSizePreset: String = "Medium"
 )

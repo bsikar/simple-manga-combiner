@@ -1,6 +1,5 @@
 package com.mangacombiner.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.darkColors
 import androidx.compose.material.lightColors
@@ -8,7 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 enum class AppTheme {
-    LIGHT, DARK, MIDNIGHT, FOREST, OCEAN, SYSTEM
+    LIGHT, DARK, MIDNIGHT, FOREST, OCEAN
 }
 
 private val LightColorPalette = lightColors(
@@ -75,29 +74,14 @@ private val OceanColorPalette = lightColors(
 @Composable
 fun AppTheme(
     settingsTheme: AppTheme,
-    systemLightTheme: AppTheme,
-    systemDarkTheme: AppTheme,
     content: @Composable () -> Unit
 ) {
-    val isSystemDark = isSystemInDarkTheme()
-
-    // Determine the active theme based on user settings
-    val activeTheme = if (settingsTheme == AppTheme.SYSTEM) {
-        if (isSystemDark) systemDarkTheme else systemLightTheme
-    } else {
-        settingsTheme
-    }
-
-    // Get the color palette for the active theme
-    val colors = when (activeTheme) {
+    val colors = when (settingsTheme) {
         AppTheme.LIGHT -> LightColorPalette
         AppTheme.OCEAN -> OceanColorPalette
         AppTheme.DARK -> DarkColorPalette
         AppTheme.MIDNIGHT -> MidnightColorPalette
         AppTheme.FOREST -> ForestColorPalette
-        // This case should not be reachable if the settings UI prevents saving 'SYSTEM'
-        // for system-specific themes. But as a fallback, we handle it.
-        AppTheme.SYSTEM -> if (isSystemDark) DarkColorPalette else LightColorPalette
     }
 
     MaterialTheme(
