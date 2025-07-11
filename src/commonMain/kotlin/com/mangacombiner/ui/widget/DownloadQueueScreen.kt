@@ -32,7 +32,18 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         // --- Header and Global Controls ---
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Download Queue", style = MaterialTheme.typography.h5, modifier = Modifier.weight(1f))
+            Text("Download Queue", style = MaterialTheme.typography.h6, modifier = Modifier.weight(1f))
+
+            if (state.isQueueGloballyPaused) {
+                TextButton(onClick = { onEvent(Event.Queue.ResumeAll) }) {
+                    Text("Resume All")
+                }
+            } else if (state.downloadQueue.any { !it.isIndividuallyPaused && it.status !in listOf("Completed", "Queued", "Cancelled") && !it.status.startsWith("Error") }) {
+                TextButton(onClick = { onEvent(Event.Queue.PauseAll) }) {
+                    Text("Pause All")
+                }
+            }
+
             TextButton(onClick = { onEvent(Event.Queue.ClearCompleted) }) {
                 Text("Clear Completed")
             }
@@ -168,6 +179,7 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
                 itemsIndexed(state.downloadQueue, key = { _, item -> item.id }) { index, job ->
                     DownloadJobItem(
                         job = job,
+                        index = index,
                         onEvent = onEvent,
                         isFirst = index == 0,
                         isLast = index == state.downloadQueue.lastIndex
@@ -179,13 +191,16 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
 }
 
 @Composable
-private fun DownloadJobItem(job: DownloadJob, onEvent: (Event) -> Unit, isFirst: Boolean, isLast: Boolean) {
+private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Unit, isFirst: Boolean, isLast: Boolean) {
     val animatedProgress by animateFloatAsState(
         targetValue = job.progress,
         animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
     )
-    val isFinished = job.status == "Completed" || job.status.startsWith("Error") || job.status == "Cancelled"
-    val isRunning = job.status.contains("Downloading", ignoreCase = true)
+    val isFinished = job.status == "Completed" || job.status.startsWith("Error", true) || job.status == "Cancelled"
+    val isRunning = !isFinished && (
+            job.status.startsWith("Downloading", true) ||
+                    job.status.startsWith("Starting", true) ||
+                    job.status.startsWith("Packaging", true))
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -199,11 +214,11 @@ private fun DownloadJobItem(job: DownloadJob, onEvent: (Event) -> Unit, isFirst:
             Column {
                 IconButton(
                     onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.UP)) },
-                    enabled = !isFirst && !isRunning
+                    enabled = !isFirst
                 ) { Icon(Icons.Default.KeyboardArrowUp, "Move Up") }
                 IconButton(
                     onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.DOWN)) },
-                    enabled = !isLast && !isRunning
+                    enabled = !isLast
                 ) { Icon(Icons.Default.KeyboardArrowDown, "Move Down") }
             }
 
@@ -235,22 +250,36 @@ private fun DownloadJobItem(job: DownloadJob, onEvent: (Event) -> Unit, isFirst:
                             )
                         }
                     }
-                    PlatformTooltip("Cancel Job") {
+                    PlatformTooltip(if (isFinished) "Remove From List" else "Cancel Job") {
                         IconButton(
                             onClick = { onEvent(Event.Queue.CancelJob(job.id)) },
                             modifier = Modifier.size(36.dp)
-                        ) { Icon(Icons.Default.Cancel, "Cancel Job") }
+                        ) {
+                            Icon(
+                                if (isFinished) Icons.Default.Delete else Icons.Default.Cancel,
+                                contentDescription = if (isFinished) "Remove Job" else "Cancel Job"
+                            )
+                        }
                     }
                 }
 
-                // Title (Final Filename)
-                Text(
-                    text = FileUtils.sanitizeFilename(job.title),
-                    style = MaterialTheme.typography.body1,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "#${index + 1}",
+                        style = MaterialTheme.typography.h6,
+                        color = MaterialTheme.colors.primary.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = FileUtils.sanitizeFilename(job.title),
+                        style = MaterialTheme.typography.body1,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
                 Spacer(Modifier.height(8.dp))
 

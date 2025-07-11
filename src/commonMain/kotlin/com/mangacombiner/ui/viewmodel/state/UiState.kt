@@ -11,7 +11,7 @@ import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.OperationState
 
 data class UiState(
-    val currentScreen: Screen = Screen.DOWNLOAD,
+    val currentScreen: Screen = Screen.SEARCH,
     val theme: AppTheme = AppTheme.LIGHT,
     val seriesUrl: String = "",
     val customTitle: String = "",
@@ -68,7 +68,8 @@ data class UiState(
     val showCompletionDialog: Boolean = false,
     val lastDownloadResult: DownloadResult? = null,
     val chaptersToPreselect: Set<String> = emptySet(),
-    val isOfflineMode: Boolean = false
+    val isOfflineMode: Boolean = false,
+    val isQueueGloballyPaused: Boolean = false
 )
 
 internal fun UiState.toAppSettings() = AppSettings(

@@ -16,7 +16,6 @@ import com.mangacombiner.ui.viewmodel.state.toAppSettings
 import com.mangacombiner.util.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.sync.Semaphore
 import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -93,7 +92,6 @@ class MainViewModel(
         state = _state.asStateFlow()
         Logger.logDebug { "ViewModel initialized with loaded settings." }
         setupListeners()
-        processQueue()
     }
 
     private fun setupListeners() {
@@ -124,6 +122,52 @@ class MainViewModel(
             jobUpdateEvents.collect { event ->
                 handleJobUpdateEvent(event)
             }
+        }
+        // Reactive Queue Processor
+        viewModelScope.launch(Dispatchers.IO) {
+            Logger.logDebug { "Queue processor listener started." }
+            state.map { Triple(it.batchWorkers, it.downloadQueue, it.isQueueGloballyPaused) }
+                .distinctUntilChanged()
+                .collect { (batchWorkers, queue, isQueuePaused) ->
+
+                    if (isQueuePaused) {
+                        return@collect
+                    }
+
+                    val runningJobIds = runningJobCoroutines.keys.toSet()
+
+                    // 1. Determine the ideal set of jobs that should be active ("Top N" rule).
+                    val desiredActiveJobIds = queue
+                        .filterNot { it.isIndividuallyPaused || it.status == "Completed" || it.status.startsWith("Error") || it.status == "Cancelled" }
+                        .take(batchWorkers)
+                        .map { it.id }
+                        .toSet()
+
+                    // 2. Pause any running job that is NOT in the desired set.
+                    (runningJobIds - desiredActiveJobIds).forEach { jobIdToPause ->
+                        val job = queue.find { it.id == jobIdToPause }
+                        if (job != null && !job.isIndividuallyPaused) {
+                            Logger.logDebug { "Pausing job due to lower priority: ${job.title}" }
+                            handleQueueEvent(Event.Queue.TogglePauseJob(job.id))
+                        }
+                    }
+
+                    // 3. Activate any desired job that is not currently active.
+                    desiredActiveJobIds.forEach { jobIdToActivate ->
+                        val job = queue.find { it.id == jobIdToActivate }
+                        if (job != null) {
+                            if (job.isIndividuallyPaused) {
+                                // It's paused but should be active -> resume it.
+                                Logger.logDebug { "Resuming job due to high priority: ${job.title}" }
+                                handleQueueEvent(Event.Queue.TogglePauseJob(job.id))
+                            } else if (job.id !in runningJobIds && job.status == "Queued") {
+                                // It's not running at all -> start it.
+                                Logger.logDebug { "Starting job due to high priority: ${job.title}" }
+                                startJob(job)
+                            }
+                        }
+                    }
+                }
         }
         Logger.logDebug { "ViewModel listeners set up." }
     }
@@ -616,43 +660,33 @@ class MainViewModel(
         Logger.logInfo("Updated settings for job: ${event.title}")
     }
 
-    private fun processQueue() {
-        viewModelScope.launch(Dispatchers.IO) {
-            Logger.logDebug { "Queue processor started." }
-            val semaphore = Semaphore(state.value.batchWorkers)
+    private fun startJob(job: DownloadJob) {
+        if (runningJobCoroutines.containsKey(job.id)) return
 
-            state.collect { currentState ->
-                val nextJob = currentState.downloadQueue.firstOrNull { it.status == "Queued" && !it.isIndividuallyPaused }
-
-                if (nextJob != null) {
-                    if (semaphore.tryAcquire()) {
-                        Logger.logDebug { "Acquired semaphore for job ${nextJob.id}. Starting..." }
-                        jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(nextJob.id, "Downloading", 0f))
-                        val jobCoroutine = launch {
-                            try {
-                                val op = queuedOperationContext[nextJob.id]
-                                if (op != null) {
-                                    runQueuedOperation(op)
-                                } else {
-                                    jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(nextJob.id, "Error: Context not found", null))
-                                    Logger.logError("Could not find operation context for job ${nextJob.id}")
-                                }
-                            } finally {
-                                semaphore.release()
-                                runningJobCoroutines.remove(nextJob.id)
-                                Logger.logDebug { "Job ${nextJob.id} finished. Releasing semaphore." }
-                            }
-                        }
-                        runningJobCoroutines[nextJob.id] = jobCoroutine
-                    }
+        jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(job.id, "Starting", 0f))
+        val jobCoroutine = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val op = queuedOperationContext[job.id]
+                if (op != null) {
+                    runQueuedOperation(op)
+                } else {
+                    jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(job.id, "Error: Context not found", null))
+                    Logger.logError("Could not find operation context for job ${job.id}")
                 }
+            } finally {
+                runningJobCoroutines.remove(job.id)
+                Logger.logDebug { "Coroutine for job ${job.id} finished. Running jobs: ${runningJobCoroutines.size}" }
             }
         }
+        runningJobCoroutines[job.id] = jobCoroutine
     }
 
     private suspend fun runQueuedOperation(op: QueuedOperation) {
         val webChaptersCompleted = AtomicInteger(0)
         try {
+            val chaptersFromCache = op.chapters.filter { it.selectedSource == ChapterSource.CACHE }
+            jobUpdateEvents.tryEmit(JobUpdateEvent.DownloadedChaptersChanged(op.jobId, chaptersFromCache.size))
+
             Logger.logInfo("--- Starting Queued Job: ${op.customTitle} (${op.jobId}) ---")
             jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Starting...", 0.05f))
             val tempDir = File(platformProvider.getTmpDir())
@@ -664,7 +698,6 @@ class MainViewModel(
             }
 
             val chaptersToDownload = op.chapters.filter { it.selectedSource == ChapterSource.WEB }
-            val chaptersFromCache = op.chapters.filter { it.selectedSource == ChapterSource.CACHE }
             val allChapterFolders = chaptersFromCache
                 .map { File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)) }
                 .toMutableList()
@@ -683,7 +716,10 @@ class MainViewModel(
                     tempDir = tempDir,
                     getUserAgents = { op.userAgents },
                     outputPath = op.outputPath,
-                    isPaused = { state.value.downloadQueue.find { it.id == op.jobId }?.isIndividuallyPaused == true },
+                    isPaused = {
+                        val currentJob = state.value.downloadQueue.find { it.id == op.jobId }
+                        state.value.isQueueGloballyPaused || currentJob?.isIndividuallyPaused == true
+                    },
                     dryRun = false,
                     onProgressUpdate = { chapterProgress, status ->
                         val job = state.value.downloadQueue.find { it.id == op.jobId }

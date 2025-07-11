@@ -19,8 +19,42 @@ internal fun MainViewModel.handleQueueEvent(event: Event.Queue) {
         }
         is Event.Queue.TogglePauseJob -> togglePauseJob(event.jobId)
         is Event.Queue.MoveJob -> moveJob(event.jobId, event.direction)
+        Event.Queue.PauseAll -> pauseAllJobs()
+        Event.Queue.ResumeAll -> resumeAllJobs()
     }
 }
+
+private fun MainViewModel.pauseAllJobs() {
+    _state.update { currentState ->
+        val updatedQueue = currentState.downloadQueue.map { job ->
+            val isFinished =
+                job.status == "Completed" || job.status.startsWith("Error") || job.status == "Cancelled"
+            if (!isFinished && !job.isIndividuallyPaused) {
+                job.copy(status = "Paused")
+            } else {
+                job
+            }
+        }
+        currentState.copy(
+            isQueueGloballyPaused = true,
+            downloadQueue = updatedQueue,
+        )
+    }
+}
+
+private fun MainViewModel.resumeAllJobs() {
+    _state.update { currentState ->
+        val updatedQueue = currentState.downloadQueue.map { job ->
+            if (job.status == "Paused" && !job.isIndividuallyPaused) {
+                job.copy(status = "Queued")
+            } else {
+                job
+            }
+        }
+        currentState.copy(isQueueGloballyPaused = false, downloadQueue = updatedQueue)
+    }
+}
+
 
 private fun MainViewModel.togglePauseJob(jobId: String) {
     _state.update { currentState ->
@@ -28,12 +62,14 @@ private fun MainViewModel.togglePauseJob(jobId: String) {
             downloadQueue = currentState.downloadQueue.map { job ->
                 if (job.id == jobId) {
                     val newPausedState = !job.isIndividuallyPaused
-                    // Let the running job itself update its status to "Paused".
-                    // If not running, we can toggle between "Queued" and "Paused".
-                    val newStatus = if (job.status == "Queued" || job.status == "Paused") {
-                        if (newPausedState) "Paused" else "Queued"
+                    val newStatus: String
+                    if (newPausedState) {
+                        // If we are pausing it, always set status to "Paused" unless it's already finished.
+                        val isFinished = job.status == "Completed" || job.status.startsWith("Error") || job.status == "Cancelled"
+                        newStatus = if (isFinished) job.status else "Paused"
                     } else {
-                        job.status // Don't change status of a running job here
+                        // If we are resuming, set it back to "Queued". The collector will start it if it has priority.
+                        newStatus = "Queued"
                     }
                     job.copy(isIndividuallyPaused = newPausedState, status = newStatus)
                 } else {

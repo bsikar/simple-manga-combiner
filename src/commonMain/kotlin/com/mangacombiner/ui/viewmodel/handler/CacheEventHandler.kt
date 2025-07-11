@@ -41,8 +41,7 @@ internal fun MainViewModel.handleCacheEvent(event: Event.Cache) {
         Event.Cache.RequestClearAll -> _state.update { it.copy(showClearCacheDialog = true) }
         Event.Cache.RequestDeleteSelected -> _state.update { it.copy(showDeleteCacheConfirmationDialog = true) }
         Event.Cache.SelectAll -> _state.update {
-            val allPaths = it.cacheContents.flatMap { series ->
-                series.chapters.map { chapter -> chapter.path } + series.path
+            val allPaths = it.cacheContents.flatMap { series -> series.chapters.map { chapter -> chapter.path }
             }
             it.copy(cacheItemsToDelete = allPaths.toSet())
         }
@@ -52,7 +51,7 @@ internal fun MainViewModel.handleCacheEvent(event: Event.Cache) {
 private fun MainViewModel.onSelectAllCachedChapters(seriesPath: String, select: Boolean) {
     _state.update { uiState ->
         val series = uiState.cacheContents.find { it.path == seriesPath } ?: return@update uiState
-        val pathsToModify = series.chapters.map { it.path }.toSet() + series.path
+        val pathsToModify = series.chapters.map { it.path }.toSet()
         val currentSelection = uiState.cacheItemsToDelete.toMutableSet()
         if (select) {
             currentSelection.addAll(pathsToModify)

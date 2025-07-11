@@ -7,7 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 enum class AppTheme {
-    LIGHT, DARK, MIDNIGHT, FOREST, OCEAN
+    LIGHT, DARK, MIDNIGHT, FOREST, OCEAN, GRUVBOX_DARK, GRUVBOX_LIGHT
 }
 
 private val LightColorPalette = lightColors(
@@ -70,6 +70,34 @@ private val OceanColorPalette = lightColors(
     onSurface = Color.Black,
 )
 
+private val GruvboxDarkColorPalette = darkColors(
+    primary = Color(0xFF83a598),
+    primaryVariant = Color(0xFF458588),
+    secondary = Color(0xFFb16286),
+    background = Color(0xFF282828),
+    surface = Color(0xFF3c3836),
+    error = Color(0xFFfb4934),
+    onPrimary = Color.Black,
+    onSecondary = Color.Black,
+    onBackground = Color(0xFFebdbb2),
+    onSurface = Color(0xFFebdbb2),
+    onError = Color.Black
+)
+
+private val GruvboxLightColorPalette = lightColors(
+    primary = Color(0xFF458588),
+    primaryVariant = Color(0xFF076678),
+    secondary = Color(0xFFb16286),
+    background = Color(0xFFfbf1c7),
+    surface = Color(0xFFebdbb2),
+    error = Color(0xFFcc241d),
+    onPrimary = Color.White,
+    onSecondary = Color.White,
+    onBackground = Color(0xFF3c3836),
+    onSurface = Color(0xFF3c3836),
+    onError = Color.White
+)
+
 
 @Composable
 fun AppTheme(
@@ -82,6 +110,8 @@ fun AppTheme(
         AppTheme.DARK -> DarkColorPalette
         AppTheme.MIDNIGHT -> MidnightColorPalette
         AppTheme.FOREST -> ForestColorPalette
+        AppTheme.GRUVBOX_DARK -> GruvboxDarkColorPalette
+        AppTheme.GRUVBOX_LIGHT -> GruvboxLightColorPalette
     }
 
     MaterialTheme(

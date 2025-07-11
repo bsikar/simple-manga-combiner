@@ -105,6 +105,8 @@ sealed interface Event {
         enum class MoveDirection { UP, DOWN }
         object Add : Queue
         object ClearCompleted : Queue
+        object PauseAll : Queue
+        object ResumeAll : Queue
         data class RequestEditJob(val jobId: String) : Queue
         data class UpdateJob(
             val jobId: String,

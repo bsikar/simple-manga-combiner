@@ -16,6 +16,7 @@ import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.AppVersion
+import com.mangacombiner.util.titlecase
 
 @Composable
 fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
@@ -45,7 +46,7 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     Text("Theme:", style = MaterialTheme.typography.body1)
                     Box {
                         OutlinedButton(onClick = { themeDropdownExpanded = true }) {
-                            Text(state.theme.name.lowercase().replaceFirstChar { it.titlecase() })
+                            Text(state.theme.name.lowercase().replace('_', ' ').titlecase())
                             Icon(Icons.Default.ArrowDropDown, "Theme")
                         }
                         DropdownMenu(
@@ -56,7 +57,7 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                                 DropdownMenuItem(onClick = {
                                     onEvent(Event.Settings.UpdateTheme(theme))
                                     themeDropdownExpanded = false
-                                }) { Text(theme.name.lowercase().replaceFirstChar { it.titlecase() }) }
+                                }) { Text(theme.name.lowercase().replace('_', ' ').titlecase()) }
                             }
                         }
                     }
