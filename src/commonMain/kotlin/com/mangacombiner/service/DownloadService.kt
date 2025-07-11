@@ -150,7 +150,7 @@ class DownloadService(
 
                         val currentProcessed = processedImagesCount.incrementAndGet()
                         val imageProgress = currentProcessed.toFloat() / imageUrls.size
-                        val statusText = "Downloading: ${chapterTitle.take(30)}... (${(imageProgress * 100).toInt()}%)"
+                        val statusText = "Downloading: ${chapterTitle.take(30)}... ($currentProcessed/${imageUrls.size})"
                         options.onProgressUpdate(imageProgress, statusText)
                     }
                 }

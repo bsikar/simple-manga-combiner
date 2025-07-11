@@ -2,7 +2,6 @@ package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -14,11 +13,13 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.model.DownloadJob
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.UiState
+import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.UserAgent
 import kotlin.math.roundToInt
 
@@ -184,88 +185,100 @@ private fun DownloadJobItem(job: DownloadJob, onEvent: (Event) -> Unit, isFirst:
         animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
     )
     val isFinished = job.status == "Completed" || job.status.startsWith("Error") || job.status == "Cancelled"
-    val isRunning = job.status == "Downloading" || job.status == "Pausing..." || job.status == "Packaging..."
+    val isRunning = job.status.contains("Downloading", ignoreCase = true)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = 2.dp
     ) {
-        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Reorder Controls
-                Column {
-                    IconButton(
-                        onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.UP)) },
-                        enabled = !isFirst
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowUp, "Move Up")
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Reorder Controls
+            Column {
+                IconButton(
+                    onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.UP)) },
+                    enabled = !isFirst && !isRunning
+                ) { Icon(Icons.Default.KeyboardArrowUp, "Move Up") }
+                IconButton(
+                    onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.DOWN)) },
+                    enabled = !isLast && !isRunning
+                ) { Icon(Icons.Default.KeyboardArrowDown, "Move Down") }
+            }
+
+            // Main Content
+            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (!isFinished) {
+                        PlatformTooltip("Edit Job") {
+                            IconButton(
+                                onClick = { onEvent(Event.Queue.RequestEditJob(job.id)) },
+                                modifier = Modifier.size(36.dp)
+                            ) { Icon(Icons.Default.Edit, "Edit Job") }
+                        }
                     }
-                    IconButton(
-                        onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.DOWN)) },
-                        enabled = !isLast
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowDown, "Move Down")
+                    PlatformTooltip(if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job") {
+                        IconButton(
+                            onClick = { onEvent(Event.Queue.TogglePauseJob(job.id)) },
+                            enabled = !isFinished,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                if (job.isIndividuallyPaused || job.status == "Paused") Icons.Default.PlayArrow else Icons.Default.Pause,
+                                contentDescription = if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job"
+                            )
+                        }
+                    }
+                    PlatformTooltip("Cancel Job") {
+                        IconButton(
+                            onClick = { onEvent(Event.Queue.CancelJob(job.id)) },
+                            modifier = Modifier.size(36.dp)
+                        ) { Icon(Icons.Default.Cancel, "Cancel Job") }
                     }
                 }
 
-                // Job Info
-                Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp).clickable {
-                    if (!isFinished) onEvent(Event.Queue.RequestEditJob(job.id))
-                }) {
+                // Title (Final Filename)
+                Text(
+                    text = FileUtils.sanitizeFilename(job.title),
+                    style = MaterialTheme.typography.body1,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                // Progress Bar and Chapter Count
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LinearProgressIndicator(progress = animatedProgress, modifier = Modifier.weight(1f))
                     Text(
-                        text = job.title,
-                        style = MaterialTheme.typography.h6,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = "${job.downloadedChapters}/${job.totalChapters}",
+                        style = MaterialTheme.typography.caption
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "${job.downloadedChapters} / ${job.totalChapters} Chapters",
-                        style = MaterialTheme.typography.body2
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    if (job.progress < 1f && job.status != "Queued" && !isFinished) {
-                        LinearProgressIndicator(
-                            progress = animatedProgress,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        // Spacer to keep height consistent
-                        Spacer(Modifier.height(4.dp))
-                    }
                 }
 
-                // Action Controls
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = job.status,
-                        style = MaterialTheme.typography.caption,
-                        color = when (job.status) {
-                            "Downloading" -> MaterialTheme.colors.primary
-                            "Paused", "Pausing..." -> MaterialTheme.colors.secondary
-                            else -> LocalContentColor.current.copy(alpha = 0.7f)
-                        }
-                    )
-                    Row {
-                        if (!isFinished) {
-                            IconButton(onClick = { onEvent(Event.Queue.TogglePauseJob(job.id)) }) {
-                                Icon(
-                                    if (job.isIndividuallyPaused || job.status == "Paused") Icons.Default.PlayArrow else Icons.Default.Pause,
-                                    if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job"
-                                )
-                            }
-                            IconButton(onClick = { onEvent(Event.Queue.CancelJob(job.id)) }) {
-                                Icon(Icons.Default.Cancel, "Cancel Job")
-                            }
-                        } else {
-                            // Placeholder to maintain layout
-                            Spacer(Modifier.width(96.dp))
-                        }
-                    }
-                }
+                // Detailed Status Text
+                Text(
+                    text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
+                    style = MaterialTheme.typography.caption,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = when {
+                        isRunning -> MaterialTheme.colors.primary
+                        job.status == "Paused" -> MaterialTheme.colors.secondary
+                        else -> LocalContentColor.current.copy(alpha = 0.7f)
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
             }
         }
     }

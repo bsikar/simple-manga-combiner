@@ -26,6 +26,11 @@ import kotlin.coroutines.coroutineContext
 import kotlin.io.path.nameWithoutExtension
 import kotlin.random.Random
 
+private sealed class JobUpdateEvent {
+    data class StatusChanged(val jobId: String, val status: String, val progress: Float?) : JobUpdateEvent()
+    data class DownloadedChaptersChanged(val jobId: String, val newCount: Int) : JobUpdateEvent()
+}
+
 @OptIn(FlowPreview::class)
 class MainViewModel(
     internal val downloadService: DownloadService,
@@ -50,6 +55,7 @@ class MainViewModel(
     internal var activeOperationJob: Job? = null
     private val queuedOperationContext = ConcurrentHashMap<String, QueuedOperation>()
     private val runningJobCoroutines = ConcurrentHashMap<String, Job>()
+    private val jobUpdateEvents = MutableSharedFlow<JobUpdateEvent>(extraBufferCapacity = 128)
 
     init {
         val savedSettings = settingsRepository.loadSettings()
@@ -113,7 +119,28 @@ class MainViewModel(
                 updateOverallProgress()
             }
         }
+        viewModelScope.launch {
+            jobUpdateEvents.collect { event ->
+                handleJobUpdateEvent(event)
+            }
+        }
         Logger.logDebug { "ViewModel listeners set up." }
+    }
+
+    private fun handleJobUpdateEvent(event: JobUpdateEvent) {
+        _state.update { state ->
+            val updatedQueue = state.downloadQueue.map { job ->
+                when (event) {
+                    is JobUpdateEvent.StatusChanged -> if (job.id == event.jobId) {
+                        job.copy(status = event.status, progress = event.progress ?: job.progress)
+                    } else job
+                    is JobUpdateEvent.DownloadedChaptersChanged -> if (job.id == event.jobId) {
+                        job.copy(downloadedChapters = event.newCount)
+                    } else job
+                }
+            }
+            state.copy(downloadQueue = updatedQueue)
+        }
     }
 
     fun onEvent(event: Event) {
@@ -599,14 +626,14 @@ class MainViewModel(
                 if (nextJob != null) {
                     if (semaphore.tryAcquire()) {
                         Logger.logDebug { "Acquired semaphore for job ${nextJob.id}. Starting..." }
-                        updateJobState(nextJob.id, "Downloading")
+                        jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(nextJob.id, "Downloading", 0f))
                         val jobCoroutine = launch {
                             try {
                                 val op = queuedOperationContext[nextJob.id]
                                 if (op != null) {
                                     runQueuedOperation(op)
                                 } else {
-                                    updateJobState(nextJob.id, "Error: Context not found")
+                                    jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(nextJob.id, "Error: Context not found", null))
                                     Logger.logError("Could not find operation context for job ${nextJob.id}")
                                 }
                             } finally {
@@ -626,7 +653,7 @@ class MainViewModel(
         val webChaptersCompleted = AtomicInteger(0)
         try {
             Logger.logInfo("--- Starting Queued Job: ${op.customTitle} (${op.jobId}) ---")
-            updateJobState(op.jobId, "Starting...", 0.05f)
+            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Starting...", 0.05f))
             val tempDir = File(platformProvider.getTmpDir())
             val seriesSlug = op.seriesUrl.toSlug()
             val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
@@ -661,14 +688,14 @@ class MainViewModel(
                         val job = state.value.downloadQueue.find { it.id == op.jobId }
                         if (job != null) {
                             val overallProgress = (chaptersFromCache.size + webChaptersCompleted.get() + chapterProgress) / job.totalChapters
-                            updateJobState(op.jobId, if (job.isIndividuallyPaused) "Paused" else status, overallProgress)
+                            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, if (job.isIndividuallyPaused) "Paused" else status, overallProgress))
                         }
                     },
                     onChapterCompleted = {
                         val job = state.value.downloadQueue.find { it.id == op.jobId }
                         if (job != null) {
                             val newCount = job.downloadedChapters + 1
-                            updateJobDownloadedChapters(op.jobId, newCount)
+                            jobUpdateEvents.tryEmit(JobUpdateEvent.DownloadedChaptersChanged(op.jobId, newCount))
                             Logger.logDebug { "Job ${op.jobId}: Chapter completed. Progress: $newCount/${job.totalChapters}" }
                         }
                         webChaptersCompleted.incrementAndGet()
@@ -678,7 +705,7 @@ class MainViewModel(
                 downloadResult?.successfulFolders?.let { allChapterFolders.addAll(it) }
             }
 
-            updateJobState(op.jobId, "Packaging...", 0.99f)
+            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Packaging...", 0.99f))
             val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
             val tempOutputFile = File(tempDir, finalFileName)
 
@@ -693,49 +720,18 @@ class MainViewModel(
             }
 
             fileMover.moveToFinalDestination(tempOutputFile, op.outputPath, finalFileName)
-            updateJobState(op.jobId, "Completed", 1f)
+            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Completed", 1f))
             Logger.logInfo("--- Finished Queued Job: ${op.customTitle} ---")
         } catch (e: Exception) {
             if (e is CancellationException) {
-                updateJobState(op.jobId, "Cancelled")
+                jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Cancelled", null))
                 Logger.logInfo("Job ${op.jobId} was cancelled by the user.")
                 return
             }
             Logger.logError("Job ${op.jobId} failed", e)
-            updateJobState(op.jobId, "Error: ${e.message?.take(30) ?: "Unknown"}")
+            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Error: ${e.message?.take(30) ?: "Unknown"}", null))
         } finally {
             queuedOperationContext.remove(op.jobId)
-        }
-    }
-
-    private fun updateJobState(jobId: String, status: String, progress: Float? = null) {
-        _state.update { state ->
-            val updatedQueue = state.downloadQueue.map { job ->
-                if (job.id == jobId) {
-                    val newDownloadedChapters = if (status == "Completed") job.totalChapters else job.downloadedChapters
-                    job.copy(
-                        status = status,
-                        progress = progress ?: job.progress,
-                        downloadedChapters = newDownloadedChapters
-                    )
-                } else {
-                    job
-                }
-            }
-            state.copy(downloadQueue = updatedQueue)
-        }
-    }
-
-    private fun updateJobDownloadedChapters(jobId: String, chaptersDone: Int) {
-        _state.update { state ->
-            val updatedQueue = state.downloadQueue.map { job ->
-                if (job.id == jobId) {
-                    job.copy(downloadedChapters = chaptersDone)
-                } else {
-                    job
-                }
-            }
-            state.copy(downloadQueue = updatedQueue)
         }
     }
 
