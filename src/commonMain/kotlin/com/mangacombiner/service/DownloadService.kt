@@ -54,9 +54,12 @@ class DownloadService(
         const val INCOMPLETE_MARKER_FILE = ".incomplete"
     }
 
-    private suspend fun writeChannelToFile(channel: ByteReadChannel, file: File) {
+    private suspend fun writeChannelToFile(channel: ByteReadChannel, file: File, isPaused: () -> Boolean) {
         file.outputStream().use { output ->
             while (!channel.isClosedForRead) {
+                while (isPaused()) {
+                    delay(500)
+                }
                 coroutineContext.ensureActive()
                 val packet = channel.readRemaining(BUFFER_SIZE.toLong())
                 while (packet.isNotEmpty) {
@@ -93,7 +96,7 @@ class DownloadService(
                 }
             }
             if (response.status.isSuccess()) {
-                writeChannelToFile(response.bodyAsChannel(), outputFile)
+                writeChannelToFile(response.bodyAsChannel(), outputFile, isPaused)
                 Logger.logDebug { "Successfully downloaded ${outputFile.name}" }
                 true
             } else {
@@ -116,8 +119,6 @@ class DownloadService(
         val chapterDir = File(baseDir, FileUtils.sanitizeFilename(chapterTitle))
         if (!chapterDir.exists()) chapterDir.mkdirs()
 
-        // Create a marker file to indicate this chapter is being downloaded.
-        // It will be deleted only on full success.
         val incompleteMarker = File(chapterDir, INCOMPLETE_MARKER_FILE)
         incompleteMarker.createNewFile()
         Logger.logDebug { "Created incomplete marker for chapter '$chapterTitle' at: ${incompleteMarker.absolutePath}" }
@@ -131,7 +132,6 @@ class DownloadService(
         val imageUrls = scraperService.findImageUrls(client, chapterUrl, scraperUserAgent, options.seriesUrl)
         if (imageUrls.isEmpty()) {
             Logger.logInfo(" --> Warning: No images found for chapter '$chapterTitle'. It might be empty or licensed.")
-            // Chapter is not "broken" if there were no images to begin with
             incompleteMarker.delete()
             return ChapterDownloadResult(chapterDir.takeIf { it.exists() }, chapterTitle, listOf("Chapter page might be empty or licensed."))
         }
@@ -175,7 +175,6 @@ class DownloadService(
             if (failedImageUrls.isNotEmpty()) {
                 Logger.logError("Warning: Failed to download ${failedImageUrls.size} images for chapter: '$chapterTitle'")
             } else {
-                // Only if there are no failures, delete the marker.
                 Logger.logDebug { "Download of chapter '$chapterTitle' completed successfully. Deleting incomplete marker." }
                 incompleteMarker.delete()
             }
@@ -196,7 +195,7 @@ class DownloadService(
         val successfulFolders = mutableListOf<File>()
         val failedChapters = mutableMapOf<String, List<String>>()
 
-        val client = createHttpClient(null) // Proxy will be handled by settings
+        val client = createHttpClient(null)
 
         try {
             for ((index, chapter) in chapterData.withIndex()) {

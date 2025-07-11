@@ -22,6 +22,7 @@ actual class SettingsRepository {
         private const val LOG_AUTOSCROLL = "log_autoscroll"
         private const val ZOOM_FACTOR = "zoom_factor"
         private const val FONT_SIZE_PRESET = "font_size_preset"
+        private const val OFFLINE_MODE = "offline_mode"
     }
 
     actual fun saveSettings(settings: AppSettings) {
@@ -39,6 +40,7 @@ actual class SettingsRepository {
         prefs.putBoolean(LOG_AUTOSCROLL, settings.logAutoscrollEnabled)
         prefs.putFloat(ZOOM_FACTOR, settings.zoomFactor)
         prefs.put(FONT_SIZE_PRESET, settings.fontSizePreset)
+        prefs.putBoolean(OFFLINE_MODE, settings.offlineMode)
     }
 
     actual fun loadSettings(): AppSettings {
@@ -56,7 +58,8 @@ actual class SettingsRepository {
             debugLog = prefs.getBoolean(DEBUG_LOG, false),
             logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, true),
             zoomFactor = prefs.getFloat(ZOOM_FACTOR, 1.0f),
-            fontSizePreset = prefs.get(FONT_SIZE_PRESET, "Medium")
+            fontSizePreset = prefs.get(FONT_SIZE_PRESET, "Medium"),
+            offlineMode = prefs.getBoolean(OFFLINE_MODE, false)
         )
     }
 }

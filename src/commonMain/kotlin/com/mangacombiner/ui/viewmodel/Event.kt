@@ -21,6 +21,7 @@ sealed interface Event {
         data class UpdateUserAgent(val name: String) : Settings
         data class UpdateProxyUrl(val url: String) : Settings
         data class TogglePerWorkerUserAgent(val isEnabled: Boolean) : Settings
+        data class ToggleOfflineMode(val isEnabled: Boolean) : Settings
         object PickCustomDefaultPath : Settings
         object OpenSettingsLocation : Settings
         object OpenCacheLocation : Settings
@@ -49,7 +50,6 @@ sealed interface Event {
         data class ToggleChapterSelection(val chapterUrl: String, val select: Boolean) : Download
         data class ToggleChapterRedownload(val chapterUrl: String) : Download
         data class UpdateChapterRange(val start: Int, val end: Int, val action: RangeAction) : Download
-        data class ToggleOfflineMode(val isEnabled: Boolean) : Download
         object PickOutputPath : Download
         object PickLocalFile : Download
         object ClearInputs : Download
@@ -119,7 +119,7 @@ sealed interface Event {
         object CancelEditJob : Queue
         object PickJobOutputPath : Queue
         data class CancelJob(val jobId: String) : Queue
-        data class TogglePauseJob(val jobId: String) : Queue
+        data class TogglePauseJob(val jobId: String, val force: Boolean? = null) : Queue
         data class MoveJob(val jobId: String, val direction: MoveDirection) : Queue
     }
 

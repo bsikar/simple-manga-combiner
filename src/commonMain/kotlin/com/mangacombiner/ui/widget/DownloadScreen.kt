@@ -34,16 +34,11 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                     Text("Download & Sync Options", style = MaterialTheme.typography.h6)
                     Spacer(Modifier.height(8.dp))
 
-                    FormControlLabel(
-                        onClick = { onEvent(Event.Download.ToggleOfflineMode(!state.isOfflineMode)) },
-                        control = { Switch(checked = state.isOfflineMode, onCheckedChange = null, enabled = isIdle) },
-                        label = { Text("Offline Mode (modify local files)") },
-                        enabled = isIdle
-                    )
                     if (state.isOfflineMode) {
                         Text(
-                            "Offline mode lets you add or remove chapters from an existing CBZ/EPUB file. Use the 'Update Local File' button to begin.",
-                            style = MaterialTheme.typography.caption
+                            "Offline mode is enabled. Use 'Update Local File' to add or remove chapters from an existing CBZ or EPUB.",
+                            style = MaterialTheme.typography.caption,
+                            color = MaterialTheme.colors.primary
                         )
                     }
 
@@ -82,7 +77,7 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
 
                         Button(
                             onClick = { onEvent(Event.Download.FetchChapters) },
-                            enabled = state.seriesUrl.isNotBlank() && !state.isFetchingChapters && isIdle && !state.isOfflineMode,
+                            enabled = state.seriesUrl.isNotBlank() && !state.isFetchingChapters && isIdle,
                         ) {
                             if (state.isFetchingChapters) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)

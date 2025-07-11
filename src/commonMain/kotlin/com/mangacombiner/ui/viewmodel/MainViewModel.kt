@@ -149,7 +149,7 @@ class MainViewModel(
                         val job = queue.find { it.id == jobIdToPause }
                         if (job != null && !job.isIndividuallyPaused) {
                             Logger.logDebug { "Pausing job due to lower priority: ${job.title}" }
-                            handleQueueEvent(Event.Queue.TogglePauseJob(job.id))
+                            handleQueueEvent(Event.Queue.TogglePauseJob(job.id, force = true))
                         }
                     }
 
@@ -160,7 +160,7 @@ class MainViewModel(
                             if (job.isIndividuallyPaused) {
                                 // It's paused but should be active -> resume it.
                                 Logger.logDebug { "Resuming job due to high priority: ${job.title}" }
-                                handleQueueEvent(Event.Queue.TogglePauseJob(job.id))
+                                handleQueueEvent(Event.Queue.TogglePauseJob(job.id, force = false))
                             } else if (job.id !in runningJobIds && job.status == "Queued") {
                                 // It's not running at all -> start it.
                                 Logger.logDebug { "Starting job due to high priority: ${job.title}" }

@@ -17,7 +17,7 @@ internal fun MainViewModel.handleQueueEvent(event: Event.Queue) {
         is Event.Queue.PickJobOutputPath -> viewModelScope.launch {
             _filePickerRequest.emit(FilePickerRequest.OpenFolder(FilePickerRequest.PathType.JOB_OUTPUT))
         }
-        is Event.Queue.TogglePauseJob -> togglePauseJob(event.jobId)
+        is Event.Queue.TogglePauseJob -> togglePauseJob(event.jobId, event.force)
         is Event.Queue.MoveJob -> moveJob(event.jobId, event.direction)
         Event.Queue.PauseAll -> pauseAllJobs()
         Event.Queue.ResumeAll -> resumeAllJobs()
@@ -45,8 +45,9 @@ private fun MainViewModel.pauseAllJobs() {
 private fun MainViewModel.resumeAllJobs() {
     _state.update { currentState ->
         val updatedQueue = currentState.downloadQueue.map { job ->
-            if (job.status == "Paused" && !job.isIndividuallyPaused) {
-                job.copy(status = "Queued")
+            val isFinished = job.status == "Completed" || job.status.startsWith("Error") || job.status == "Cancelled"
+            if (!isFinished) {
+                job.copy(status = "Queued", isIndividuallyPaused = false)
             } else {
                 job
             }
@@ -56,12 +57,12 @@ private fun MainViewModel.resumeAllJobs() {
 }
 
 
-private fun MainViewModel.togglePauseJob(jobId: String) {
+private fun MainViewModel.togglePauseJob(jobId: String, force: Boolean? = null) {
     _state.update { currentState ->
         currentState.copy(
             downloadQueue = currentState.downloadQueue.map { job ->
                 if (job.id == jobId) {
-                    val newPausedState = !job.isIndividuallyPaused
+                    val newPausedState = force ?: !job.isIndividuallyPaused
                     val newStatus: String
                     if (newPausedState) {
                         // If we are pausing it, always set status to "Paused" unless it's already finished.

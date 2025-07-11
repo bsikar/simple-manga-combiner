@@ -24,7 +24,6 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     var outputDropdownExpanded by remember { mutableStateOf(false) }
     var fontSizeDropdownExpanded by remember { mutableStateOf(false) }
     val outputLocations = listOf("Downloads", "Documents", "Desktop", "Custom").filter {
-        // Simple way to hide "Desktop" on Android, which returns null for it
         !(it == "Desktop" && System.getProperty("java.runtime.name")?.contains("Android") == true)
     }
     val themeOptions = remember { AppTheme.values().toList() }
@@ -89,6 +88,23 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                         }
                     }
                 }
+            }
+        }
+
+        Card(elevation = 4.dp) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Functionality", style = MaterialTheme.typography.h6)
+
+                FormControlLabel(
+                    onClick = { onEvent(Event.Settings.ToggleOfflineMode(!state.isOfflineMode)) },
+                    control = { Switch(checked = state.isOfflineMode, onCheckedChange = null) },
+                    label = { Text("Offline Mode") }
+                )
+                Text(
+                    "Enable to modify local files, such as removing chapters from a CBZ or EPUB, without needing an internet connection.",
+                    style = MaterialTheme.typography.caption,
+                    modifier = Modifier.padding(start = 16.dp)
+                )
             }
         }
 

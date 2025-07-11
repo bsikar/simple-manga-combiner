@@ -34,11 +34,17 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Download Queue", style = MaterialTheme.typography.h6, modifier = Modifier.weight(1f))
 
-            if (state.isQueueGloballyPaused) {
+            val resumableJobs = state.downloadQueue.filter {
+                it.status !in listOf("Completed", "Cancelled") && !it.status.startsWith("Error")
+            }
+            val canPause = resumableJobs.any { !it.isIndividuallyPaused && it.status != "Paused" }
+            val canResume = state.isQueueGloballyPaused || (resumableJobs.isNotEmpty() && resumableJobs.all { it.isIndividuallyPaused || it.status == "Paused" })
+
+            if (canResume) {
                 TextButton(onClick = { onEvent(Event.Queue.ResumeAll) }) {
                     Text("Resume All")
                 }
-            } else if (state.downloadQueue.any { !it.isIndividuallyPaused && it.status !in listOf("Completed", "Queued", "Cancelled") && !it.status.startsWith("Error") }) {
+            } else if (canPause) {
                 TextButton(onClick = { onEvent(Event.Queue.PauseAll) }) {
                     Text("Pause All")
                 }

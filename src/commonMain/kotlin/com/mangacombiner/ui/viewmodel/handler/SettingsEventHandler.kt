@@ -20,6 +20,7 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         is Event.Settings.UpdateUserAgent -> _state.update { it.copy(userAgentName = event.name) }
         is Event.Settings.UpdateProxyUrl -> _state.update { it.copy(proxyUrl = event.url) }
         is Event.Settings.TogglePerWorkerUserAgent -> _state.update { it.copy(perWorkerUserAgent = event.isEnabled) }
+        is Event.Settings.ToggleOfflineMode -> _state.update { it.copy(isOfflineMode = event.isEnabled) }
         Event.Settings.PickCustomDefaultPath -> viewModelScope.launch {
             _filePickerRequest.emit(FilePickerRequest.OpenFolder(FilePickerRequest.PathType.CUSTOM_OUTPUT))
         }
@@ -71,7 +72,8 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
             debugLog = defaultSettings.debugLog,
             logAutoscrollEnabled = defaultSettings.logAutoscrollEnabled,
             zoomFactor = defaultSettings.zoomFactor,
-            fontSizePreset = defaultSettings.fontSizePreset
+            fontSizePreset = defaultSettings.fontSizePreset,
+            isOfflineMode = defaultSettings.offlineMode
         )
     }
     Logger.logInfo("All settings restored to default values.")

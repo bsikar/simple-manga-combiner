@@ -2,9 +2,6 @@ package com.mangacombiner.model
 
 import com.mangacombiner.ui.theme.AppTheme
 
-/**
- * A data class representing the user's saved preferences.
- */
 data class AppSettings(
     val theme: AppTheme = AppTheme.LIGHT,
     val defaultOutputLocation: String = "Downloads",
@@ -18,5 +15,6 @@ data class AppSettings(
     val debugLog: Boolean = false,
     val logAutoscrollEnabled: Boolean = true,
     val zoomFactor: Float = 1.0f,
-    val fontSizePreset: String = "Medium"
+    val fontSizePreset: String = "Medium",
+    val offlineMode: Boolean = false
 )

@@ -19,7 +19,6 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         is Event.Download.UpdateChapterSource -> onUpdateChapterSource(event.chapterUrl, event.source)
         is Event.Download.UpdateChapterRange -> onUpdateChapterRange(event.start, event.end, event.action)
         is Event.Download.UpdateOutputPath -> onUpdateOutputPath(event.path)
-        is Event.Download.ToggleOfflineMode -> onToggleOfflineMode(event.isEnabled)
         Event.Download.FetchChapters -> fetchChapters()
         Event.Download.ClearInputs -> onClearDownloadInputs()
         Event.Download.PickLocalFile -> onPickLocalFile()
@@ -37,16 +36,6 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         Event.Download.UseAllBroken -> onBulkUpdateBrokenChapterSource(ChapterSource.CACHE)
         Event.Download.IgnoreAllBroken -> onBulkUpdateBrokenChapterSource(null)
         Event.Download.RedownloadAllBroken -> onBulkUpdateBrokenChapterSource(ChapterSource.WEB)
-    }
-}
-
-private fun MainViewModel.onToggleOfflineMode(isEnabled: Boolean) {
-    _state.update {
-        it.copy(
-            isOfflineMode = isEnabled,
-            // Clear URL when entering offline mode to avoid confusion
-            seriesUrl = if (isEnabled) "" else it.seriesUrl
-        )
     }
 }
 
