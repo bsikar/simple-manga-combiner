@@ -1,7 +1,6 @@
 package com.mangacombiner.util
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.ProxyBuilder
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.plugins.HttpTimeout
@@ -11,16 +10,23 @@ import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
-import java.net.MalformedURLException
-import java.net.URL
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.URI
 
 actual fun createHttpClient(proxyUrl: String?): HttpClient = HttpClient(CIO) {
     engine {
         if (!proxyUrl.isNullOrBlank()) {
             try {
-                proxy = ProxyBuilder.url(URL(proxyUrl))
-                Logger.logInfo("Using proxy: $proxyUrl")
-            } catch (e: MalformedURLException) {
+                val proxyJavaUrl = URI(proxyUrl).toURL()
+                if (proxyJavaUrl.protocol.startsWith("http")) {
+                    val socketAddress = InetSocketAddress(proxyJavaUrl.host, proxyJavaUrl.port)
+                    proxy = Proxy(Proxy.Type.HTTP, socketAddress)
+                    Logger.logInfo("Using proxy: $proxyUrl")
+                } else {
+                    Logger.logError("Unsupported proxy protocol: ${proxyJavaUrl.protocol}. Only http/s is supported.", null)
+                }
+            } catch (e: Exception) {
                 Logger.logError("Invalid proxy URL format: $proxyUrl", e)
             }
         }
