@@ -24,4 +24,8 @@ class AndroidPlatformProvider(private val context: Context) : PlatformProvider {
     override fun openSettingsLocation() {
         Logger.logInfo("Opening the settings location is not possible on Android from within the app.")
     }
+
+    override fun isCacheLocationOpenable(): Boolean = false
+
+    override fun openCacheLocation() { Logger.logInfo("Opening the cache location is not supported on Android.") }
 }

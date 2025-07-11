@@ -22,6 +22,9 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         Event.Settings.PickCustomDefaultPath -> viewModelScope.launch {
             _filePickerRequest.emit(FilePickerRequest.OpenFolder(FilePickerRequest.PathType.CUSTOM_OUTPUT))
         }
+        Event.Settings.OpenCacheLocation -> viewModelScope.launch(Dispatchers.IO) {
+            platformProvider.openCacheLocation()
+        }
         Event.Settings.OpenSettingsLocation -> viewModelScope.launch(Dispatchers.IO) {
             platformProvider.openSettingsLocation()
         }

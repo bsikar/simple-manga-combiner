@@ -83,6 +83,7 @@ class MainViewModel(
                 logAutoscrollEnabled = savedSettings.logAutoscrollEnabled,
                 settingsLocationDescription = platformProvider.getSettingsLocationDescription(),
                 isSettingsLocationOpenable = platformProvider.isSettingsLocationOpenable(),
+                isCacheLocationOpenable = platformProvider.isCacheLocationOpenable(),
                 cachePath = platformProvider.getTmpDir(),
                 zoomFactor = savedSettings.zoomFactor,
                 fontSizePreset = savedSettings.fontSizePreset,

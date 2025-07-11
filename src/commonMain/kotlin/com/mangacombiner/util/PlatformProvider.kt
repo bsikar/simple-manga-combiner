@@ -12,4 +12,6 @@ interface PlatformProvider {
     fun getSettingsLocationDescription(): String
     fun isSettingsLocationOpenable(): Boolean
     fun openSettingsLocation()
+    fun isCacheLocationOpenable(): Boolean
+    fun openCacheLocation()
 }

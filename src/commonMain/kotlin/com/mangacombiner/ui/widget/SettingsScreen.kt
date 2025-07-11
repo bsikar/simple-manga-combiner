@@ -144,6 +144,19 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
         Card(elevation = 4.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Diagnostics", style = MaterialTheme.typography.h6)
+                Text("Cache Location", style = MaterialTheme.typography.subtitle2)
+                Text(
+                    text = "Path: ${state.cachePath}",
+                    style = MaterialTheme.typography.body2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onEvent(Event.Settings.OpenCacheLocation) },
+                    enabled = state.isCacheLocationOpenable
+                ) { Text("Open Cache Directory") }
+                Divider(modifier = Modifier.padding(vertical = 8.dp))
                 Button(
                     onClick = { onEvent(Event.Navigate(Screen.LOGS)) },
                     modifier = Modifier.fillMaxWidth()

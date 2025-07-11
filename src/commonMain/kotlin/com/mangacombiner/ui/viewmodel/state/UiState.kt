@@ -39,6 +39,7 @@ data class UiState(
     val showCancelDialog: Boolean = false,
     val deleteCacheOnCancel: Boolean = false,
     val showDeleteCacheConfirmationDialog: Boolean = false,
+    val isCacheLocationOpenable: Boolean = false,
     val cacheContents: List<CachedSeries> = emptyList(),
     val cacheItemsToDelete: Set<String> = emptySet(),
     val cacheSortState: Map<String, CacheSortState?> = emptyMap(),

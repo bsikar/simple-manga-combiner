@@ -53,4 +53,21 @@ class DesktopPlatformProvider : PlatformProvider {
             Logger.logError("Failed to open settings directory.", e)
         }
     }
+
+    override fun isCacheLocationOpenable(): Boolean = Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)
+
+    override fun openCacheLocation() {
+        if (!isCacheLocationOpenable()) {
+            Logger.logInfo("Opening the cache location is not supported on this system.")
+            return
+        }
+        try {
+            val cacheDir = File(getTmpDir())
+            Desktop.getDesktop().open(cacheDir)
+            Logger.logInfo("Opened cache directory: ${cacheDir.absolutePath}")
+        } catch (e: Exception) {
+            Logger.logError("Failed to open cache directory", e)
+        }
+    }
 }
+

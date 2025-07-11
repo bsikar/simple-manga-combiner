@@ -22,6 +22,7 @@ sealed interface Event {
         data class TogglePerWorkerUserAgent(val isEnabled: Boolean) : Settings
         object PickCustomDefaultPath : Settings
         object OpenSettingsLocation : Settings
+        object OpenCacheLocation : Settings
         object ZoomIn : Settings
         object ZoomOut : Settings
         object ZoomReset : Settings
