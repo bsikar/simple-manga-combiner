@@ -130,42 +130,47 @@ class MainViewModel(
             state.map { Triple(it.batchWorkers, it.downloadQueue, it.isQueueGloballyPaused) }
                 .distinctUntilChanged()
                 .collect { (batchWorkers, queue, isQueuePaused) ->
+                    val runningJobIds = runningJobCoroutines.keys.toSet()
 
                     if (isQueuePaused) {
+                        // If the whole queue is globally paused, cancel all running jobs and mark them as paused.
+                        runningJobIds.forEach { jobId ->
+                            runningJobCoroutines[jobId]?.cancel()
+                            runningJobCoroutines.remove(jobId)
+                            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(jobId, "Paused", null))
+                        }
                         return@collect
                     }
 
-                    val runningJobIds = runningJobCoroutines.keys.toSet()
-
                     // 1. Determine the ideal set of jobs that should be active ("Top N" rule).
+                    // A job is startable if it's queued or was throttled by the system. User-paused jobs are ignored.
                     val desiredActiveJobIds = queue
-                        .filterNot { it.isIndividuallyPaused || it.status == "Completed" || it.status.startsWith("Error") || it.status == "Cancelled" }
+                        .filterNot { it.isIndividuallyPaused || it.status in listOf("Completed", "Cancelled") || it.status.startsWith("Error") }
                         .take(batchWorkers)
                         .map { it.id }
                         .toSet()
 
-                    // 2. Pause any running job that is NOT in the desired set.
-                    (runningJobIds - desiredActiveJobIds).forEach { jobIdToPause ->
-                        val job = queue.find { it.id == jobIdToPause }
-                        if (job != null && !job.isIndividuallyPaused) {
-                            Logger.logDebug { "Pausing job due to lower priority: ${job.title}" }
-                            handleQueueEvent(Event.Queue.TogglePauseJob(job.id, force = true))
+                    // 2. Stop (cancel) any running job that is NOT in the desired set anymore.
+                    val jobsToStop = runningJobIds - desiredActiveJobIds
+                    jobsToStop.forEach { jobId ->
+                        val job = queue.find { it.id == jobId }
+                        if (job != null && !job.isIndividuallyPaused) { // Don't interfere with user-paused jobs
+                            Logger.logDebug { "Throttling job due to lower priority: ${job.title}" }
+                            runningJobCoroutines[jobId]?.cancel() // Cancel the coroutine
+                            runningJobCoroutines.remove(jobId)   // Remove from running map
+                            // Mark as throttled so it can be picked up again later
+                            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(jobId, "Throttled", null))
                         }
                     }
 
-                    // 3. Activate any desired job that is not currently active.
-                    desiredActiveJobIds.forEach { jobIdToActivate ->
-                        val job = queue.find { it.id == jobIdToActivate }
-                        if (job != null) {
-                            if (job.isIndividuallyPaused) {
-                                // It's paused but should be active -> resume it.
-                                Logger.logDebug { "Resuming job due to high priority: ${job.title}" }
-                                handleQueueEvent(Event.Queue.TogglePauseJob(job.id, force = false))
-                            } else if (job.id !in runningJobIds && job.status == "Queued") {
-                                // It's not running at all -> start it.
-                                Logger.logDebug { "Starting job due to high priority: ${job.title}" }
-                                startJob(job)
-                            }
+                    // 3. Activate any desired job that is not currently running.
+                    val jobsToStart = desiredActiveJobIds - runningJobIds
+                    jobsToStart.forEach { jobId ->
+                        val job = queue.find { it.id == jobId }
+                        // A job can be started if it's in a startable state and not paused by the user.
+                        if (job != null && !job.isIndividuallyPaused && (job.status == "Queued" || job.status == "Throttled")) {
+                            Logger.logDebug { "Activating job due to high priority: ${job.title}" }
+                            startJob(job)
                         }
                     }
                 }
