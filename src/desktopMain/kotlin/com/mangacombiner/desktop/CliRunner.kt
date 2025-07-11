@@ -48,6 +48,7 @@ fun main(args: Array<String>) {
         "ua",
         "Browser profile to impersonate."
     ).default("Chrome (Windows)")
+    val proxy by parser.option(ArgType.String, "proxy", description = "Proxy URL (e.g., http://host:port)")
     val perWorkerUserAgent by parser.option(
         ArgType.Boolean,
         "per-worker-ua",
@@ -77,7 +78,7 @@ fun main(args: Array<String>) {
 
     runBlocking {
         val defaultUserAgent = UserAgent.browsers["Chrome (Windows)"]!!
-        val listClient = createHttpClient()
+        val listClient = createHttpClient(proxy)
         val tempDir = File(platformProvider.getTmpDir())
 
         try {

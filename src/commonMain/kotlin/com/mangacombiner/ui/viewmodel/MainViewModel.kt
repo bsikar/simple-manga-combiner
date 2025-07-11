@@ -78,6 +78,7 @@ class MainViewModel(
                 outputFormat = savedSettings.outputFormat,
                 userAgentName = savedSettings.userAgentName,
                 perWorkerUserAgent = savedSettings.perWorkerUserAgent,
+                proxyUrl = savedSettings.proxyUrl,
                 debugLog = savedSettings.debugLog,
                 logAutoscrollEnabled = savedSettings.logAutoscrollEnabled,
                 settingsLocationDescription = platformProvider.getSettingsLocationDescription(),
@@ -306,7 +307,7 @@ class MainViewModel(
             val failedChapterTitles = s.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
             val preselectedNames = s.chaptersToPreselect
 
-            val client = createHttpClient()
+            val client = createHttpClient(s.proxyUrl)
             Logger.logInfo("Fetching chapter list for: $url")
             val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
             val chapters = scraperService.findChapterUrlsAndTitles(client, url, userAgent)

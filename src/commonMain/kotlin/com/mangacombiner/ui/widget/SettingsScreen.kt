@@ -143,6 +143,19 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
         }
 
         Card(elevation = 4.dp) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Network Settings", style = MaterialTheme.typography.h6)
+                OutlinedTextField(
+                    value = state.proxyUrl,
+                    onValueChange = { onEvent(Event.Settings.UpdateProxyUrl(it)) },
+                    label = { Text("Proxy URL (Optional)") },
+                    placeholder = { Text("http(s)://[user:pass@]host:port") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        Card(elevation = 4.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Diagnostics", style = MaterialTheme.typography.h6)
                 Text("Cache Location", style = MaterialTheme.typography.subtitle2)

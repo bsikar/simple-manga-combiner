@@ -17,6 +17,7 @@ actual class SettingsRepository {
         private const val OUTPUT_FORMAT = "output_format"
         private const val USER_AGENT_NAME = "user_agent_name"
         private const val PER_WORKER_USER_AGENT = "per_worker_user_agent"
+        private const val PROXY_URL = "proxy_url"
         private const val DEBUG_LOG = "debug_log"
         private const val LOG_AUTOSCROLL = "log_autoscroll"
         private const val ZOOM_FACTOR = "zoom_factor"
@@ -33,6 +34,7 @@ actual class SettingsRepository {
         prefs.put(OUTPUT_FORMAT, settings.outputFormat)
         prefs.put(USER_AGENT_NAME, settings.userAgentName)
         prefs.putBoolean(PER_WORKER_USER_AGENT, settings.perWorkerUserAgent)
+        prefs.put(PROXY_URL, settings.proxyUrl)
         prefs.putBoolean(DEBUG_LOG, settings.debugLog)
         prefs.putBoolean(LOG_AUTOSCROLL, settings.logAutoscrollEnabled)
         prefs.putFloat(ZOOM_FACTOR, settings.zoomFactor)
@@ -50,6 +52,7 @@ actual class SettingsRepository {
             outputFormat = prefs.get(OUTPUT_FORMAT, "epub"),
             userAgentName = prefs.get(USER_AGENT_NAME, "Chrome (Windows)"),
             perWorkerUserAgent = prefs.getBoolean(PER_WORKER_USER_AGENT, false),
+            proxyUrl = prefs.get(PROXY_URL, ""),
             debugLog = prefs.getBoolean(DEBUG_LOG, false),
             logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, true),
             zoomFactor = prefs.getFloat(ZOOM_FACTOR, 1.0f),

@@ -23,6 +23,7 @@ import java.io.IOException
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.coroutineContext
+import kotlin.random.Random
 
 data class ChapterDownloadResult(
     val chapterDir: File?,
@@ -47,8 +48,8 @@ class DownloadService(
     private val scraperService: ScraperService
 ) {
     private companion object {
-        const val IMAGE_DOWNLOAD_DELAY_MS = 500L
-        const val CHAPTER_DOWNLOAD_DELAY_MS = 1000L
+        val IMAGE_DOWNLOAD_DELAY_MS = 400L..800L
+        val CHAPTER_DOWNLOAD_DELAY_MS = 900L..1500L
         const val BUFFER_SIZE = 4096
         const val INCOMPLETE_MARKER_FILE = ".incomplete"
     }
@@ -66,7 +67,14 @@ class DownloadService(
         }
     }
 
-    private suspend fun downloadFile(client: HttpClient, url: String, outputFile: File, userAgent: String, isPaused: () -> Boolean): Boolean {
+    private suspend fun downloadFile(
+        client: HttpClient,
+        url: String,
+        outputFile: File,
+        userAgent: String,
+        isPaused: () -> Boolean,
+        referer: String?
+    ): Boolean {
         if (outputFile.exists()) {
             Logger.logDebug { "File already exists, skipping: ${outputFile.name}" }
             return true
@@ -80,6 +88,9 @@ class DownloadService(
             Logger.logDebug { "Downloading file: $url with User-Agent: $userAgent" }
             val response: HttpResponse = client.get(url) {
                 header(HttpHeaders.UserAgent, userAgent)
+                if (referer != null) {
+                    header(HttpHeaders.Referrer, referer)
+                }
             }
             if (response.status.isSuccess()) {
                 writeChannelToFile(response.bodyAsChannel(), outputFile)
@@ -117,7 +128,7 @@ class DownloadService(
         coroutineContext.ensureActive()
 
         val scraperUserAgent = options.getUserAgents().random()
-        val imageUrls = scraperService.findImageUrls(client, chapterUrl, scraperUserAgent)
+        val imageUrls = scraperService.findImageUrls(client, chapterUrl, scraperUserAgent, options.seriesUrl)
         if (imageUrls.isEmpty()) {
             Logger.logInfo(" --> Warning: No images found for chapter '$chapterTitle'. It might be empty or licensed.")
             // Chapter is not "broken" if there were no images to begin with
@@ -139,12 +150,12 @@ class DownloadService(
                         }
                         coroutineContext.ensureActive()
 
-                        delay(IMAGE_DOWNLOAD_DELAY_MS)
+                        delay(Random.nextLong(IMAGE_DOWNLOAD_DELAY_MS.first, IMAGE_DOWNLOAD_DELAY_MS.last))
                         val imageUserAgent = options.getUserAgents().random()
                         val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
                         val outputFile = File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
 
-                        if (!downloadFile(client, imageUrl, outputFile, imageUserAgent, options.isPaused)) {
+                        if (!downloadFile(client, imageUrl, outputFile, imageUserAgent, options.isPaused, chapterUrl)) {
                             failedImageUrls.add(imageUrl)
                         }
 
@@ -185,7 +196,7 @@ class DownloadService(
         val successfulFolders = mutableListOf<File>()
         val failedChapters = mutableMapOf<String, List<String>>()
 
-        val client = createHttpClient()
+        val client = createHttpClient(null) // Proxy will be handled by settings
 
         try {
             for ((index, chapter) in chapterData.withIndex()) {
@@ -207,8 +218,9 @@ class DownloadService(
 
                 coroutineContext.ensureActive()
                 if (index < chapterData.lastIndex) {
-                    Logger.logDebug { "Delaying for ${CHAPTER_DOWNLOAD_DELAY_MS}ms before next chapter." }
-                    delay(CHAPTER_DOWNLOAD_DELAY_MS)
+                    val randomDelay = Random.nextLong(CHAPTER_DOWNLOAD_DELAY_MS.first, CHAPTER_DOWNLOAD_DELAY_MS.last)
+                    Logger.logDebug { "Delaying for ${randomDelay}ms before next chapter." }
+                    delay(randomDelay)
                 }
             }
         } finally {

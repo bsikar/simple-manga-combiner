@@ -19,6 +19,7 @@ sealed interface Event {
         data class UpdateWorkers(val count: Int) : Settings
         data class UpdateBatchWorkers(val count: Int) : Settings
         data class UpdateUserAgent(val name: String) : Settings
+        data class UpdateProxyUrl(val url: String) : Settings
         data class TogglePerWorkerUserAgent(val isEnabled: Boolean) : Settings
         object PickCustomDefaultPath : Settings
         object OpenSettingsLocation : Settings

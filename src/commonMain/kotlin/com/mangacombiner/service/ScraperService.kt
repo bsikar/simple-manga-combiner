@@ -10,15 +10,18 @@ import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
 import org.jsoup.Jsoup
 import java.io.IOException
+import java.net.URI
 import java.net.URLEncoder
 
 class ScraperService {
 
     suspend fun findChapterUrlsAndTitles(client: HttpClient, seriesUrl: String, userAgent: String): List<Pair<String, String>> {
         Logger.logDebug { "Scraping series page for chapter URLs and titles: $seriesUrl" }
+        val baseUrl = URI(seriesUrl).let { "${it.scheme}://${it.host}" }
         return try {
             val response: String = client.get(seriesUrl) {
                 header(HttpHeaders.UserAgent, userAgent)
+                header(HttpHeaders.Referrer, baseUrl)
             }.body()
             val soup = Jsoup.parse(response, seriesUrl)
             val chapterLinks = soup.select("li.wp-manga-chapter a")
@@ -72,11 +75,13 @@ class ScraperService {
         }
     }
 
-    suspend fun findImageUrls(client: HttpClient, chapterUrl: String, userAgent: String): List<String> {
+    suspend fun findImageUrls(client: HttpClient, chapterUrl: String, userAgent: String, referer: String): List<String> {
         Logger.logDebug { "Scraping chapter page for image URLs: $chapterUrl" }
         return try {
             val response: String = client.get(chapterUrl) {
                 header(HttpHeaders.UserAgent, userAgent)
+                // Set the series page as the referer when accessing a chapter page
+                header(HttpHeaders.Referrer, referer)
             }.body()
             val soup = Jsoup.parse(response, chapterUrl)
             val imageTags = soup.select("img.wp-manga-chapter-img")

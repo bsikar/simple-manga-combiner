@@ -18,6 +18,7 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         is Event.Settings.UpdateWorkers -> _state.update { it.copy(workers = event.count.coerceIn(1, 16)) }
         is Event.Settings.UpdateBatchWorkers -> _state.update { it.copy(batchWorkers = event.count.coerceIn(1, 8)) }
         is Event.Settings.UpdateUserAgent -> _state.update { it.copy(userAgentName = event.name) }
+        is Event.Settings.UpdateProxyUrl -> _state.update { it.copy(proxyUrl = event.url) }
         is Event.Settings.TogglePerWorkerUserAgent -> _state.update { it.copy(perWorkerUserAgent = event.isEnabled) }
         Event.Settings.PickCustomDefaultPath -> viewModelScope.launch {
             _filePickerRequest.emit(FilePickerRequest.OpenFolder(FilePickerRequest.PathType.CUSTOM_OUTPUT))
@@ -66,6 +67,7 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
             outputFormat = defaultSettings.outputFormat,
             userAgentName = defaultSettings.userAgentName,
             perWorkerUserAgent = defaultSettings.perWorkerUserAgent,
+            proxyUrl = defaultSettings.proxyUrl,
             debugLog = defaultSettings.debugLog,
             logAutoscrollEnabled = defaultSettings.logAutoscrollEnabled,
             zoomFactor = defaultSettings.zoomFactor,

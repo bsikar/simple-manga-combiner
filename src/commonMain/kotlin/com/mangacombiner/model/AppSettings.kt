@@ -14,6 +14,7 @@ data class AppSettings(
     val outputFormat: String = "epub",
     val userAgentName: String = "Chrome (Windows)",
     val perWorkerUserAgent: Boolean = false,
+    val proxyUrl: String = "",
     val debugLog: Boolean = false,
     val logAutoscrollEnabled: Boolean = true,
     val zoomFactor: Float = 1.0f,
