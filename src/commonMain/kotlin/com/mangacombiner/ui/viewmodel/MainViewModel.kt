@@ -306,9 +306,9 @@ class MainViewModel(
             val failedChapterTitles = s.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
             val preselectedNames = s.chaptersToPreselect
 
-            val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
-            val client = createHttpClient("")
+            val client = createHttpClient()
             Logger.logInfo("Fetching chapter list for: $url")
+            val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
             val chapters = scraperService.findChapterUrlsAndTitles(client, url, userAgent)
             client.close()
 

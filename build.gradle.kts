@@ -52,6 +52,7 @@ kotlin {
                 implementation(libs.kotlinx.cli)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.plugins)
+                implementation(libs.ktor.client.logging)
                 implementation(libs.xmlutil.serialization)
                 implementation(libs.jsoup)
                 implementation(libs.zip4j)

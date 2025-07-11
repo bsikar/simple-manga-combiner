@@ -185,7 +185,7 @@ class DownloadService(
         val successfulFolders = mutableListOf<File>()
         val failedChapters = mutableMapOf<String, List<String>>()
 
-        val client = createHttpClient("")
+        val client = createHttpClient()
 
         try {
             for ((index, chapter) in chapterData.withIndex()) {

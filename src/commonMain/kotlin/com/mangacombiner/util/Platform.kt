@@ -3,7 +3,7 @@ package com.mangacombiner.util
 import io.ktor.client.HttpClient
 
 // We expect each platform to provide its own Ktor HttpClient Engine
-expect fun createHttpClient(userAgent: String): HttpClient
+expect fun createHttpClient(): HttpClient
 
 object UserAgent {
     val browsers = mapOf(

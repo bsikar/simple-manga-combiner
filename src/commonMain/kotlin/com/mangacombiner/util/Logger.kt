@@ -35,9 +35,13 @@ object Logger {
     }
 
     fun logError(message: String, throwable: Throwable? = null) {
-        broadcast("[ERROR] $message")
+        var fullMessage = "[ERROR] $message"
+        if (throwable != null) {
+            fullMessage += "\n > Cause: ${throwable.message ?: "No details available."}"
+        }
+        broadcast(fullMessage)
         if (isDebugEnabled && throwable != null) {
-            broadcast("[ERROR] Stack trace: ${throwable.stackTraceToString()}")
+            broadcast("[DEBUG] Full stack trace:\n${throwable.stackTraceToString()}")
         }
     }
 }

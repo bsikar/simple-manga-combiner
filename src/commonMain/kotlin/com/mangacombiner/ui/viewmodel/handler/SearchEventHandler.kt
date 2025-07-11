@@ -86,7 +86,7 @@ private fun MainViewModel.performSearch() {
         Logger.logInfo("Searching for '$query'...")
 
         val userAgent = UserAgent.browsers[_state.value.userAgentName] ?: UserAgent.browsers.values.first()
-        val client = createHttpClient(userAgent)
+        val client = createHttpClient()
         val initialResults = try {
             scraperService.search(client, query, userAgent)
         } catch (e: Exception) {

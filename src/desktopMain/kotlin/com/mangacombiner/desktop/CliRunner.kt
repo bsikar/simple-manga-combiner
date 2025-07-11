@@ -77,7 +77,7 @@ fun main(args: Array<String>) {
 
     runBlocking {
         val defaultUserAgent = UserAgent.browsers["Chrome (Windows)"]!!
-        val listClient = createHttpClient("")
+        val listClient = createHttpClient()
         val tempDir = File(platformProvider.getTmpDir())
 
         try {
