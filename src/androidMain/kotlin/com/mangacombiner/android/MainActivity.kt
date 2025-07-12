@@ -7,16 +7,20 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.material.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.mangacombiner.ui.MainScreen
 import com.mangacombiner.ui.theme.AppTheme
-import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.MainViewModel
+import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.util.Logger
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -28,7 +32,6 @@ class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModel<MainViewModel>()
 
-    // This variable will temporarily hold the type of folder request (e.g., for the main screen or for settings)
     private var currentFolderPickerRequestType: FilePickerRequest.PathType? = null
 
     private val filePickerLauncher =
@@ -39,14 +42,11 @@ class MainActivity : AppCompatActivity() {
     private val folderPickerLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
             uri?.let {
-                // When the folder picker returns a result, use the stored request type
-                // to call the correct function in the ViewModel.
                 currentFolderPickerRequestType?.let { type ->
                     val path = it.toString()
                     viewModel.onFolderSelected(path, type)
                     Logger.logInfo("Note: On Android, output is handled via the selected folder's URI.")
                 }
-                // Clear the stored type after use.
                 currentFolderPickerRequestType = null
             }
         }
@@ -61,7 +61,6 @@ class MainActivity : AppCompatActivity() {
                         arrayOf("application/epub+zip", "application/vnd.comicbook+zip", "application/x-cbz")
                     )
                     is FilePickerRequest.OpenFolder -> {
-                        // Before launching the folder picker, store the type of request.
                         currentFolderPickerRequestType = request.forPath
                         folderPickerLauncher.launch(null)
                     }
@@ -88,6 +87,17 @@ class MainActivity : AppCompatActivity() {
 
             CompositionLocalProvider(LocalDensity provides newDensity) {
                 AppTheme(settingsTheme = state.theme) {
+                    // Read the theme colors here, in the @Composable scope
+                    val surfaceColor = MaterialTheme.colors.surface
+                    val isLightTheme = MaterialTheme.colors.isLight
+
+                    SideEffect {
+                        val window = this@MainActivity.window
+                        // Use the values read from the theme
+                        window.statusBarColor = surfaceColor.toArgb()
+                        WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = isLightTheme
+                    }
+
                     MainScreen(viewModel)
                 }
             }
@@ -96,7 +106,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleFileUri(uri: Uri) {
         try {
-            // Copy the selected file to the app's private cache so we can get a real file path
             val fileName = getFileName(uri) ?: "temp_manga_file"
             val tempFile = File(cacheDir, fileName)
             contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -104,7 +113,6 @@ class MainActivity : AppCompatActivity() {
                     inputStream.copyTo(outputStream)
                 }
             }
-            // Now pass the real, accessible file path to the ViewModel
             viewModel.onFileSelected(tempFile.absolutePath)
         } catch (e: Exception) {
             Logger.logError("Failed to process selected file.", e)
