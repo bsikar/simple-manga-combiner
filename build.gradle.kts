@@ -95,6 +95,8 @@ android {
         versionCode = appVersionCode.toInt()
         versionName = appVersionName
     }
+    // Add this sourceSets block to explicitly define the resource directory
+    sourceSets["main"].res.srcDirs("src/androidMain/res")
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -154,7 +156,6 @@ tasks.register<ShadowJar>("cliJar") {
 
     mergeServiceFiles()
 }
-
 val generateVersionFile by tasks.register("generateVersionFile") {
     val outputDir = project.layout.buildDirectory.get().dir("generated/version/commonMain/com/mangacombiner/util")
     val outputFile = outputDir.file("AppVersion.kt")

@@ -5,13 +5,9 @@ import nl.adaptivity.xmlutil.serialization.XmlSerialName
 
 /**
  * Individual item (file) reference in the EPUB manifest.
- *
- * @property id Unique identifier for this item
- * @property href Relative path to the file within the EPUB
- * @property mediaType MIME type of the file
  */
 @Serializable
-@XmlSerialName("item", "http://www.idpf.org/2007/opf", "")
+@XmlSerialName("item", XmlConstants.OPF_NAMESPACE, "")
 data class Item(
     @XmlSerialName("id", "", "")
     val id: String,

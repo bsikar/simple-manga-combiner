@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.Screen
@@ -21,12 +22,14 @@ import com.mangacombiner.util.titlecase
 @Composable
 fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     var themeDropdownExpanded by remember { mutableStateOf(false) }
+    var iconThemeDropdownExpanded by remember { mutableStateOf(false) }
     var outputDropdownExpanded by remember { mutableStateOf(false) }
     var fontSizeDropdownExpanded by remember { mutableStateOf(false) }
     val outputLocations = listOf("Downloads", "Documents", "Desktop", "Custom").filter {
         !(it == "Desktop" && System.getProperty("java.runtime.name")?.contains("Android") == true)
     }
     val themeOptions = remember { AppTheme.values().toList() }
+    val iconThemeOptions = remember { IconTheme.values().toList() }
     val fontPresets = listOf("XX-Small", "X-Small", "Small", "Medium", "Large", "X-Large", "XX-Large")
 
     Column(
@@ -67,6 +70,31 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    Text("App Icon (Android):", style = MaterialTheme.typography.body1)
+                    Box {
+                        OutlinedButton(onClick = { iconThemeDropdownExpanded = true }) {
+                            Text(state.iconTheme.name.lowercase().titlecase())
+                            Icon(Icons.Default.ArrowDropDown, "App Icon")
+                        }
+                        DropdownMenu(
+                            expanded = iconThemeDropdownExpanded,
+                            onDismissRequest = { iconThemeDropdownExpanded = false }
+                        ) {
+                            iconThemeOptions.forEach { theme ->
+                                DropdownMenuItem(onClick = {
+                                    onEvent(Event.Settings.UpdateIconTheme(theme))
+                                    iconThemeDropdownExpanded = false
+                                }) { Text(theme.name.lowercase().titlecase()) }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text("Font Size:", style = MaterialTheme.typography.body1)
                     Box {
                         OutlinedButton(onClick = { fontSizeDropdownExpanded = true }) {
@@ -96,8 +124,8 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                 Text("Functionality", style = MaterialTheme.typography.h6)
 
                 FormControlLabel(
-                    onClick = { onEvent(Event.Settings.ToggleOfflineMode(!state.isOfflineMode)) },
-                    control = { Switch(checked = state.isOfflineMode, onCheckedChange = null) },
+                    onClick = { onEvent(Event.Settings.ToggleOfflineMode(!state.offlineMode)) },
+                    control = { Switch(checked = state.offlineMode, onCheckedChange = null) },
                     label = { Text("Offline Mode") }
                 )
                 Text(

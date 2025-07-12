@@ -5,6 +5,7 @@ import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.util.ClipboardManager
 import com.mangacombiner.util.DesktopPlatformProvider
 import com.mangacombiner.util.FileMover
+import com.mangacombiner.util.IconChanger
 import com.mangacombiner.util.PlatformProvider
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.factoryOf
@@ -15,6 +16,7 @@ actual fun platformModule(): Module = module {
     factory<PlatformProvider> { DesktopPlatformProvider() }
     single { SettingsRepository() }
     factory { FileMover() }
+    factory { IconChanger() }
 
     // ViewModel for Desktop
     factoryOf(::MainViewModel)

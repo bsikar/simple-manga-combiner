@@ -10,5 +10,9 @@ data class DownloadJob(
     val status: String,
     val totalChapters: Int,
     val downloadedChapters: Int,
-    val isIndividuallyPaused: Boolean = false,
-)
+    val isIndividuallyPaused: Boolean = Defaults.IS_INDIVIDUALLY_PAUSED,
+) {
+    companion object Defaults {
+        const val IS_INDIVIDUALLY_PAUSED = false
+    }
+}

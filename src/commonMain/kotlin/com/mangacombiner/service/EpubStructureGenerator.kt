@@ -1,5 +1,6 @@
 package com.mangacombiner.service
 
+import com.mangacombiner.model.OpfMetadata
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.getImageDimensions
 import net.lingala.zip4j.ZipFile
@@ -150,7 +151,7 @@ internal class EpubStructureGenerator {
         <package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
                 <dc:title>$title</dc:title>
-                <dc:creator opf:role="aut">MangaCombiner</dc:creator>
+                <dc:creator opf:role="aut">${OpfMetadata.Defaults.CREATOR}</dc:creator>
                 <dc:language>en</dc:language>
                 <dc:identifier id="BookId" opf:scheme="UUID">$bookId</dc:identifier>
 $sourceTag

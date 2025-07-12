@@ -1,6 +1,7 @@
 package com.mangacombiner.desktop
 
 import com.mangacombiner.di.appModule
+import com.mangacombiner.model.AppSettings
 import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadService
 import com.mangacombiner.service.FileConverter
@@ -13,7 +14,6 @@ import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.createHttpClient
 import com.mangacombiner.util.logOperationSettings
-import com.mangacombiner.util.naturalSortComparator
 import com.mangacombiner.util.titlecase
 import com.mangacombiner.util.toSlug
 import kotlinx.cli.ArgParser
@@ -33,27 +33,27 @@ fun main(args: Array<String>) {
 
     val parser = ArgParser("manga-combiner-cli")
     val source by parser.argument(ArgType.String, "source", "Source URL or local file path")
-    val format by parser.option(ArgType.String, "format", description = "Output format ('cbz' or 'epub')").default("epub")
+    val format by parser.option(ArgType.String, "format", description = "Output format ('cbz' or 'epub')").default(AppSettings.Defaults.OUTPUT_FORMAT)
     val title by parser.option(ArgType.String, "title", "t", "Custom output file title.")
     val outputPath by parser.option(ArgType.String, "output", "o", "Directory to save the final file.").default("")
     val force by parser.option(ArgType.Boolean, "force", "f", "Force overwrite of output file.").default(false)
     val deleteOriginal by parser.option(ArgType.Boolean, "delete-original", "Delete source on success.").default(false)
-    val debug by parser.option(ArgType.Boolean, "debug", description = "Enable debug logging.").default(false)
+    val debug by parser.option(ArgType.Boolean, "debug", description = "Enable debug logging.").default(AppSettings.Defaults.DEBUG_LOG)
     val dryRun by parser.option(ArgType.Boolean, "dry-run", description = "Simulate the operation without creating files.").default(false)
     val exclude by parser.option(ArgType.String, "exclude", "e", "Chapter URL slug to exclude.").multiple()
-    val workers by parser.option(ArgType.Int, "workers", "w", "Number of concurrent download workers.").default(4)
+    val workers by parser.option(ArgType.Int, "workers", "w", "Number of concurrent download workers.").default(AppSettings.Defaults.WORKERS)
     val userAgentName by parser.option(
         ArgType.String,
         "user-agent",
         "ua",
         "Browser profile to impersonate."
-    ).default("Chrome (Windows)")
+    ).default(AppSettings.Defaults.USER_AGENT_NAME)
     val proxy by parser.option(ArgType.String, "proxy", description = "Proxy URL (e.g., http://host:port)")
     val perWorkerUserAgent by parser.option(
         ArgType.Boolean,
         "per-worker-ua",
         description = "Use a different random user agent for each worker."
-    ).default(false)
+    ).default(AppSettings.Defaults.PER_WORKER_USER_AGENT)
 
     try {
         parser.parse(args)

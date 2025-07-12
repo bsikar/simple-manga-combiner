@@ -6,35 +6,28 @@ import nl.adaptivity.xmlutil.serialization.XmlSerialName
 
 /**
  * Root element for ComicInfo.xml metadata used in CBZ files.
- * This format is widely supported by comic readers.
- *
- * @property series The name of the manga series
- * @property title The title of this specific volume/collection
- * @property web The source URL for the series
- * @property pageCount Total number of pages in the archive
- * @property pages Container for individual page metadata
  */
 @Serializable
-@XmlSerialName("ComicInfo", "", "")
+@XmlSerialName("ComicInfo", XmlConstants.COMIC_INFO_NAMESPACE, "")
 data class ComicInfo(
     @XmlElement(true)
-    @XmlSerialName("Series", "", "")
+    @XmlSerialName("Series", XmlConstants.COMIC_INFO_NAMESPACE, "")
     val series: String,
 
     @XmlElement(true)
-    @XmlSerialName("Title", "", "")
+    @XmlSerialName("Title", XmlConstants.COMIC_INFO_NAMESPACE, "")
     val title: String,
 
     @XmlElement(true)
-    @XmlSerialName("Web", "", "")
+    @XmlSerialName("Web", XmlConstants.COMIC_INFO_NAMESPACE, "")
     val web: String? = null,
 
     @XmlElement(true)
-    @XmlSerialName("PageCount", "", "")
+    @XmlSerialName("PageCount", XmlConstants.COMIC_INFO_NAMESPACE, "")
     val pageCount: Int,
 
     @XmlElement(true)
-    @XmlSerialName("Pages", "", "")
+    @XmlSerialName("Pages", XmlConstants.COMIC_INFO_NAMESPACE, "")
     val pages: Pages
 ) {
     init {

@@ -34,7 +34,7 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                     Text("Download & Sync Options", style = MaterialTheme.typography.h6)
                     Spacer(Modifier.height(8.dp))
 
-                    if (state.isOfflineMode) {
+                    if (state.offlineMode) {
                         Text(
                             "Offline mode is enabled. Use 'Update Local File' to add or remove chapters from an existing CBZ or EPUB.",
                             style = MaterialTheme.typography.caption,
@@ -48,7 +48,7 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                         label = { Text("Series URL") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        enabled = isIdle && !state.isOfflineMode,
+                        enabled = isIdle && !state.offlineMode,
                         trailingIcon = {
                             if (state.seriesUrl.isNotBlank()) {
                                 IconButton(

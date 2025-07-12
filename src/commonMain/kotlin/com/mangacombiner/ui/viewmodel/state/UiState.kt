@@ -2,6 +2,7 @@ package com.mangacombiner.ui.viewmodel.state
 
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.DownloadJob
+import com.mangacombiner.model.IconTheme
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.CachedSeries
@@ -11,20 +12,11 @@ import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.OperationState
 
 data class UiState(
+    // Transient UI State (Defaults live here)
     val currentScreen: Screen = Screen.SEARCH,
-    val theme: AppTheme = AppTheme.LIGHT,
     val seriesUrl: String = "",
     val customTitle: String = "",
     val outputPath: String = "",
-    val defaultOutputLocation: String = "Downloads",
-    val customDefaultOutputPath: String = "",
-    val workers: Int = 4,
-    val batchWorkers: Int = 1,
-    val outputFormat: String = "epub",
-    val userAgentName: String = "Chrome (Windows)",
-    val perWorkerUserAgent: Boolean = false,
-    val proxyUrl: String = "",
-    val debugLog: Boolean = false,
     val operationState: OperationState = OperationState.IDLE,
     val progress: Float = 0f,
     val progressStatusText: String = "",
@@ -45,13 +37,10 @@ data class UiState(
     val cacheItemsToDelete: Set<String> = emptySet(),
     val cacheSortState: Map<String, CacheSortState?> = emptyMap(),
     val expandedCacheSeries: Set<String> = emptySet(),
-    val logAutoscrollEnabled: Boolean = true,
     val activeDownloadOptions: DownloadOptions? = null,
     val settingsLocationDescription: String = "",
     val isSettingsLocationOpenable: Boolean = false,
     val cachePath: String = "",
-    val zoomFactor: Float = 1.0f,
-    val fontSizePreset: String = "Medium",
     val showRestoreDefaultsDialog: Boolean = false,
     val outputFileExists: Boolean = false,
     val showOverwriteConfirmationDialog: Boolean = false,
@@ -69,12 +58,29 @@ data class UiState(
     val showCompletionDialog: Boolean = false,
     val lastDownloadResult: DownloadResult? = null,
     val chaptersToPreselect: Set<String> = emptySet(),
-    val isOfflineMode: Boolean = false,
-    val isQueueGloballyPaused: Boolean = false
+    val isQueueGloballyPaused: Boolean = false,
+
+    // Persisted Settings (Defaults point to AppSettings.Defaults)
+    val theme: AppTheme = AppSettings.Defaults.THEME,
+    val iconTheme: IconTheme = AppSettings.Defaults.ICON_THEME,
+    val defaultOutputLocation: String = AppSettings.Defaults.DEFAULT_OUTPUT_LOCATION,
+    val customDefaultOutputPath: String = AppSettings.Defaults.CUSTOM_DEFAULT_OUTPUT_PATH,
+    val workers: Int = AppSettings.Defaults.WORKERS,
+    val batchWorkers: Int = AppSettings.Defaults.BATCH_WORKERS,
+    val outputFormat: String = AppSettings.Defaults.OUTPUT_FORMAT,
+    val userAgentName: String = AppSettings.Defaults.USER_AGENT_NAME,
+    val perWorkerUserAgent: Boolean = AppSettings.Defaults.PER_WORKER_USER_AGENT,
+    val proxyUrl: String = AppSettings.Defaults.PROXY_URL,
+    val debugLog: Boolean = AppSettings.Defaults.DEBUG_LOG,
+    val logAutoscrollEnabled: Boolean = AppSettings.Defaults.LOG_AUTOSCROLL_ENABLED,
+    val zoomFactor: Float = AppSettings.Defaults.ZOOM_FACTOR,
+    val fontSizePreset: String = AppSettings.Defaults.FONT_SIZE_PRESET,
+    val offlineMode: Boolean = AppSettings.Defaults.OFFLINE_MODE
 )
 
 internal fun UiState.toAppSettings() = AppSettings(
     theme = this.theme,
+    iconTheme = this.iconTheme,
     defaultOutputLocation = this.defaultOutputLocation,
     customDefaultOutputPath = this.customDefaultOutputPath,
     workers = this.workers,
@@ -86,5 +92,6 @@ internal fun UiState.toAppSettings() = AppSettings(
     debugLog = this.debugLog,
     logAutoscrollEnabled = this.logAutoscrollEnabled,
     zoomFactor = this.zoomFactor,
-    fontSizePreset = this.fontSizePreset
+    fontSizePreset = this.fontSizePreset,
+    offlineMode = this.offlineMode
 )

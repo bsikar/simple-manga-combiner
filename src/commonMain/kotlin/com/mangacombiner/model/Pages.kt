@@ -6,11 +6,9 @@ import nl.adaptivity.xmlutil.serialization.XmlSerialName
 
 /**
  * Container for page information in ComicInfo.xml.
- *
- * @property page List of individual page metadata entries
  */
 @Serializable
-@XmlSerialName("Pages", "", "")
+@XmlSerialName("Pages", XmlConstants.COMIC_INFO_NAMESPACE, "")
 data class Pages(
     @SerialName("Page")
     val page: List<PageInfo>

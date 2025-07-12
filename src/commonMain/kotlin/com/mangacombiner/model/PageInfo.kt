@@ -5,21 +5,17 @@ import nl.adaptivity.xmlutil.serialization.XmlSerialName
 
 /**
  * Metadata for a single page in a comic archive.
- *
- * @property image Zero-based index of the page
- * @property bookmark Optional bookmark text (typically chapter name)
- * @property type Optional page type (e.g., "FrontCover", "Story")
  */
 @Serializable
-@XmlSerialName("Page", "", "")
+@XmlSerialName("Page", XmlConstants.COMIC_INFO_NAMESPACE, "")
 data class PageInfo(
-    @XmlSerialName("Image", "", "")
+    @XmlSerialName("Image", XmlConstants.COMIC_INFO_NAMESPACE, "")
     val image: Int,
 
-    @XmlSerialName("Bookmark", "", "")
+    @XmlSerialName("Bookmark", XmlConstants.COMIC_INFO_NAMESPACE, "")
     val bookmark: String? = null,
 
-    @XmlSerialName("Type", "", "")
+    @XmlSerialName("Type", XmlConstants.COMIC_INFO_NAMESPACE, "")
     val type: String? = null
 ) {
     init {

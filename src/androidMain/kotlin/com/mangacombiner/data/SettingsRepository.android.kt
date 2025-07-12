@@ -3,6 +3,7 @@ package com.mangacombiner.data
 import android.content.Context
 import androidx.core.content.edit
 import com.mangacombiner.model.AppSettings
+import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.util.Logger
 
@@ -11,6 +12,7 @@ actual class SettingsRepository(private val context: Context) {
 
     companion object {
         private const val THEME = "theme"
+        private const val ICON_THEME = "icon_theme"
         private const val DEFAULT_OUTPUT_LOCATION = "default_output_location"
         private const val CUSTOM_DEFAULT_OUTPUT_PATH = "custom_default_output_path"
         private const val WORKERS = "workers"
@@ -30,6 +32,7 @@ actual class SettingsRepository(private val context: Context) {
         Logger.logDebug { "Saving settings to Android SharedPreferences." }
         prefs.edit(commit = true) {
             putString(THEME, settings.theme.name)
+            putString(ICON_THEME, settings.iconTheme.name)
             putString(DEFAULT_OUTPUT_LOCATION, settings.defaultOutputLocation)
             putString(CUSTOM_DEFAULT_OUTPUT_PATH, settings.customDefaultOutputPath)
             putInt(WORKERS, settings.workers)
@@ -48,21 +51,26 @@ actual class SettingsRepository(private val context: Context) {
 
     actual fun loadSettings(): AppSettings {
         Logger.logDebug { "Loading settings from Android SharedPreferences." }
+        val defaultSettings = AppSettings()
+        val savedThemeName = prefs.getString(THEME, defaultSettings.theme.name)
+        val savedIconThemeName = prefs.getString(ICON_THEME, defaultSettings.iconTheme.name)
+
         return AppSettings(
-            theme = AppTheme.valueOf(prefs.getString(THEME, AppTheme.LIGHT.name) ?: AppTheme.LIGHT.name),
-            defaultOutputLocation = prefs.getString(DEFAULT_OUTPUT_LOCATION, "Downloads") ?: "Downloads",
-            customDefaultOutputPath = prefs.getString(CUSTOM_DEFAULT_OUTPUT_PATH, "") ?: "",
-            workers = prefs.getInt(WORKERS, 4),
-            batchWorkers = prefs.getInt(BATCH_WORKERS, 1),
-            outputFormat = prefs.getString(OUTPUT_FORMAT, "epub") ?: "epub",
-            userAgentName = prefs.getString(USER_AGENT_NAME, "Chrome (Windows)") ?: "Chrome (Windows)",
-            perWorkerUserAgent = prefs.getBoolean(PER_WORKER_USER_AGENT, false),
-            proxyUrl = prefs.getString(PROXY_URL, "") ?: "",
-            debugLog = prefs.getBoolean(DEBUG_LOG, false),
-            logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, true),
-            zoomFactor = prefs.getFloat(ZOOM_FACTOR, 1.0f),
-            fontSizePreset = prefs.getString(FONT_SIZE_PRESET, "Medium") ?: "Medium",
-            offlineMode = prefs.getBoolean(OFFLINE_MODE, false)
+            theme = AppTheme.values().find { it.name == savedThemeName } ?: defaultSettings.theme,
+            iconTheme = IconTheme.values().find { it.name == savedIconThemeName } ?: defaultSettings.iconTheme,
+            defaultOutputLocation = prefs.getString(DEFAULT_OUTPUT_LOCATION, defaultSettings.defaultOutputLocation) ?: defaultSettings.defaultOutputLocation,
+            customDefaultOutputPath = prefs.getString(CUSTOM_DEFAULT_OUTPUT_PATH, defaultSettings.customDefaultOutputPath) ?: defaultSettings.customDefaultOutputPath,
+            workers = prefs.getInt(WORKERS, defaultSettings.workers),
+            batchWorkers = prefs.getInt(BATCH_WORKERS, defaultSettings.batchWorkers),
+            outputFormat = prefs.getString(OUTPUT_FORMAT, defaultSettings.outputFormat) ?: defaultSettings.outputFormat,
+            userAgentName = prefs.getString(USER_AGENT_NAME, defaultSettings.userAgentName) ?: defaultSettings.userAgentName,
+            perWorkerUserAgent = prefs.getBoolean(PER_WORKER_USER_AGENT, defaultSettings.perWorkerUserAgent),
+            proxyUrl = prefs.getString(PROXY_URL, defaultSettings.proxyUrl) ?: defaultSettings.proxyUrl,
+            debugLog = prefs.getBoolean(DEBUG_LOG, defaultSettings.debugLog),
+            logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, defaultSettings.logAutoscrollEnabled),
+            zoomFactor = prefs.getFloat(ZOOM_FACTOR, defaultSettings.zoomFactor),
+            fontSizePreset = prefs.getString(FONT_SIZE_PRESET, defaultSettings.fontSizePreset) ?: defaultSettings.fontSizePreset,
+            offlineMode = prefs.getBoolean(OFFLINE_MODE, defaultSettings.offlineMode)
         )
     }
 }

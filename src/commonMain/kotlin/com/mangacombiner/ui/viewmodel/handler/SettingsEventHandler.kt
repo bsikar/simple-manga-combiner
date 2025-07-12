@@ -1,6 +1,7 @@
 package com.mangacombiner.ui.viewmodel.handler
 
 import com.mangacombiner.model.AppSettings
+import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
@@ -12,6 +13,7 @@ import kotlinx.coroutines.launch
 internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
     when (event) {
         is Event.Settings.UpdateTheme -> _state.update { it.copy(theme = event.theme) }
+        is Event.Settings.UpdateIconTheme -> onUpdateIconTheme(event.theme)
         is Event.Settings.UpdateFontSizePreset -> _state.update { it.copy(fontSizePreset = event.preset) }
         is Event.Settings.UpdateDefaultOutputLocation -> onUpdateDefaultOutputLocation(event.location)
         is Event.Settings.ToggleDebugLog -> onToggleDebugLog(event.isEnabled)
@@ -20,7 +22,7 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         is Event.Settings.UpdateUserAgent -> _state.update { it.copy(userAgentName = event.name) }
         is Event.Settings.UpdateProxyUrl -> _state.update { it.copy(proxyUrl = event.url) }
         is Event.Settings.TogglePerWorkerUserAgent -> _state.update { it.copy(perWorkerUserAgent = event.isEnabled) }
-        is Event.Settings.ToggleOfflineMode -> _state.update { it.copy(isOfflineMode = event.isEnabled) }
+        is Event.Settings.ToggleOfflineMode -> _state.update { it.copy(offlineMode = event.isEnabled) }
         Event.Settings.PickCustomDefaultPath -> viewModelScope.launch {
             _filePickerRequest.emit(FilePickerRequest.OpenFolder(FilePickerRequest.PathType.CUSTOM_OUTPUT))
         }
@@ -37,6 +39,11 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         Event.Settings.ConfirmRestoreDefaults -> onConfirmRestoreDefaults()
         Event.Settings.CancelRestoreDefaults -> _state.update { it.copy(showRestoreDefaultsDialog = false) }
     }
+}
+
+private fun MainViewModel.onUpdateIconTheme(iconTheme: IconTheme) {
+    _state.update { it.copy(iconTheme = iconTheme) }
+    iconChanger.setIcon(iconTheme)
 }
 
 private fun MainViewModel.onUpdateDefaultOutputLocation(location: String) {
@@ -62,6 +69,7 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
         it.copy(
             showRestoreDefaultsDialog = false,
             theme = defaultSettings.theme,
+            iconTheme = defaultSettings.iconTheme,
             defaultOutputLocation = defaultSettings.defaultOutputLocation,
             customDefaultOutputPath = defaultSettings.customDefaultOutputPath,
             workers = defaultSettings.workers,
@@ -73,8 +81,10 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
             logAutoscrollEnabled = defaultSettings.logAutoscrollEnabled,
             zoomFactor = defaultSettings.zoomFactor,
             fontSizePreset = defaultSettings.fontSizePreset,
-            isOfflineMode = defaultSettings.offlineMode
+            offlineMode = defaultSettings.offlineMode
         )
     }
+    // Also apply the restored icon theme
+    iconChanger.setIcon(defaultSettings.iconTheme)
     Logger.logInfo("All settings restored to default values.")
 }

@@ -1,5 +1,6 @@
 package com.mangacombiner.ui.viewmodel
 
+import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.state.CacheSortState
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
@@ -13,6 +14,7 @@ sealed interface Event {
 
     sealed interface Settings : Event {
         data class UpdateTheme(val theme: AppTheme) : Settings
+        data class UpdateIconTheme(val theme: IconTheme) : Settings
         data class UpdateFontSizePreset(val preset: String) : Settings
         data class UpdateDefaultOutputLocation(val location: String) : Settings
         data class ToggleDebugLog(val isEnabled: Boolean) : Settings

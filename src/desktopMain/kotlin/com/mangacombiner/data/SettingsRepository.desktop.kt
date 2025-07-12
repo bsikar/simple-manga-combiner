@@ -1,6 +1,7 @@
 package com.mangacombiner.data
 
 import com.mangacombiner.model.AppSettings
+import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.util.Logger
 import java.util.prefs.Preferences
@@ -11,6 +12,7 @@ actual class SettingsRepository {
     companion object {
         private const val THEME = "theme"
         private const val DEFAULT_OUTPUT_LOCATION = "default_output_location"
+        private const val ICON_THEME = "icon_theme"
         private const val CUSTOM_DEFAULT_OUTPUT_PATH = "custom_default_output_path"
         private const val WORKERS = "workers"
         private const val BATCH_WORKERS = "batch_workers"
@@ -28,6 +30,7 @@ actual class SettingsRepository {
     actual fun saveSettings(settings: AppSettings) {
         Logger.logDebug { "Saving settings to Java Preferences." }
         prefs.put(THEME, settings.theme.name)
+        prefs.put(ICON_THEME, settings.iconTheme.name)
         prefs.put(DEFAULT_OUTPUT_LOCATION, settings.defaultOutputLocation)
         prefs.put(CUSTOM_DEFAULT_OUTPUT_PATH, settings.customDefaultOutputPath)
         prefs.putInt(WORKERS, settings.workers)
@@ -45,21 +48,26 @@ actual class SettingsRepository {
 
     actual fun loadSettings(): AppSettings {
         Logger.logDebug { "Loading settings from Java Preferences." }
+        val defaultSettings = AppSettings()
+        val savedThemeName = prefs.get(THEME, defaultSettings.theme.name)
+        val savedIconThemeName = prefs.get(ICON_THEME, defaultSettings.iconTheme.name)
+
         return AppSettings(
-            theme = AppTheme.valueOf(prefs.get(THEME, AppTheme.LIGHT.name)),
-            defaultOutputLocation = prefs.get(DEFAULT_OUTPUT_LOCATION, "Downloads"),
-            customDefaultOutputPath = prefs.get(CUSTOM_DEFAULT_OUTPUT_PATH, ""),
-            workers = prefs.getInt(WORKERS, 4),
-            batchWorkers = prefs.getInt(BATCH_WORKERS, 1),
-            outputFormat = prefs.get(OUTPUT_FORMAT, "epub"),
-            userAgentName = prefs.get(USER_AGENT_NAME, "Chrome (Windows)"),
-            perWorkerUserAgent = prefs.getBoolean(PER_WORKER_USER_AGENT, false),
-            proxyUrl = prefs.get(PROXY_URL, ""),
-            debugLog = prefs.getBoolean(DEBUG_LOG, false),
-            logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, true),
-            zoomFactor = prefs.getFloat(ZOOM_FACTOR, 1.0f),
-            fontSizePreset = prefs.get(FONT_SIZE_PRESET, "Medium"),
-            offlineMode = prefs.getBoolean(OFFLINE_MODE, false)
+            theme = AppTheme.values().find { it.name == savedThemeName } ?: defaultSettings.theme,
+            iconTheme = IconTheme.values().find { it.name == savedIconThemeName } ?: defaultSettings.iconTheme,
+            defaultOutputLocation = prefs.get(DEFAULT_OUTPUT_LOCATION, defaultSettings.defaultOutputLocation),
+            customDefaultOutputPath = prefs.get(CUSTOM_DEFAULT_OUTPUT_PATH, defaultSettings.customDefaultOutputPath),
+            workers = prefs.getInt(WORKERS, defaultSettings.workers),
+            batchWorkers = prefs.getInt(BATCH_WORKERS, defaultSettings.batchWorkers),
+            outputFormat = prefs.get(OUTPUT_FORMAT, defaultSettings.outputFormat),
+            userAgentName = prefs.get(USER_AGENT_NAME, defaultSettings.userAgentName),
+            perWorkerUserAgent = prefs.getBoolean(PER_WORKER_USER_AGENT, defaultSettings.perWorkerUserAgent),
+            proxyUrl = prefs.get(PROXY_URL, defaultSettings.proxyUrl),
+            debugLog = prefs.getBoolean(DEBUG_LOG, defaultSettings.debugLog),
+            logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, defaultSettings.logAutoscrollEnabled),
+            zoomFactor = prefs.getFloat(ZOOM_FACTOR, defaultSettings.zoomFactor),
+            fontSizePreset = prefs.get(FONT_SIZE_PRESET, defaultSettings.fontSizePreset),
+            offlineMode = prefs.getBoolean(OFFLINE_MODE, defaultSettings.offlineMode)
         )
     }
 }

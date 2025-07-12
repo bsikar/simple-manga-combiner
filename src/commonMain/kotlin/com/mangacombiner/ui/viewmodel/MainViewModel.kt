@@ -38,7 +38,8 @@ class MainViewModel(
     internal val platformProvider: PlatformProvider,
     internal val cacheService: CacheService,
     internal val settingsRepository: SettingsRepository,
-    internal val fileMover: FileMover
+    internal val fileMover: FileMover,
+    internal val iconChanger: IconChanger
 ) : PlatformViewModel() {
 
     internal val _state: MutableStateFlow<UiState>
@@ -71,6 +72,7 @@ class MainViewModel(
         _state = MutableStateFlow(
             UiState(
                 theme = savedSettings.theme,
+                iconTheme = savedSettings.iconTheme,
                 defaultOutputLocation = effectiveDefaultLocation,
                 customDefaultOutputPath = savedSettings.customDefaultOutputPath,
                 workers = savedSettings.workers,
@@ -157,7 +159,7 @@ class MainViewModel(
                         if (job != null && !job.isIndividuallyPaused) { // Don't interfere with user-paused jobs
                             Logger.logDebug { "Throttling job due to lower priority: ${job.title}" }
                             runningJobCoroutines[jobId]?.cancel() // Cancel the coroutine
-                            runningJobCoroutines.remove(jobId)   // Remove from running map
+                            runningJobCoroutines.remove(jobId)    // Remove from running map
                             // Mark as throttled so it can be picked up again later
                             jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(jobId, "Throttled", null))
                         }
