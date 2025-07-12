@@ -2,6 +2,7 @@ package com.mangacombiner.ui.widget
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -9,6 +10,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.theme.AppTheme
@@ -168,12 +170,14 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
         Card(elevation = 4.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Network Settings", style = MaterialTheme.typography.h6)
-                OutlinedTextField(
+                SubmitTextField(
                     value = state.proxyUrl,
                     onValueChange = { onEvent(Event.Settings.UpdateProxyUrl(it)) },
                     label = { Text("Proxy URL (Optional)") },
                     placeholder = { Text("http(s)://[user:pass@]host:port") },
-                    modifier = Modifier.fillMaxWidth()
+                    onSubmit = { /* Do nothing, just dismiss keyboard on Android */ },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
                 )
             }
         }

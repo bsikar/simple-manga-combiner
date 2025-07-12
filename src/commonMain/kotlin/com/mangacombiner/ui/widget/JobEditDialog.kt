@@ -1,6 +1,7 @@
 package com.mangacombiner.ui.widget
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -9,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.mangacombiner.ui.viewmodel.Event
@@ -32,6 +34,12 @@ fun JobEditDialog(
 
     val isEditable = job?.status == "Queued" || job?.status == "Paused"
 
+    val submitAction = {
+        if (isEditable) {
+            onEvent(Event.Queue.UpdateJob(jobContext.jobId, title, outputPath, format, workers))
+        }
+    }
+
     Dialog(onDismissRequest = { onEvent(Event.Queue.CancelEditJob) }) {
         Surface(
             modifier = Modifier.width(600.dp),
@@ -44,20 +52,24 @@ fun JobEditDialog(
             ) {
                 Text("Edit Job", style = MaterialTheme.typography.h5)
 
-                OutlinedTextField(
+                SubmitTextField(
                     value = title,
                     onValueChange = { title = it },
                     label = { Text("Output Filename") },
+                    onSubmit = submitAction,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = isEditable
+                    enabled = isEditable,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
                 )
 
-                OutlinedTextField(
+                SubmitTextField(
                     value = outputPath,
                     onValueChange = { outputPath = it },
                     label = { Text("Output Directory") },
+                    onSubmit = submitAction,
                     modifier = Modifier.fillMaxWidth(),
                     enabled = isEditable,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     trailingIcon = {
                         IconButton(
                             onClick = { onEvent(Event.Queue.PickJobOutputPath) },
@@ -136,9 +148,7 @@ fun JobEditDialog(
                         Text("Close")
                     }
                     Button(
-                        onClick = {
-                            onEvent(Event.Queue.UpdateJob(jobContext.jobId, title, outputPath, format, workers))
-                        },
+                        onClick = submitAction,
                         enabled = isEditable
                     ) {
                         Text("Save Changes")

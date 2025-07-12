@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.service.CachedSeries
@@ -161,6 +162,15 @@ private fun CacheSeriesItem(
     val isSeriesChecked = selectedPaths.contains(series.path) ||
             (seriesChapterPaths.isNotEmpty() && selectedPaths.containsAll(seriesChapterPaths))
 
+    val startInt = rangeStart.toIntOrNull()
+    val endInt = rangeEnd.toIntOrNull()
+    val rangeIsValid = startInt != null && endInt != null && startInt <= endInt && endInt <= series.chapters.size
+    val submitRange = {
+        if (rangeIsValid) {
+            onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.SELECT))
+        }
+    }
+
     Card(elevation = 4.dp) {
         Column {
             Row(
@@ -239,35 +249,34 @@ private fun CacheSeriesItem(
                             Button(onClick = { onEvent(Event.Cache.SelectAllChapters(series.path, false)) }) { Text("Deselect All") }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
+                            SubmitTextField(
                                 value = rangeStart,
                                 onValueChange = { rangeStart = it.filter(Char::isDigit) },
                                 label = { Text("Start") },
+                                onSubmit = submitRange,
                                 modifier = Modifier.weight(1f),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
                             )
-                            OutlinedTextField(
+                            SubmitTextField(
                                 value = rangeEnd,
                                 onValueChange = { rangeEnd = it.filter(Char::isDigit) },
                                 label = { Text("End") },
+                                onSubmit = submitRange,
                                 modifier = Modifier.weight(1f),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
                             )
                         }
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            val startInt = rangeStart.toIntOrNull()
-                            val endInt = rangeEnd.toIntOrNull()
-                            val rangeIsSet = startInt != null && endInt != null && startInt <= endInt && endInt <= series.chapters.size
                             Button(
                                 onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.SELECT)) },
-                                enabled = rangeIsSet,
+                                enabled = rangeIsValid,
                             ) { Text("Select") }
                             Button(
                                 onClick = { onEvent(Event.Cache.UpdateChapterRange(series.path, startInt!!, endInt!!, RangeAction.DESELECT)) },
-                                enabled = rangeIsSet,
+                                enabled = rangeIsValid,
                             ) { Text("Deselect") }
                         }
                     }

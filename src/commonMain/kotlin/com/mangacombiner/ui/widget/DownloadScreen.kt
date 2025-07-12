@@ -3,6 +3,7 @@ package com.mangacombiner.ui.widget
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.OperationState
@@ -43,13 +45,14 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                         )
                     }
 
-                    OutlinedTextField(
+                    SubmitTextField(
                         value = state.seriesUrl,
                         onValueChange = { onEvent(Event.Download.UpdateUrl(it)) },
                         label = { Text("Series URL") },
+                        onSubmit = { onEvent(Event.Download.FetchChapters) },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
                         enabled = isIdle && !state.offlineMode,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                         trailingIcon = {
                             if (state.seriesUrl.isNotBlank()) {
                                 IconButton(
@@ -111,21 +114,25 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
 
                     Divider()
 
-                    OutlinedTextField(
+                    SubmitTextField(
                         value = state.customTitle,
                         onValueChange = { onEvent(Event.Download.UpdateCustomTitle(it)) },
                         label = { Text("Output Filename (without extension)") },
+                        onSubmit = { onEvent(Event.Download.FetchChapters) },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = isIdle
+                        enabled = isIdle,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go)
                     )
 
-                    OutlinedTextField(
+                    SubmitTextField(
                         value = state.outputPath,
                         onValueChange = { onEvent(Event.Download.UpdateOutputPath(it)) },
                         label = { Text("Output Directory") },
+                        onSubmit = { onEvent(Event.Download.FetchChapters) },
                         placeholder = { Text("Default: Your Downloads folder") },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = isIdle,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                         trailingIcon = {
                             IconButton(
                                 onClick = { onEvent(Event.Download.PickOutputPath) },

@@ -3,6 +3,7 @@ package com.mangacombiner.ui.widget
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -13,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.OperationState
@@ -34,13 +36,14 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Search for a Series", style = MaterialTheme.typography.h6)
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                SubmitTextField(
                     value = state.searchQuery,
                     onValueChange = { onEvent(Event.Search.UpdateQuery(it)) },
                     label = { Text("Search on MangaRead.org") },
+                    onSubmit = { onEvent(Event.Search.Perform) },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
                     enabled = isIdle,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     trailingIcon = {
                         if (state.searchQuery.isNotBlank()) {
                             IconButton(

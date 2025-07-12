@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -56,6 +57,15 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (Event) -> Unit) {
     val hasBrokenChapters = state.fetchedChapters.any { it.isBroken }
     val isSyncMode = state.sourceFilePath != null
 
+    val startInt = rangeStart.toIntOrNull()
+    val endInt = rangeEnd.toIntOrNull()
+    val rangeIsValid = startInt != null && endInt != null && startInt <= endInt && endInt <= state.fetchedChapters.size
+    val submitRange = {
+        if (rangeIsValid) {
+            onEvent(Event.Download.UpdateChapterRange(startInt!!, endInt!!, RangeAction.SELECT))
+        }
+    }
+
     Dialog(onDismissRequest = { onEvent(Event.Download.CancelChapterSelection) }) {
         Surface(
             modifier = Modifier.width(600.dp).heightIn(max = 700.dp),
@@ -93,19 +103,21 @@ fun ChapterSelectionDialog(state: UiState, onEvent: (Event) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
+                    SubmitTextField(
                         value = rangeStart,
                         onValueChange = { rangeStart = it.filter { c -> c.isDigit() } },
                         label = { Text("Start") },
+                        onSubmit = submitRange,
                         modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
                     )
-                    OutlinedTextField(
+                    SubmitTextField(
                         value = rangeEnd,
                         onValueChange = { rangeEnd = it.filter { c -> c.isDigit() } },
                         label = { Text("End") },
+                        onSubmit = submitRange,
                         modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
                     )
                 }
                 Spacer(Modifier.height(8.dp))
