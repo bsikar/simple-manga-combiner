@@ -39,14 +39,10 @@ private fun MainViewModel.onSelectSearchResult(url: String) {
                 .replace('-', ' ')
                 .titlecase(),
 
-            // Clear search UI state
-            searchQuery = "",
-            searchResults = emptyList(),
-            originalSearchResults = emptyList(),
-
             // Clear state from any previous local file operation
             sourceFilePath = null,
-            localChaptersForSync = emptyMap()
+            localChaptersForSync = emptyMap(),
+            failedItemsForSync = emptyMap()
         )
     }
     checkOutputFileExistence()

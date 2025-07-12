@@ -6,6 +6,7 @@ import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.state.RangeAction
+import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.titlecase
 import kotlinx.coroutines.flow.update
@@ -21,6 +22,7 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         is Event.Download.UpdateChapterSource -> onUpdateChapterSource(event.chapterUrl, event.source)
         is Event.Download.UpdateChapterRange -> onUpdateChapterRange(event.start, event.end, event.action)
         is Event.Download.UpdateOutputPath -> onUpdateOutputPath(event.path)
+        Event.Download.BackToSearchResults -> onBackToSearchResults()
         Event.Download.FetchChapters -> fetchChapters()
         Event.Download.CancelFetchChapters -> onCancelFetchChapters()
         Event.Download.ClearInputs -> onClearDownloadInputs()
@@ -39,6 +41,22 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         Event.Download.UseAllBroken -> onBulkUpdateBrokenChapterSource(ChapterSource.CACHE)
         Event.Download.IgnoreAllBroken -> onBulkUpdateBrokenChapterSource(null)
         Event.Download.RedownloadAllBroken -> onBulkUpdateBrokenChapterSource(ChapterSource.WEB)
+    }
+}
+
+private fun MainViewModel.onBackToSearchResults() {
+    _state.update {
+        it.copy(
+            currentScreen = Screen.SEARCH,
+            // Clear the download screen's inputs so it's fresh if the user selects another series
+            seriesUrl = "",
+            customTitle = "",
+            sourceFilePath = null,
+            fetchedChapters = emptyList(),
+            localChaptersForSync = emptyMap(),
+            failedItemsForSync = emptyMap(),
+            outputFileExists = false
+        )
     }
 }
 

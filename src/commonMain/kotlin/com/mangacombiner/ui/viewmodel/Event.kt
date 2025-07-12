@@ -50,6 +50,7 @@ sealed interface Event {
         data class ToggleChapterSelection(val chapterUrl: String, val select: Boolean) : Download
         data class ToggleChapterRedownload(val chapterUrl: String) : Download
         data class UpdateChapterRange(val start: Int, val end: Int, val action: RangeAction) : Download
+        object BackToSearchResults : Download
         object PickOutputPath : Download
         object PickLocalFile : Download
         object ClearInputs : Download
