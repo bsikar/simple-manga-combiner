@@ -124,19 +124,13 @@ class CacheService(private val platformProvider: PlatformProvider) {
         // Clean up parent directories if they are now empty of chapters
         parentDirs.forEach { dirPath ->
             val dir = File(dirPath)
+            // A series directory should be removed if it's either completely empty
+            // or if it no longer contains any chapter subdirectories.
             if (dir.exists() && dir.isDirectory) {
                 val remainingEntries = dir.listFiles()
-                if (remainingEntries.isNullOrEmpty()) {
-                    // Directory is completely empty, safe to delete
-                    Logger.logDebug { "Parent directory is empty. Deleting: ${dir.name}" }
-                    dir.delete()
-                } else {
-                    // Directory is not empty, check if it contains only files (no subdirectories)
-                    val hasNoSubdirectories = remainingEntries.none { it.isDirectory }
-                    if (hasNoSubdirectories) {
-                        Logger.logDebug { "Parent directory contains only files (no chapters). Deleting recursively: ${dir.name}" }
-                        dir.deleteRecursively()
-                    }
+                if (remainingEntries.isNullOrEmpty() || remainingEntries.none { it.isDirectory }) {
+                    Logger.logDebug { "Parent directory contains no more chapters. Deleting recursively: ${dir.name}" }
+                    dir.deleteRecursively()
                 }
             }
         }

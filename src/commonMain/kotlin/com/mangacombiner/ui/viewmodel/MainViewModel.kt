@@ -30,6 +30,8 @@ private sealed class JobUpdateEvent {
     data class DownloadedChaptersChanged(val jobId: String, val newCount: Int) : JobUpdateEvent()
 }
 
+private class ThrottlingException(message: String) : CancellationException(message)
+
 @OptIn(FlowPreview::class)
 class MainViewModel(
     internal val downloadService: DownloadService,
@@ -156,10 +158,10 @@ class MainViewModel(
                         val job = queue.find { it.id == jobId }
                         if (job != null && !job.isIndividuallyPaused) { // Don't interfere with user-paused jobs
                             Logger.logDebug { "Throttling job due to lower priority: ${job.title}" }
-                            runningJobCoroutines[jobId]?.cancel() // Cancel the coroutine
-                            runningJobCoroutines.remove(jobId)    // Remove from running map
                             // Mark as throttled so it can be picked up again later
-                            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(jobId, "Throttled", null))
+                            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(jobId, "Paused", null))
+                            runningJobCoroutines[jobId]?.cancel(ThrottlingException("Job was throttled by queue manager")) // Cancel the coroutine
+                            runningJobCoroutines.remove(jobId)    // Remove from running map
                         }
                     }
 
@@ -168,7 +170,7 @@ class MainViewModel(
                     jobsToStart.forEach { jobId ->
                         val job = queue.find { it.id == jobId }
                         // A job can be started if it's in a startable state and not paused by the user.
-                        if (job != null && !job.isIndividuallyPaused && (job.status == "Queued" || job.status == "Throttled")) {
+                        if (job != null && !job.isIndividuallyPaused && (job.status == "Queued" || job.status == "Paused")) {
                             Logger.logDebug { "Activating job due to high priority: ${job.title}" }
                             startJob(job)
                         }
@@ -766,6 +768,10 @@ class MainViewModel(
             jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Completed", 1f))
             Logger.logInfo("--- Finished Queued Job: ${op.customTitle} ---")
         } catch (e: Exception) {
+            if (e is ThrottlingException) {
+                Logger.logDebug { "Job ${op.jobId} successfully throttled." }
+                return // Exit cleanly
+            }
             if (e is CancellationException) {
                 jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Cancelled", null))
                 Logger.logInfo("Job ${op.jobId} was cancelled by the user.")

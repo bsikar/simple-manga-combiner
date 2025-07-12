@@ -51,12 +51,19 @@ internal fun MainViewModel.handleCacheEvent(event: Event.Cache) {
 private fun MainViewModel.onSelectAllCachedChapters(seriesPath: String, select: Boolean) {
     _state.update { uiState ->
         val series = uiState.cacheContents.find { it.path == seriesPath } ?: return@update uiState
-        val pathsToModify = series.chapters.map { it.path }.toSet()
         val currentSelection = uiState.cacheItemsToDelete.toMutableSet()
+        val chapterPaths = series.chapters.map { it.path }.toSet()
+
         if (select) {
-            currentSelection.addAll(pathsToModify)
+            if (series.chapters.isEmpty()) {
+                currentSelection.add(series.path)
+            } else {
+                currentSelection.addAll(chapterPaths)
+            }
         } else {
-            currentSelection.removeAll(pathsToModify)
+            // When deselecting, remove both the series path and all its chapter paths.
+            currentSelection.remove(series.path)
+            currentSelection.removeAll(chapterPaths)
         }
         uiState.copy(cacheItemsToDelete = currentSelection)
     }
