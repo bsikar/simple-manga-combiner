@@ -6,7 +6,6 @@ internal expect fun getDefaultPlatformTheme(): AppTheme
 
 data class AppSettings(
     val theme: AppTheme = Defaults.THEME,
-    val iconTheme: IconTheme = Defaults.ICON_THEME,
     val defaultOutputLocation: String = Defaults.DEFAULT_OUTPUT_LOCATION,
     val customDefaultOutputPath: String = Defaults.CUSTOM_DEFAULT_OUTPUT_PATH,
     val workers: Int = Defaults.WORKERS,
@@ -27,7 +26,6 @@ data class AppSettings(
      */
     companion object Defaults {
         val THEME = getDefaultPlatformTheme()
-        val ICON_THEME = IconTheme.COLOR
         const val DEFAULT_OUTPUT_LOCATION = "Downloads"
         const val CUSTOM_DEFAULT_OUTPUT_PATH = ""
         const val WORKERS = 4

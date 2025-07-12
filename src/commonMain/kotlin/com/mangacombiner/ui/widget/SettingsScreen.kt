@@ -8,11 +8,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.Screen
@@ -21,18 +19,15 @@ import com.mangacombiner.util.AppVersion
 import com.mangacombiner.util.pointer.tooltipHoverFix
 import com.mangacombiner.util.titlecase
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     var themeDropdownExpanded by remember { mutableStateOf(false) }
-    var iconThemeDropdownExpanded by remember { mutableStateOf(false) }
     var outputDropdownExpanded by remember { mutableStateOf(false) }
     var fontSizeDropdownExpanded by remember { mutableStateOf(false) }
     val outputLocations = listOf("Downloads", "Documents", "Desktop", "Custom").filter {
         !(it == "Desktop" && System.getProperty("java.runtime.name")?.contains("Android") == true)
     }
     val themeOptions = remember { AppTheme.values().toList() }
-    val iconThemeOptions = remember { IconTheme.values().toList() }
     val fontPresets = listOf("XX-Small", "X-Small", "Small", "Medium", "Large", "X-Large", "XX-Large")
 
     Column(
@@ -65,33 +60,6 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                                     onEvent(Event.Settings.UpdateTheme(theme))
                                     themeDropdownExpanded = false
                                 }) { Text(theme.name.lowercase().replace('_', ' ').titlecase()) }
-                            }
-                        }
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("App Icon:", style = MaterialTheme.typography.body1)
-                    Box(
-                        modifier = Modifier.tooltipHoverFix()
-                    ) {
-                        OutlinedButton(onClick = { iconThemeDropdownExpanded = true }) {
-                            Text(state.iconTheme.name.lowercase().titlecase())
-                            Icon(Icons.Default.ArrowDropDown, "App Icon")
-                        }
-                        DropdownMenu(
-                            expanded = iconThemeDropdownExpanded,
-                            onDismissRequest = { iconThemeDropdownExpanded = false }
-                        ) {
-                            iconThemeOptions.forEach { theme ->
-                                DropdownMenuItem(onClick = {
-                                    onEvent(Event.Settings.UpdateIconTheme(theme))
-                                    iconThemeDropdownExpanded = false
-                                }) { Text(theme.name.lowercase().titlecase()) }
                             }
                         }
                     }
@@ -274,4 +242,3 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
         )
     }
 }
-

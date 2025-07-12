@@ -3,7 +3,6 @@ package com.mangacombiner.data
 import android.content.Context
 import androidx.core.content.edit
 import com.mangacombiner.model.AppSettings
-import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.util.Logger
 
@@ -12,7 +11,6 @@ actual class SettingsRepository(private val context: Context) {
 
     companion object {
         private const val THEME = "theme"
-        private const val ICON_THEME = "icon_theme"
         private const val DEFAULT_OUTPUT_LOCATION = "default_output_location"
         private const val CUSTOM_DEFAULT_OUTPUT_PATH = "custom_default_output_path"
         private const val WORKERS = "workers"
@@ -32,7 +30,6 @@ actual class SettingsRepository(private val context: Context) {
         Logger.logDebug { "Saving settings to Android SharedPreferences." }
         prefs.edit(commit = true) {
             putString(THEME, settings.theme.name)
-            putString(ICON_THEME, settings.iconTheme.name)
             putString(DEFAULT_OUTPUT_LOCATION, settings.defaultOutputLocation)
             putString(CUSTOM_DEFAULT_OUTPUT_PATH, settings.customDefaultOutputPath)
             putInt(WORKERS, settings.workers)
@@ -53,11 +50,9 @@ actual class SettingsRepository(private val context: Context) {
         Logger.logDebug { "Loading settings from Android SharedPreferences." }
         val defaultSettings = AppSettings()
         val savedThemeName = prefs.getString(THEME, defaultSettings.theme.name)
-        val savedIconThemeName = prefs.getString(ICON_THEME, defaultSettings.iconTheme.name)
 
         return AppSettings(
-            theme = AppTheme.values().find { it.name == savedThemeName } ?: defaultSettings.theme,
-            iconTheme = IconTheme.values().find { it.name == savedIconThemeName } ?: defaultSettings.iconTheme,
+            theme = AppTheme.entries.find { it.name == savedThemeName } ?: defaultSettings.theme,
             defaultOutputLocation = prefs.getString(DEFAULT_OUTPUT_LOCATION, defaultSettings.defaultOutputLocation) ?: defaultSettings.defaultOutputLocation,
             customDefaultOutputPath = prefs.getString(CUSTOM_DEFAULT_OUTPUT_PATH, defaultSettings.customDefaultOutputPath) ?: defaultSettings.customDefaultOutputPath,
             workers = prefs.getInt(WORKERS, defaultSettings.workers),

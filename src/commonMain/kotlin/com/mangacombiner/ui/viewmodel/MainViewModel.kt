@@ -38,8 +38,7 @@ class MainViewModel(
     internal val platformProvider: PlatformProvider,
     internal val cacheService: CacheService,
     internal val settingsRepository: SettingsRepository,
-    internal val fileMover: FileMover,
-    internal val iconChanger: IconChanger
+    internal val fileMover: FileMover
 ) : PlatformViewModel() {
 
     internal val _state: MutableStateFlow<UiState>
@@ -72,7 +71,6 @@ class MainViewModel(
         _state = MutableStateFlow(
             UiState(
                 theme = savedSettings.theme,
-                iconTheme = savedSettings.iconTheme,
                 defaultOutputLocation = effectiveDefaultLocation,
                 customDefaultOutputPath = savedSettings.customDefaultOutputPath,
                 workers = savedSettings.workers,

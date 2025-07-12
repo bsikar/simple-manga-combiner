@@ -2,7 +2,6 @@ package com.mangacombiner.ui.viewmodel.state
 
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.DownloadJob
-import com.mangacombiner.model.IconTheme
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.CachedSeries
@@ -62,7 +61,6 @@ data class UiState(
 
     // Persisted Settings (Defaults point to AppSettings.Defaults)
     val theme: AppTheme = AppSettings.Defaults.THEME,
-    val iconTheme: IconTheme = AppSettings.Defaults.ICON_THEME,
     val defaultOutputLocation: String = AppSettings.Defaults.DEFAULT_OUTPUT_LOCATION,
     val customDefaultOutputPath: String = AppSettings.Defaults.CUSTOM_DEFAULT_OUTPUT_PATH,
     val workers: Int = AppSettings.Defaults.WORKERS,
@@ -80,7 +78,6 @@ data class UiState(
 
 internal fun UiState.toAppSettings() = AppSettings(
     theme = this.theme,
-    iconTheme = this.iconTheme,
     defaultOutputLocation = this.defaultOutputLocation,
     customDefaultOutputPath = this.customDefaultOutputPath,
     workers = this.workers,

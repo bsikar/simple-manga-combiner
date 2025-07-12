@@ -1,7 +1,6 @@
 package com.mangacombiner.ui.viewmodel.handler
 
 import com.mangacombiner.model.AppSettings
-import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
@@ -13,7 +12,6 @@ import kotlinx.coroutines.launch
 internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
     when (event) {
         is Event.Settings.UpdateTheme -> _state.update { it.copy(theme = event.theme) }
-        is Event.Settings.UpdateIconTheme -> onUpdateIconTheme(event.theme)
         is Event.Settings.UpdateFontSizePreset -> _state.update { it.copy(fontSizePreset = event.preset) }
         is Event.Settings.UpdateDefaultOutputLocation -> onUpdateDefaultOutputLocation(event.location)
         is Event.Settings.ToggleDebugLog -> onToggleDebugLog(event.isEnabled)
@@ -41,11 +39,6 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
     }
 }
 
-private fun MainViewModel.onUpdateIconTheme(iconTheme: IconTheme) {
-    _state.update { it.copy(iconTheme = iconTheme) }
-    iconChanger.setIcon(iconTheme)
-}
-
 private fun MainViewModel.onUpdateDefaultOutputLocation(location: String) {
     val newPath = when (location) {
         "Downloads" -> platformProvider.getUserDownloadsDir()
@@ -69,7 +62,6 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
         it.copy(
             showRestoreDefaultsDialog = false,
             theme = defaultSettings.theme,
-            iconTheme = defaultSettings.iconTheme,
             defaultOutputLocation = defaultSettings.defaultOutputLocation,
             customDefaultOutputPath = defaultSettings.customDefaultOutputPath,
             workers = defaultSettings.workers,
@@ -84,7 +76,5 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
             offlineMode = defaultSettings.offlineMode
         )
     }
-    // Also apply the restored icon theme
-    iconChanger.setIcon(defaultSettings.iconTheme)
     Logger.logInfo("All settings restored to default values.")
 }

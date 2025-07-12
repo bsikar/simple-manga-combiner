@@ -21,7 +21,6 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.mangacombiner.di.appModule
 import com.mangacombiner.di.platformModule
-import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.MainScreen
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.Event
@@ -60,18 +59,14 @@ fun main() {
         val state by viewModel.state.collectAsState()
         val windowState = rememberWindowState(size = DpSize(1280.dp, 800.dp))
 
-        // Determine which icon to use based on the current state
-        val iconPath = when (state.iconTheme) {
-            IconTheme.COLOR -> "icon_desktop_color.png"
-            IconTheme.MONO -> "icon_desktop_mono.png"
-        }
-        val windowIcon = painterResource(iconPath)
+        // Set the default icon
+        val windowIcon = painterResource("icon_desktop.png")
 
         // This effect sets the app icon in the macOS Dock or Windows Taskbar
-        LaunchedEffect(iconPath) {
+        LaunchedEffect(Unit) { // Run only once
             if (Taskbar.isTaskbarSupported()) {
                 try {
-                    Taskbar.getTaskbar().iconImage = ImageIO.read(this::class.java.classLoader.getResourceAsStream(iconPath))
+                    Taskbar.getTaskbar().iconImage = ImageIO.read(this::class.java.classLoader.getResourceAsStream("icon_desktop.png"))
                 } catch (e: Exception) {
                     System.err.println("Failed to set taskbar icon: ${e.message}")
                 }

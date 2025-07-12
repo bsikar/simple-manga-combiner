@@ -5,7 +5,6 @@ import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.util.AndroidPlatformProvider
 import com.mangacombiner.util.ClipboardManager
 import com.mangacombiner.util.FileMover
-import com.mangacombiner.util.IconChanger
 import com.mangacombiner.util.PlatformProvider
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModelOf
@@ -17,7 +16,6 @@ actual fun platformModule(): Module = module {
     factory<PlatformProvider> { AndroidPlatformProvider(androidContext()) }
     single { SettingsRepository(androidContext()) }
     factory { FileMover(androidContext()) }
-    factory { IconChanger(androidContext()) }
 
     // ViewModel for Android
     viewModelOf(::MainViewModel)

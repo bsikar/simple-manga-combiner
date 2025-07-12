@@ -1,7 +1,6 @@
 package com.mangacombiner.data
 
 import com.mangacombiner.model.AppSettings
-import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.util.Logger
 import java.util.prefs.Preferences
@@ -12,7 +11,6 @@ actual class SettingsRepository {
     companion object {
         private const val THEME = "theme"
         private const val DEFAULT_OUTPUT_LOCATION = "default_output_location"
-        private const val ICON_THEME = "icon_theme"
         private const val CUSTOM_DEFAULT_OUTPUT_PATH = "custom_default_output_path"
         private const val WORKERS = "workers"
         private const val BATCH_WORKERS = "batch_workers"
@@ -30,7 +28,6 @@ actual class SettingsRepository {
     actual fun saveSettings(settings: AppSettings) {
         Logger.logDebug { "Saving settings to Java Preferences." }
         prefs.put(THEME, settings.theme.name)
-        prefs.put(ICON_THEME, settings.iconTheme.name)
         prefs.put(DEFAULT_OUTPUT_LOCATION, settings.defaultOutputLocation)
         prefs.put(CUSTOM_DEFAULT_OUTPUT_PATH, settings.customDefaultOutputPath)
         prefs.putInt(WORKERS, settings.workers)
@@ -50,11 +47,9 @@ actual class SettingsRepository {
         Logger.logDebug { "Loading settings from Java Preferences." }
         val defaultSettings = AppSettings()
         val savedThemeName = prefs.get(THEME, defaultSettings.theme.name)
-        val savedIconThemeName = prefs.get(ICON_THEME, defaultSettings.iconTheme.name)
 
         return AppSettings(
-            theme = AppTheme.values().find { it.name == savedThemeName } ?: defaultSettings.theme,
-            iconTheme = IconTheme.values().find { it.name == savedIconThemeName } ?: defaultSettings.iconTheme,
+            theme = AppTheme.entries.find { it.name == savedThemeName } ?: defaultSettings.theme,
             defaultOutputLocation = prefs.get(DEFAULT_OUTPUT_LOCATION, defaultSettings.defaultOutputLocation),
             customDefaultOutputPath = prefs.get(CUSTOM_DEFAULT_OUTPUT_PATH, defaultSettings.customDefaultOutputPath),
             workers = prefs.getInt(WORKERS, defaultSettings.workers),
