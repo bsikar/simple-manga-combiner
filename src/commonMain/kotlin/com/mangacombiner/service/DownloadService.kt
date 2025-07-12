@@ -59,13 +59,10 @@ class DownloadService(
         const val INCOMPLETE_MARKER_FILE = ".incomplete"
     }
 
-    private suspend fun writeChannelToFile(channel: ByteReadChannel, file: File, isPaused: () -> Boolean) {
+    private suspend fun writeChannelToFile(channel: ByteReadChannel, file: File) {
         file.outputStream().use { output ->
             while (!channel.isClosedForRead) {
-                while (isPaused()) {
-                    delay(500)
-                }
-                coroutineContext.ensureActive()
+                coroutineContext.ensureActive() // Rely on coroutine cancellation to stop
                 val packet = channel.readRemaining(BUFFER_SIZE.toLong())
                 while (packet.isNotEmpty) {
                     val bytes = packet.readBytes()
@@ -80,7 +77,6 @@ class DownloadService(
         url: String,
         outputFile: File,
         userAgent: String,
-        isPaused: () -> Boolean,
         referer: String?
     ): Boolean {
         if (outputFile.exists()) {
@@ -89,10 +85,7 @@ class DownloadService(
         }
 
         return try {
-            while (isPaused()) {
-                delay(500)
-            }
-            coroutineContext.ensureActive()
+            coroutineContext.ensureActive() // Check for cancellation before starting download
             Logger.logDebug { "Downloading file: $url with User-Agent: $userAgent" }
             val response: HttpResponse = client.get(url) {
                 header(HttpHeaders.UserAgent, userAgent)
@@ -101,7 +94,7 @@ class DownloadService(
                 }
             }
             if (response.status.isSuccess()) {
-                writeChannelToFile(response.bodyAsChannel(), outputFile, isPaused)
+                writeChannelToFile(response.bodyAsChannel(), outputFile)
                 Logger.logDebug { "Successfully downloaded ${outputFile.name}" }
                 true
             } else {
@@ -136,9 +129,6 @@ class DownloadService(
             return ChapterDownloadResult(null, chapterTitle, listOf("Failed to create .incomplete marker file."))
         }
 
-        while (options.isPaused()) {
-            delay(1000)
-        }
         coroutineContext.ensureActive()
 
         val scraperUserAgent = options.getUserAgents().random()
@@ -158,9 +148,6 @@ class DownloadService(
             imageUrls.mapIndexed { index, imageUrl ->
                 launch(Dispatchers.IO) {
                     semaphore.withPermit {
-                        while (options.isPaused()) {
-                            delay(500)
-                        }
                         coroutineContext.ensureActive()
 
                         delay(Random.nextLong(IMAGE_DOWNLOAD_DELAY_MS.first, IMAGE_DOWNLOAD_DELAY_MS.last))
@@ -168,7 +155,7 @@ class DownloadService(
                         val extension = imageUrl.substringAfterLast('.', "jpg").substringBefore('?')
                         val outputFile = File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
 
-                        if (!downloadFile(client, imageUrl, outputFile, imageUserAgent, options.isPaused, chapterUrl)) {
+                        if (!downloadFile(client, imageUrl, outputFile, imageUserAgent, chapterUrl)) {
                             failedImageUrls.add(imageUrl)
                         }
 
@@ -213,9 +200,6 @@ class DownloadService(
         try {
             for ((index, chapter) in chapterData.withIndex()) {
                 val (url, title) = chapter
-                while (options.isPaused()) {
-                    delay(1000)
-                }
                 coroutineContext.ensureActive()
 
                 Logger.logInfo("--> Processing chapter ${index + 1}/${chapterData.size}: $title")

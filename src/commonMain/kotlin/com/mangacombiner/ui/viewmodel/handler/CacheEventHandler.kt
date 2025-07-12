@@ -170,16 +170,14 @@ private fun MainViewModel.onRefreshCacheView() {
 private fun MainViewModel.onRequeueSelected() {
     viewModelScope.launch(Dispatchers.IO) {
         // Get the set of unique PARENT series paths from the selection.
-        val seriesPathsToRequeue = _state.value.cacheItemsToDelete.mapNotNull { path ->
-            val file = File(path)
+        val seriesPathsToRequeue = _state.value.cacheItemsToDelete.map { pathString ->
+            val file = File(pathString)
             if (file.name.startsWith("manga-dl-")) {
-                // It's a root series directory
                 file.absolutePath
             } else {
-                // It's a chapter directory, get the parent
                 file.parent
             }
-        }.toSet()
+        }.filterNotNull().toSet()
 
         if (seriesPathsToRequeue.isEmpty()) {
             Logger.logInfo("No cached series selected to re-queue.")

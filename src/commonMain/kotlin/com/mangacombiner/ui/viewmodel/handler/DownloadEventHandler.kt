@@ -1,7 +1,6 @@
 package com.mangacombiner.ui.viewmodel.handler
 
 import com.mangacombiner.ui.viewmodel.Event
-import com.mangacombiner.ui.viewmodel.JobEditedException
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
@@ -67,9 +66,9 @@ private fun MainViewModel.onConfirmChapterSelection() {
         val jobId = s.editingJobIdForChapters
         val oldOp = getJobContext(jobId) ?: return
 
-        // Cancel the existing coroutine with a specific exception
-        // This stops the old download process so it can be restarted with new info
-        runningJobCoroutines[jobId]?.cancel(JobEditedException())
+        // Stop the existing download job via the background downloader interface.
+        // The queue processor will automatically restart it with the new context if it's eligible.
+        backgroundDownloader.stopJob(jobId)
 
         val allChaptersInDialog = s.fetchedChapters
         val selectedChapters = allChaptersInDialog.filter { it.selectedSource != null }
