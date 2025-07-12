@@ -23,6 +23,7 @@ import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.pointer.tooltipHoverFix
+import com.mangacombiner.util.titlecase
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -230,87 +231,85 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
 
             Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (!isFinished) {
-                        PlatformTooltip("Edit Job") {
-                            IconButton(
-                                onClick = { onEvent(Event.Queue.RequestEditJob(job.id)) },
-                                modifier = Modifier.size(36.dp)
-                            ) { Icon(Icons.Default.Edit, "Edit Job") }
-                        }
-                    }
-                    PlatformTooltip(if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job") {
+                    Text(
+                        text = "#${index + 1}",
+                        style = MaterialTheme.typography.h6,
+                        color = MaterialTheme.colors.primary.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = FileUtils.sanitizeFilename(job.title),
+                        style = MaterialTheme.typography.body1,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LinearProgressIndicator(progress = animatedProgress, modifier = Modifier.weight(1f))
+                    Text(
+                        text = "${job.downloadedChapters}/${job.totalChapters}",
+                        style = MaterialTheme.typography.caption
+                    )
+                }
+
+                Text(
+                    text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
+                    style = MaterialTheme.typography.caption,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = when {
+                        isRunning -> MaterialTheme.colors.primary
+                        job.status == "Paused" -> MaterialTheme.colors.secondary
+                        else -> LocalContentColor.current.copy(alpha = 0.7f)
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!isFinished) {
+                    PlatformTooltip("Edit Job") {
                         IconButton(
-                            onClick = { onEvent(Event.Queue.TogglePauseJob(job.id)) },
-                            enabled = !isFinished,
+                            onClick = { onEvent(Event.Queue.RequestEditJob(job.id)) },
                             modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                if (job.isIndividuallyPaused || job.status == "Paused") Icons.Default.PlayArrow else Icons.Default.Pause,
-                                contentDescription = if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job"
-                            )
-                        }
+                        ) { Icon(Icons.Default.Edit, "Edit Job") }
                     }
-                    PlatformTooltip(if (isFinished) "Remove From List" else "Cancel Job") {
-                        IconButton(
-                            onClick = { onEvent(Event.Queue.CancelJob(job.id)) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                if (isFinished) Icons.Default.Delete else Icons.Default.Cancel,
-                                contentDescription = if (isFinished) "Remove Job" else "Cancel Job"
-                            )
-                        }
+                }
+                PlatformTooltip(if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job") {
+                    IconButton(
+                        onClick = { onEvent(Event.Queue.TogglePauseJob(job.id)) },
+                        enabled = !isFinished,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            if (job.isIndividuallyPaused || job.status == "Paused") Icons.Default.PlayArrow else Icons.Default.Pause,
+                            contentDescription = if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job"
+                        )
+                    }
+                }
+                PlatformTooltip(if (isFinished) "Remove From List" else "Cancel Job") {
+                    IconButton(
+                        onClick = { onEvent(Event.Queue.CancelJob(job.id)) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            if (isFinished) Icons.Default.Delete else Icons.Default.Cancel,
+                            contentDescription = if (isFinished) "Remove Job" else "Cancel Job"
+                        )
                     }
                 }
             }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "#${index + 1}",
-                    style = MaterialTheme.typography.h6,
-                    color = MaterialTheme.colors.primary.copy(alpha = 0.7f)
-                )
-                Text(
-                    text = FileUtils.sanitizeFilename(job.title),
-                    style = MaterialTheme.typography.body1,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                LinearProgressIndicator(progress = animatedProgress, modifier = Modifier.weight(1f))
-                Text(
-                    text = "${job.downloadedChapters}/${job.totalChapters}",
-                    style = MaterialTheme.typography.caption
-                )
-            }
-
-            Text(
-                text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
-                style = MaterialTheme.typography.caption,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = when {
-                    isRunning -> MaterialTheme.colors.primary
-                    job.status == "Paused" -> MaterialTheme.colors.secondary
-                    else -> LocalContentColor.current.copy(alpha = 0.7f)
-                },
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-            )
         }
     }
 }
