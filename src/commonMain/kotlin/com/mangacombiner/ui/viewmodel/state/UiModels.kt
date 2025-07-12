@@ -1,5 +1,7 @@
 package com.mangacombiner.ui.viewmodel.state
 
+import kotlinx.serialization.Serializable
+
 enum class Screen {
     DOWNLOAD,
     SEARCH,
@@ -13,6 +15,7 @@ enum class ChapterSource {
     LOCAL, CACHE, WEB
 }
 
+@Serializable
 data class Chapter(
     val url: String,
     val title: String,

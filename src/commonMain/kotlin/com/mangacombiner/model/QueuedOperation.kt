@@ -1,10 +1,12 @@
 package com.mangacombiner.model
 
 import com.mangacombiner.ui.viewmodel.state.Chapter
+import kotlinx.serialization.Serializable
 
 /**
  * A data class holding the detailed configuration for a job in the download queue.
  */
+@Serializable
 data class QueuedOperation(
     val jobId: String,
     val seriesUrl: String,

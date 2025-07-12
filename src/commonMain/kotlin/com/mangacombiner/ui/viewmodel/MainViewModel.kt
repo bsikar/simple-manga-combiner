@@ -6,6 +6,7 @@ import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.service.CacheService
 import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadService
+import com.mangacombiner.service.QueuePersistenceService
 import com.mangacombiner.service.ScraperService
 import com.mangacombiner.ui.viewmodel.handler.*
 import com.mangacombiner.ui.viewmodel.state.Chapter
@@ -40,6 +41,7 @@ class MainViewModel(
     internal val platformProvider: PlatformProvider,
     internal val cacheService: CacheService,
     internal val settingsRepository: SettingsRepository,
+    internal val queuePersistenceService: QueuePersistenceService,
     internal val fileMover: FileMover
 ) : PlatformViewModel() {
 
@@ -95,7 +97,27 @@ class MainViewModel(
         )
         state = _state.asStateFlow()
         Logger.logDebug { "ViewModel initialized with loaded settings." }
+        loadQueueFromCache()
         setupListeners()
+    }
+
+    private fun loadQueueFromCache() {
+        val loadedOperations = queuePersistenceService.loadQueue() ?: return
+
+        val restoredJobs = loadedOperations.map { op ->
+            queuedOperationContext[op.jobId] = op // Restore context
+            DownloadJob(
+                id = op.jobId,
+                title = op.customTitle,
+                progress = 0f, // Reset progress on load
+                status = "Paused", // Always start as Paused
+                totalChapters = op.chapters.size,
+                downloadedChapters = 0, // Reset progress
+                isIndividuallyPaused = true // Mark as individually paused so user must resume
+            )
+        }
+
+        _state.update { it.copy(downloadQueue = restoredJobs, isQueueGloballyPaused = false) }
     }
 
     private fun setupListeners() {
@@ -175,6 +197,21 @@ class MainViewModel(
                             Logger.logDebug { "Activating job due to high priority: ${job.title}" }
                             startJob(job)
                         }
+                    }
+                }
+        }
+        // Reactive Queue Persistence
+        viewModelScope.launch {
+            state
+                .map { uiState -> uiState.downloadQueue.mapNotNull { job -> queuedOperationContext[job.id] } }
+                .distinctUntilChanged()
+                .debounce(1000) // Debounce to avoid rapid writes during reordering etc.
+                .collect { operationsToSave ->
+                    if (operationsToSave.isNotEmpty()) {
+                        queuePersistenceService.saveQueue(operationsToSave)
+                    } else {
+                        // If the queue is empty, clear the cache file
+                        queuePersistenceService.clearQueueCache()
                     }
                 }
         }
