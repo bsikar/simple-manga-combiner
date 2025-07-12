@@ -33,8 +33,10 @@ import org.koin.java.KoinJavaComponent.get
 import java.awt.Desktop
 import java.awt.FileDialog
 import java.awt.Frame
+import java.awt.Taskbar
 import java.io.File
 import java.util.Locale
+import javax.imageio.ImageIO
 
 fun main() {
     startKoin {
@@ -59,18 +61,28 @@ fun main() {
         val windowState = rememberWindowState(size = DpSize(1280.dp, 800.dp))
 
         // Determine which icon to use based on the current state
-        val windowIcon = painterResource(
-            when (state.iconTheme) {
-                IconTheme.COLOR -> "icon_desktop_color.png"
-                IconTheme.MONO -> "icon_desktop_mono.png"
+        val iconPath = when (state.iconTheme) {
+            IconTheme.COLOR -> "icon_desktop_color.png"
+            IconTheme.MONO -> "icon_desktop_mono.png"
+        }
+        val windowIcon = painterResource(iconPath)
+
+        // This effect sets the app icon in the macOS Dock or Windows Taskbar
+        LaunchedEffect(iconPath) {
+            if (Taskbar.isTaskbarSupported()) {
+                try {
+                    Taskbar.getTaskbar().iconImage = ImageIO.read(this::class.java.classLoader.getResourceAsStream(iconPath))
+                } catch (e: Exception) {
+                    System.err.println("Failed to set taskbar icon: ${e.message}")
+                }
             }
-        )
+        }
 
         Window(
             onCloseRequest = ::exitApplication,
             title = "Manga Combiner",
             state = windowState,
-            icon = windowIcon, // Use the dynamic icon
+            icon = windowIcon, // This sets the icon for the window's title bar
             onKeyEvent = {
                 if (it.type == KeyEventType.KeyDown) {
                     val isModifierPressed = if (isMac) it.isMetaPressed else it.isCtrlPressed

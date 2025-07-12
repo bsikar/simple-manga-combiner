@@ -131,13 +131,13 @@ compose.desktop {
 
             // Add icon configuration
             macOS {
-                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.png"))
+                iconFile.set(project.file("src/desktopMain/resources/icon_desktop_color.png"))
             }
             windows {
-                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.png"))
+                iconFile.set(project.file("src/desktopMain/resources/icon_desktop_color.png"))
             }
             linux {
-                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.png"))
+                iconFile.set(project.file("src/desktopMain/resources/icon_desktop_color.png"))
             }
         }
     }

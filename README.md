@@ -1,6 +1,6 @@
 # Manga Combiner
 
-[](https://github.com/bsikar/simple-manga-combiner)  [](https://opensource.org/licenses/MIT)
+[](https://github.com/bsikar/simple-manga-combiner) [](https://opensource.org/licenses/MIT)
 
 A powerful and efficient cross-platform tool written in Kotlin for downloading, syncing, and managing digital manga archives. You get:
 
