@@ -2,6 +2,8 @@ package com.mangacombiner.model
 
 import com.mangacombiner.ui.theme.AppTheme
 
+internal expect fun getDefaultPlatformTheme(): AppTheme
+
 data class AppSettings(
     val theme: AppTheme = Defaults.THEME,
     val iconTheme: IconTheme = Defaults.ICON_THEME,
@@ -24,7 +26,7 @@ data class AppSettings(
      * providing a single source of truth throughout the app.
      */
     companion object Defaults {
-        val THEME = AppTheme.LIGHT
+        val THEME = getDefaultPlatformTheme()
         val ICON_THEME = IconTheme.COLOR
         const val DEFAULT_OUTPUT_LOCATION = "Downloads"
         const val CUSTOM_DEFAULT_OUTPUT_PATH = ""

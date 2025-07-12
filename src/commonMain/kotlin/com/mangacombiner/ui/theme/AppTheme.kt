@@ -7,7 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 enum class AppTheme {
-    LIGHT, DARK, MIDNIGHT, FOREST, OCEAN, GRUVBOX_DARK, GRUVBOX_LIGHT
+    E_INK, LIGHT, DARK, MIDNIGHT, FOREST, OCEAN, GRUVBOX_DARK, GRUVBOX_LIGHT
 }
 
 private val LightColorPalette = lightColors(
@@ -98,6 +98,20 @@ private val GruvboxLightColorPalette = lightColors(
     onError = Color.White
 )
 
+private val EInkColorPalette = lightColors(
+    primary = Color(0xFF000000),
+    primaryVariant = Color(0xFF333333),
+    secondary = Color(0xFF555555),
+    background = Color.White,
+    surface = Color(0xFFF5F5F5),
+    error = Color(0xFF000000),
+    onPrimary = Color.White,
+    onSecondary = Color.White,
+    onBackground = Color.Black,
+    onSurface = Color.Black,
+    onError = Color.White
+)
+
 
 @Composable
 fun AppTheme(
@@ -105,6 +119,7 @@ fun AppTheme(
     content: @Composable () -> Unit
 ) {
     val colors = when (settingsTheme) {
+        AppTheme.E_INK -> EInkColorPalette
         AppTheme.LIGHT -> LightColorPalette
         AppTheme.OCEAN -> OceanColorPalette
         AppTheme.DARK -> DarkColorPalette
@@ -121,3 +136,4 @@ fun AppTheme(
         content = content
     )
 }
+

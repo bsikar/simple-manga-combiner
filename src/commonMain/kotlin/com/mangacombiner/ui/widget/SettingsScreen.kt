@@ -274,3 +274,4 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
         )
     }
 }
+
