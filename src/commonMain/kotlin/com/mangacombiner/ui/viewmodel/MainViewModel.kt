@@ -32,6 +32,7 @@ private sealed class JobUpdateEvent {
 }
 
 private class ThrottlingException(message: String) : CancellationException(message)
+internal class JobEditedException : CancellationException("Job was edited and needs to be restarted.")
 
 @OptIn(FlowPreview::class)
 class MainViewModel(
@@ -58,7 +59,7 @@ class MainViewModel(
     internal var activeOperationJob: Job? = null
     internal var fetchChaptersJob: Job? = null
     internal val queuedOperationContext = ConcurrentHashMap<String, QueuedOperation>()
-    private val runningJobCoroutines = ConcurrentHashMap<String, Job>()
+    internal val runningJobCoroutines = ConcurrentHashMap<String, Job>()
     private val jobUpdateEvents = MutableSharedFlow<JobUpdateEvent>(extraBufferCapacity = 128)
 
     init {
@@ -111,7 +112,7 @@ class MainViewModel(
                 title = op.customTitle,
                 progress = 0f, // Reset progress on load
                 status = "Paused", // Always start as Paused
-                totalChapters = op.chapters.size,
+                totalChapters = op.chapters.count { it.selectedSource != null },
                 downloadedChapters = 0, // Reset progress
                 isIndividuallyPaused = true // Mark as individually paused so user must resume
             )
@@ -155,44 +156,34 @@ class MainViewModel(
             state.map { Triple(it.batchWorkers, it.downloadQueue, it.isQueueGloballyPaused) }
                 .distinctUntilChanged()
                 .collect { (batchWorkers, queue, isQueuePaused) ->
+                    // If the queue is globally paused, do nothing.
+                    // Running jobs will pause themselves by checking the isQueueGloballyPaused flag.
+                    if (isQueuePaused) return@collect
+
                     val runningJobIds = runningJobCoroutines.keys.toSet()
 
-                    if (isQueuePaused) {
-                        // If the whole queue is globally paused, cancel all running jobs and mark them as paused.
-                        runningJobIds.forEach { jobId ->
-                            runningJobCoroutines[jobId]?.cancel()
-                            runningJobCoroutines.remove(jobId)
-                            jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(jobId, "Paused", null))
-                        }
-                        return@collect
-                    }
-
-                    // 1. Determine the ideal set of jobs that should be active ("Top N" rule).
-                    // A job is startable if it's queued or was throttled by the system. User-paused jobs are ignored.
                     val desiredActiveJobIds = queue
                         .filterNot { it.isIndividuallyPaused || it.status in listOf("Completed", "Cancelled") || it.status.startsWith("Error") }
                         .take(batchWorkers)
                         .map { it.id }
                         .toSet()
 
-                    // 2. Stop (cancel) any running job that is NOT in the desired set anymore.
+                    // Stop (throttle) any running job that is no longer in the desired set.
                     val jobsToStop = runningJobIds - desiredActiveJobIds
                     jobsToStop.forEach { jobId ->
                         val job = queue.find { it.id == jobId }
-                        if (job != null && !job.isIndividuallyPaused) { // Don't interfere with user-paused jobs
+                        if (job != null && !job.isIndividuallyPaused) {
                             Logger.logDebug { "Throttling job due to lower priority: ${job.title}" }
-                            // Mark as throttled so it can be picked up again later
                             jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(jobId, "Paused", null))
-                            runningJobCoroutines[jobId]?.cancel(ThrottlingException("Job was throttled by queue manager")) // Cancel the coroutine
-                            runningJobCoroutines.remove(jobId)    // Remove from running map
+                            runningJobCoroutines[jobId]?.cancel(ThrottlingException("Job was throttled by queue manager"))
+                            runningJobCoroutines.remove(jobId)
                         }
                     }
 
-                    // 3. Activate any desired job that is not currently running.
+                    // Start any desired job that is not currently running.
                     val jobsToStart = desiredActiveJobIds - runningJobIds
                     jobsToStart.forEach { jobId ->
                         val job = queue.find { it.id == jobId }
-                        // A job can be started if it's in a startable state and not paused by the user.
                         if (job != null && !job.isIndividuallyPaused && (job.status == "Queued" || job.status == "Paused")) {
                             Logger.logDebug { "Activating job due to high priority: ${job.title}" }
                             startJob(job)
@@ -647,7 +638,7 @@ class MainViewModel(
             customTitle = title,
             outputFormat = s.outputFormat,
             outputPath = s.outputPath,
-            chapters = selectedChapters,
+            chapters = s.fetchedChapters, // Store the full list
             workers = s.workers,
             userAgents = userAgents,
         )
@@ -683,11 +674,15 @@ class MainViewModel(
     }
 
     internal fun clearCompletedJobs() {
-        _state.update {
-            val newQueue = it.downloadQueue.filter { job ->
-                job.status != "Completed" && !job.status.startsWith("Error")
+        val completedJobs = _state.value.downloadQueue.filter {
+            it.status == "Completed" || it.status.startsWith("Error")
+        }
+
+        if (completedJobs.isNotEmpty()) {
+            completedJobs.forEach { queuedOperationContext.remove(it.id) }
+            _state.update {
+                it.copy(downloadQueue = it.downloadQueue - completedJobs.toSet())
             }
-            it.copy(downloadQueue = newQueue)
         }
         Logger.logInfo("Cleared completed jobs from queue.")
     }
@@ -735,7 +730,6 @@ class MainViewModel(
     }
 
     private suspend fun runQueuedOperation(op: QueuedOperation) {
-        val webChaptersCompleted = AtomicInteger(0)
         try {
             queuePersistenceService.saveOperationMetadata(op)
 
@@ -779,18 +773,27 @@ class MainViewModel(
                     onProgressUpdate = { chapterProgress, status ->
                         val job = state.value.downloadQueue.find { it.id == op.jobId }
                         if (job != null) {
-                            val overallProgress = (chaptersFromCache.size + webChaptersCompleted.get() + chapterProgress) / job.totalChapters
+                            val selectedChapterCount = job.totalChapters.takeIf { it > 0 } ?: 1
+                            val overallProgress = (job.downloadedChapters + chapterProgress) / selectedChapterCount
                             jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, if (job.isIndividuallyPaused) "Paused" else status, overallProgress))
                         }
                     },
-                    onChapterCompleted = {
+                    onChapterCompleted = { completedChapterUrl ->
                         val job = state.value.downloadQueue.find { it.id == op.jobId }
                         if (job != null) {
                             val newCount = job.downloadedChapters + 1
                             jobUpdateEvents.tryEmit(JobUpdateEvent.DownloadedChaptersChanged(op.jobId, newCount))
-                            Logger.logDebug { "Job ${op.jobId}: Chapter completed. Progress: $newCount/${job.totalChapters}" }
                         }
-                        webChaptersCompleted.incrementAndGet()
+
+                        val currentOp = queuedOperationContext[op.jobId] ?: return@DownloadOptions
+                        val updatedChapters = currentOp.chapters.map { chapter ->
+                            if (chapter.url == completedChapterUrl) {
+                                chapter.copy(availableSources = chapter.availableSources + ChapterSource.CACHE)
+                            } else {
+                                chapter
+                            }
+                        }
+                        queuedOperationContext[op.jobId] = currentOp.copy(chapters = updatedChapters)
                     }
                 )
                 downloadResult = downloadService.downloadChapters(downloadOptions, tempSeriesDir)
@@ -815,6 +818,10 @@ class MainViewModel(
             jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Completed", 1f))
             Logger.logInfo("--- Finished Queued Job: ${op.customTitle} ---")
         } catch (e: Exception) {
+            if (e is JobEditedException) {
+                Logger.logDebug { "Job ${op.jobId} was stopped for editing. It will be re-queued." }
+                return // Exit cleanly, allowing the queue processor to restart it.
+            }
             if (e is ThrottlingException) {
                 Logger.logDebug { "Job ${op.jobId} successfully throttled." }
                 return // Exit cleanly
@@ -826,8 +833,6 @@ class MainViewModel(
             }
             Logger.logError("Job ${op.jobId} failed", e)
             jobUpdateEvents.tryEmit(JobUpdateEvent.StatusChanged(op.jobId, "Error: ${e.message?.take(30) ?: "Unknown"}", null))
-        } finally {
-            queuedOperationContext.remove(op.jobId)
         }
     }
 

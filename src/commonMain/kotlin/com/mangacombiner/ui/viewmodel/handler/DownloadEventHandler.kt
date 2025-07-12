@@ -1,6 +1,7 @@
 package com.mangacombiner.ui.viewmodel.handler
 
 import com.mangacombiner.ui.viewmodel.Event
+import com.mangacombiner.ui.viewmodel.JobEditedException
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
@@ -47,16 +48,38 @@ private fun MainViewModel.onConfirmChapterSelection() {
         // This is an EDIT of an existing job
         val jobId = s.editingJobIdForChapters
         val oldOp = getJobContext(jobId) ?: return
-        val newChapters = s.fetchedChapters.filter { it.selectedSource != null }
 
-        if (newChapters.isNotEmpty()) {
-            val newOp = oldOp.copy(chapters = newChapters)
+        // Cancel the existing coroutine with a specific exception
+        // This stops the old download process so it can be restarted with new info
+        runningJobCoroutines[jobId]?.cancel(JobEditedException())
+
+        val allChaptersInDialog = s.fetchedChapters
+        val selectedChapters = allChaptersInDialog.filter { it.selectedSource != null }
+
+        if (selectedChapters.isNotEmpty()) {
+            // Update the operation with the full list of chapters, preserving their selection state
+            val newOp = oldOp.copy(chapters = allChaptersInDialog)
             queuedOperationContext[jobId] = newOp
+
+            // Explicitly count already cached chapters among the new selection
+            val alreadyCompletedCount = newOp.chapters.count {
+                it.selectedSource == ChapterSource.CACHE
+            }
 
             _state.update {
                 it.copy(
                     downloadQueue = it.downloadQueue.map { job ->
-                        if (job.id == jobId) job.copy(totalChapters = newChapters.size) else job
+                        if (job.id == jobId) {
+                            // Reset the job's state so the queue processor can restart it
+                            job.copy(
+                                totalChapters = selectedChapters.size,
+                                downloadedChapters = alreadyCompletedCount,
+                                progress = if (selectedChapters.isEmpty()) 0f else alreadyCompletedCount.toFloat() / selectedChapters.size,
+                                status = "Queued"
+                            )
+                        } else {
+                            job
+                        }
                     },
                     showChapterDialog = false,
                     fetchedChapters = emptyList(),
@@ -65,7 +88,8 @@ private fun MainViewModel.onConfirmChapterSelection() {
             }
             Logger.logInfo("Updated chapters for job: ${oldOp.customTitle}")
         } else {
-            // User deselected all chapters, maybe cancel the job? For now, just close.
+            // If the user deselected all chapters, cancel the job entirely.
+            cancelJob(jobId)
             _state.update {
                 it.copy(
                     showChapterDialog = false,
@@ -245,7 +269,6 @@ private fun MainViewModel.onBulkUpdateBrokenChapterSource(sourceToSet: ChapterSo
         })
     }
 }
-
 
 private fun MainViewModel.onUpdateOutputPath(path: String) {
     _state.update { it.copy(outputPath = path) }

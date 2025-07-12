@@ -16,5 +16,5 @@ data class DownloadOptions(
     val isPaused: () -> Boolean,
     val dryRun: Boolean = false,
     val onProgressUpdate: (progress: Float, status: String) -> Unit,
-    val onChapterCompleted: () -> Unit
+    val onChapterCompleted: (chapterUrl: String) -> Unit
 )

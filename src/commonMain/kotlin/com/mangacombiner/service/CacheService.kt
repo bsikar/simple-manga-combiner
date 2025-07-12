@@ -55,8 +55,9 @@ class CacheService(
                 val files = chapterDir.walk().filter { it.isFile }.toList()
                 if (files.any { it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS }) {
                     val sizeInBytes = files.sumOf { it.length() }
-                    val isBroken = File(chapterDir, ".incomplete").exists()
-                    Logger.logDebug { "Found cached chapter: ${chapterDir.name}, Size: $sizeInBytes, Broken: $isBroken" }
+                    val markerFile = File(chapterDir, ".incomplete")
+                    val isBroken = markerFile.exists()
+                    Logger.logDebug { "Checking Chapter '${chapterDir.name}': Marker file at '${markerFile.absolutePath}' exists: $isBroken" }
                     CachedChapter(
                         name = chapterDir.name,
                         path = chapterDir.absolutePath,

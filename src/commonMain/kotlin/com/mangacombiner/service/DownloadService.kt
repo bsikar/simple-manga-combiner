@@ -1,6 +1,5 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
@@ -15,12 +14,18 @@ import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.core.isNotEmpty
 import io.ktor.utils.io.core.readBytes
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
-import java.util.*
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.coroutineContext
 import kotlin.random.Random
@@ -120,8 +125,16 @@ class DownloadService(
         if (!chapterDir.exists()) chapterDir.mkdirs()
 
         val incompleteMarker = File(chapterDir, INCOMPLETE_MARKER_FILE)
-        incompleteMarker.createNewFile()
-        Logger.logDebug { "Created incomplete marker for chapter '$chapterTitle' at: ${incompleteMarker.absolutePath}" }
+        try {
+            if (withContext(Dispatchers.IO) { incompleteMarker.createNewFile() }) {
+                Logger.logDebug { "Created incomplete marker for chapter '$chapterTitle' at: ${incompleteMarker.absolutePath}" }
+            } else {
+                Logger.logDebug { "Incomplete marker already existed for chapter '$chapterTitle'." }
+            }
+        } catch (e: IOException) {
+            Logger.logError("Failed to create incomplete marker for chapter '$chapterTitle'. Aborting chapter download.", e)
+            return ChapterDownloadResult(null, chapterTitle, listOf("Failed to create .incomplete marker file."))
+        }
 
         while (options.isPaused()) {
             delay(1000)
@@ -173,7 +186,7 @@ class DownloadService(
         val downloadedCount = chapterDir.listFiles()?.count { it.isFile && it.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS } ?: 0
         return if (downloadedCount > 0) {
             if (failedImageUrls.isNotEmpty()) {
-                Logger.logError("Warning: Failed to download ${failedImageUrls.size} images for chapter: '$chapterTitle'")
+                Logger.logError("Warning: Failed to download ${failedImageUrls.size} images for chapter: '$chapterTitle'. Marker will not be deleted.")
             } else {
                 Logger.logDebug { "Download of chapter '$chapterTitle' completed successfully. Deleting incomplete marker." }
                 incompleteMarker.delete()
@@ -213,7 +226,10 @@ class DownloadService(
                 if (result.failedImageUrls.isNotEmpty()) {
                     failedChapters[title] = result.failedImageUrls
                 }
-                options.onChapterCompleted()
+
+                if (result.failedImageUrls.isEmpty() && result.chapterDir != null) {
+                    options.onChapterCompleted(url)
+                }
 
                 coroutineContext.ensureActive()
                 if (index < chapterData.lastIndex) {

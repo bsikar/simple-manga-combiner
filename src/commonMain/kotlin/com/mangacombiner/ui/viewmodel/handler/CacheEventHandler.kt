@@ -103,15 +103,26 @@ private fun MainViewModel.onLoadCachedSeries(seriesPath: String) {
             return@launch
         }
 
-        // Get the full list of originally planned chapter titles from the metadata.
-        val plannedChapterTitles = originalOp.chapters.map { it.title }.toSet()
+        // Get the chapters the user selected in the cache view
+        val selectedChapterPaths = _state.value.cacheItemsToDelete
+        val selectedChapterNames = _state.value.cacheContents
+            .find { it.path == seriesPath }
+            ?.chapters
+            ?.filter { it.path in selectedChapterPaths }
+            ?.map { it.name }
+            ?.toSet() ?: emptySet()
+
+        if (selectedChapterNames.isEmpty()) {
+            Logger.logInfo("No chapters selected from cache to edit.")
+            return@launch
+        }
 
         withContext(Dispatchers.Main) {
             _state.update {
                 it.copy(
                     seriesUrl = originalOp.seriesUrl,
                     customTitle = originalOp.customTitle,
-                    chaptersToPreselect = plannedChapterTitles,
+                    chaptersToPreselect = selectedChapterNames,
                     // Clear fields from any previous operations
                     sourceFilePath = null,
                     localChaptersForSync = emptyMap(),
@@ -190,7 +201,7 @@ private fun MainViewModel.onRequeueSelected() {
                 title = newOp.customTitle,
                 progress = 0f,
                 status = "Queued",
-                totalChapters = newOp.chapters.size,
+                totalChapters = newOp.chapters.count { it.selectedSource != null },
                 downloadedChapters = 0
             )
             newJobs.add(newJob)
