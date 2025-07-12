@@ -65,7 +65,12 @@ kotlin {
         }
         val androidMain by getting {
             dependencies {
-                implementation("androidx.activity:activity-compose:1.9.0")
+                // This is the correct way to import the AndroidX BOM for this KMP setup.
+                // The deprecation warning is a known issue with the Kotlin Gradle Plugin
+                // and can be safely ignored until a new syntax is provided in a future version.
+                implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+                implementation("androidx.activity:activity-compose")
+
                 implementation(libs.google.material)
                 api(libs.koin.android)
                 implementation(libs.ktor.client.cio)
@@ -95,7 +100,6 @@ android {
         versionCode = appVersionCode.toInt()
         versionName = appVersionName
     }
-    // Add this sourceSets block to explicitly define the resource directory
     sourceSets["main"].res.srcDirs("src/androidMain/res")
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -105,7 +109,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.13"
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
     packaging {
         resources {
@@ -127,13 +131,13 @@ compose.desktop {
 
             // Add icon configuration
             macOS {
-                iconFile.set(project.file("src/desktopMain/resources/SMC.png"))
+                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.png"))
             }
             windows {
-                iconFile.set(project.file("src/desktopMain/resources/SMC.png"))
+                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.png"))
             }
             linux {
-                iconFile.set(project.file("src/desktopMain/resources/SMC.png"))
+                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.png"))
             }
         }
     }

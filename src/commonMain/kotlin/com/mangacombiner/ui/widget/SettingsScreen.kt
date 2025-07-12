@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -17,8 +18,10 @@ import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.AppVersion
+import com.mangacombiner.util.pointer.tooltipHoverFix
 import com.mangacombiner.util.titlecase
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     var themeDropdownExpanded by remember { mutableStateOf(false) }
@@ -46,7 +49,9 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Theme:", style = MaterialTheme.typography.body1)
-                    Box {
+                    Box(
+                        modifier = Modifier.tooltipHoverFix()
+                    ) {
                         OutlinedButton(onClick = { themeDropdownExpanded = true }) {
                             Text(state.theme.name.lowercase().replace('_', ' ').titlecase())
                             Icon(Icons.Default.ArrowDropDown, "Theme")
@@ -70,8 +75,10 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("App Icon (Android):", style = MaterialTheme.typography.body1)
-                    Box {
+                    Text("App Icon:", style = MaterialTheme.typography.body1)
+                    Box(
+                        modifier = Modifier.tooltipHoverFix()
+                    ) {
                         OutlinedButton(onClick = { iconThemeDropdownExpanded = true }) {
                             Text(state.iconTheme.name.lowercase().titlecase())
                             Icon(Icons.Default.ArrowDropDown, "App Icon")
@@ -96,7 +103,9 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Font Size:", style = MaterialTheme.typography.body1)
-                    Box {
+                    Box(
+                        modifier = Modifier.tooltipHoverFix()
+                    ) {
                         OutlinedButton(onClick = { fontSizeDropdownExpanded = true }) {
                             Text(state.fontSizePreset)
                             Icon(Icons.Default.ArrowDropDown, "Font Size")
@@ -146,7 +155,9 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Default Location:", style = MaterialTheme.typography.body1)
-                    Box {
+                    Box(
+                        modifier = Modifier.tooltipHoverFix()
+                    ) {
                         OutlinedButton(onClick = { outputDropdownExpanded = true }) {
                             Text(state.defaultOutputLocation)
                             Icon(Icons.Default.ArrowDropDown, "Default Location")

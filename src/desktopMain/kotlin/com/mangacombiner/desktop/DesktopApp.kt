@@ -21,11 +21,12 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.mangacombiner.di.appModule
 import com.mangacombiner.di.platformModule
+import com.mangacombiner.model.IconTheme
 import com.mangacombiner.ui.MainScreen
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.Event
-import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.MainViewModel
+import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.widget.AboutDialog
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
@@ -57,11 +58,19 @@ fun main() {
         val state by viewModel.state.collectAsState()
         val windowState = rememberWindowState(size = DpSize(1280.dp, 800.dp))
 
+        // Determine which icon to use based on the current state
+        val windowIcon = painterResource(
+            when (state.iconTheme) {
+                IconTheme.COLOR -> "icon_desktop_color.png"
+                IconTheme.MONO -> "icon_desktop_mono.png"
+            }
+        )
+
         Window(
             onCloseRequest = ::exitApplication,
             title = "Manga Combiner",
             state = windowState,
-            icon = painterResource("SMC.png"),
+            icon = windowIcon, // Use the dynamic icon
             onKeyEvent = {
                 if (it.type == KeyEventType.KeyDown) {
                     val isModifierPressed = if (isMac) it.isMetaPressed else it.isCtrlPressed

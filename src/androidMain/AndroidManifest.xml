@@ -1,19 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+
     <application
-        android:name=".android.AndroidApp"
+        android:name="com.mangacombiner.android.AndroidApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher_color"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_color_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:theme="@style/Theme.App"
+        android:requestLegacyExternalStorage="true">
 
         <activity
-            android:name=".android.MainActivity"
+            android:name="com.mangacombiner.android.MainActivity"
             android:exported="true"
-            android:enabled="false">
+            android:enabled="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -22,10 +26,9 @@
 
         <activity-alias
             android:name=".MainActivityColor"
-            android:targetActivity=".android.MainActivity"
+            android:targetActivity="com.mangacombiner.android.MainActivity"
             android:label="@string/app_name"
             android:icon="@mipmap/ic_launcher_color"
-            android:roundIcon="@mipmap/ic_launcher_color_round"
             android:exported="true"
             android:enabled="true">
             <intent-filter>
@@ -36,10 +39,9 @@
 
         <activity-alias
             android:name=".MainActivityMono"
-            android:targetActivity=".android.MainActivity"
+            android:targetActivity="com.mangacombiner.android.MainActivity"
             android:label="@string/app_name"
             android:icon="@mipmap/ic_launcher_mono"
-            android:roundIcon="@mipmap/ic_launcher_mono_round"
             android:exported="true"
             android:enabled="false">
             <intent-filter>

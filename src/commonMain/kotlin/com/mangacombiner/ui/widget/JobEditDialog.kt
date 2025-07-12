@@ -7,12 +7,15 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.UiState
+import com.mangacombiner.util.pointer.tooltipHoverFix
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun JobEditDialog(
     state: UiState,
@@ -79,7 +82,9 @@ fun JobEditDialog(
                     )
                 }
 
-                Box(modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().tooltipHoverFix()
+                ) {
                     OutlinedButton(
                         onClick = { formatDropdownExpanded = true },
                         modifier = Modifier.fillMaxWidth(),

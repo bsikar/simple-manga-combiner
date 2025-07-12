@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -21,8 +22,10 @@ import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.UserAgent
+import com.mangacombiner.util.pointer.tooltipHoverFix
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
     var showAdvancedSettings by remember { mutableStateOf(false) }
@@ -30,7 +33,6 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
     val browserImpersonationOptions = listOf("Random") + UserAgent.browsers.keys.toList()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // --- Header and Global Controls ---
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Download Queue", style = MaterialTheme.typography.h6, modifier = Modifier.weight(1f))
 
@@ -66,7 +68,6 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
             )
         }
 
-        // --- Advanced Settings Panel ---
         AnimatedVisibility(visible = showAdvancedSettings) {
             Card(
                 elevation = 4.dp,
@@ -116,7 +117,9 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
                             style = MaterialTheme.typography.body1,
                             modifier = Modifier.weight(1f)
                         )
-                        Box {
+                        Box(
+                            modifier = Modifier.tooltipHoverFix()
+                        ) {
                             OutlinedButton(
                                 onClick = { browserDropdownExpanded = true },
                                 enabled = !state.perWorkerUserAgent
@@ -147,7 +150,6 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
 
-        // --- Overall Progress ---
         if (state.downloadQueue.isNotEmpty()) {
             val overallProgress by animateFloatAsState(
                 targetValue = state.overallQueueProgress,
@@ -169,7 +171,6 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
             Spacer(Modifier.height(16.dp))
         }
 
-        // --- Queue List ---
         if (state.downloadQueue.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -216,7 +217,6 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Reorder Controls
             Column {
                 IconButton(
                     onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.UP)) },
@@ -228,9 +228,7 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
                 ) { Icon(Icons.Default.KeyboardArrowDown, "Move Down") }
             }
 
-            // Main Content
             Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                // Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -268,53 +266,51 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
                         }
                     }
                 }
+            }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "#${index + 1}",
-                        style = MaterialTheme.typography.h6,
-                        color = MaterialTheme.colors.primary.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = FileUtils.sanitizeFilename(job.title),
-                        style = MaterialTheme.typography.body1,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                // Progress Bar and Chapter Count
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    LinearProgressIndicator(progress = animatedProgress, modifier = Modifier.weight(1f))
-                    Text(
-                        text = "${job.downloadedChapters}/${job.totalChapters}",
-                        style = MaterialTheme.typography.caption
-                    )
-                }
-
-                // Detailed Status Text
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
-                    text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
-                    style = MaterialTheme.typography.caption,
+                    text = "#${index + 1}",
+                    style = MaterialTheme.typography.h6,
+                    color = MaterialTheme.colors.primary.copy(alpha = 0.7f)
+                )
+                Text(
+                    text = FileUtils.sanitizeFilename(job.title),
+                    style = MaterialTheme.typography.body1,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = when {
-                        isRunning -> MaterialTheme.colors.primary
-                        job.status == "Paused" -> MaterialTheme.colors.secondary
-                        else -> LocalContentColor.current.copy(alpha = 0.7f)
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                LinearProgressIndicator(progress = animatedProgress, modifier = Modifier.weight(1f))
+                Text(
+                    text = "${job.downloadedChapters}/${job.totalChapters}",
+                    style = MaterialTheme.typography.caption
+                )
+            }
+
+            Text(
+                text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
+                style = MaterialTheme.typography.caption,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = when {
+                    isRunning -> MaterialTheme.colors.primary
+                    job.status == "Paused" -> MaterialTheme.colors.secondary
+                    else -> LocalContentColor.current.copy(alpha = 0.7f)
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            )
         }
     }
 }

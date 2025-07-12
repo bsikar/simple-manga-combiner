@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -20,6 +21,7 @@ import com.mangacombiner.service.CachedSeries
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.*
 import com.mangacombiner.util.CachedChapterNameComparator
+import com.mangacombiner.util.pointer.tooltipHoverFix
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -125,7 +127,7 @@ fun CacheViewerScreen(state: UiState, onEvent: (Event) -> Unit) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalComposeUiApi::class)
 @Composable
 private fun CacheSeriesItem(
     series: CachedSeries,
@@ -169,7 +171,9 @@ private fun CacheSeriesItem(
                     )
                 }
 
-                Box {
+                Box(
+                    modifier = Modifier.tooltipHoverFix()
+                ) {
                     PlatformTooltip("Sort Chapters") {
                         IconButton(onClick = { sortMenuExpanded = true }) {
                             Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort Chapters Menu")

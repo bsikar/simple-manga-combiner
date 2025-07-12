@@ -11,13 +11,16 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.OperationState
 import com.mangacombiner.ui.viewmodel.state.SearchSortOption
 import com.mangacombiner.ui.viewmodel.state.UiState
+import com.mangacombiner.util.pointer.tooltipHoverFix
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
     var sortDropdownExpanded by remember { mutableStateOf(false) }
@@ -71,7 +74,9 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Search Results:", style = MaterialTheme.typography.subtitle1)
-                            Box {
+                            Box(
+                                modifier = Modifier.tooltipHoverFix()
+                            ) {
                                 OutlinedButton(
                                     onClick = { sortDropdownExpanded = true },
                                     enabled = !state.isSearching

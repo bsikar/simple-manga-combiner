@@ -10,8 +10,8 @@ actual class IconChanger(private val context: Context) {
         val packageName = context.packageName
         val packageManager = context.packageManager
 
-        val colorAlias = ComponentName(packageName, "$packageName.MainActivityColor")
-        val monoAlias = ComponentName(packageName, "$packageName.MainActivityMono")
+        val colorAlias = ComponentName(packageName, "${packageName}.MainActivityColor")
+        val monoAlias = ComponentName(packageName, "${packageName}.MainActivityMono")
 
         val (aliasToEnable, aliasToDisable) = when (iconTheme) {
             IconTheme.COLOR -> colorAlias to monoAlias
