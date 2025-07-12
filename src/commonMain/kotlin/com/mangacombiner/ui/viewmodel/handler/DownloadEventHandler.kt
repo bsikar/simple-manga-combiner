@@ -20,6 +20,7 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         is Event.Download.UpdateChapterRange -> onUpdateChapterRange(event.start, event.end, event.action)
         is Event.Download.UpdateOutputPath -> onUpdateOutputPath(event.path)
         Event.Download.FetchChapters -> fetchChapters()
+        Event.Download.CancelFetchChapters -> onCancelFetchChapters()
         Event.Download.ClearInputs -> onClearDownloadInputs()
         Event.Download.PickLocalFile -> onPickLocalFile()
         Event.Download.PickOutputPath -> onPickOutputPath()
@@ -37,6 +38,10 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         Event.Download.IgnoreAllBroken -> onBulkUpdateBrokenChapterSource(null)
         Event.Download.RedownloadAllBroken -> onBulkUpdateBrokenChapterSource(ChapterSource.WEB)
     }
+}
+
+private fun MainViewModel.onCancelFetchChapters() {
+    fetchChaptersJob?.cancel()
 }
 
 private fun MainViewModel.onUpdateUrl(newUrl: String) {

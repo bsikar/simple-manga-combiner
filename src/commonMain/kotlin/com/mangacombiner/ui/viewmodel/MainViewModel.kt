@@ -54,6 +54,7 @@ class MainViewModel(
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
 
     internal var activeOperationJob: Job? = null
+    internal var fetchChaptersJob: Job? = null
     private val queuedOperationContext = ConcurrentHashMap<String, QueuedOperation>()
     private val runningJobCoroutines = ConcurrentHashMap<String, Job>()
     private val jobUpdateEvents = MutableSharedFlow<JobUpdateEvent>(extraBufferCapacity = 128)
@@ -305,69 +306,76 @@ class MainViewModel(
         val url = _state.value.seriesUrl
         if (url.isBlank()) return
 
-        viewModelScope.launch {
-            _state.update { it.copy(isFetchingChapters = true) }
-            val s = _state.value
-            val seriesSlug = url.toSlug()
-            val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
-            val localChapterMap = s.localChaptersForSync
-            val failedChapterTitles = s.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
-            val preselectedNames = s.chaptersToPreselect
+        fetchChaptersJob?.cancel()
+        fetchChaptersJob = viewModelScope.launch {
+            try {
+                _state.update { it.copy(isFetchingChapters = true) }
+                val s = _state.value
+                val seriesSlug = url.toSlug()
+                val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
+                val localChapterMap = s.localChaptersForSync
+                val failedChapterTitles = s.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
+                val preselectedNames = s.chaptersToPreselect
 
-            val client = createHttpClient(s.proxyUrl)
-            Logger.logInfo("Fetching chapter list for: $url")
-            val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
-            val chapters = scraperService.findChapterUrlsAndTitles(client, url, userAgent)
-            client.close()
+                val client = createHttpClient(s.proxyUrl)
+                Logger.logInfo("Fetching chapter list for: $url")
+                val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
+                val chapters = scraperService.findChapterUrlsAndTitles(client, url, userAgent)
+                client.close()
 
-            if (chapters.isNotEmpty()) {
-                val allChapters = chapters.map { (chapUrl, title) ->
-                    val sanitizedTitle = FileUtils.sanitizeFilename(title)
-                    val comparableKey = SlugUtils.toComparableKey(title)
-                    val originalLocalSlug = localChapterMap[comparableKey]
+                if (chapters.isNotEmpty()) {
+                    val allChapters = chapters.map { (chapUrl, title) ->
+                        val sanitizedTitle = FileUtils.sanitizeFilename(title)
+                        val comparableKey = SlugUtils.toComparableKey(title)
+                        val originalLocalSlug = localChapterMap[comparableKey]
 
-                    val isLocal = originalLocalSlug != null
-                    val isCached = cachedChapterStatus.containsKey(sanitizedTitle)
-                    val isBroken = isCached && cachedChapterStatus[sanitizedTitle] == false
-                    val isRetry = comparableKey in failedChapterTitles
+                        val isLocal = originalLocalSlug != null
+                        val isCached = cachedChapterStatus.containsKey(sanitizedTitle)
+                        val isBroken = isCached && cachedChapterStatus[sanitizedTitle] == false
+                        val isRetry = comparableKey in failedChapterTitles
 
-                    val sources = mutableSetOf(ChapterSource.WEB)
-                    if (isLocal) sources.add(ChapterSource.LOCAL)
-                    if (isCached) sources.add(ChapterSource.CACHE)
+                        val sources = mutableSetOf(ChapterSource.WEB)
+                        if (isLocal) sources.add(ChapterSource.LOCAL)
+                        if (isCached) sources.add(ChapterSource.CACHE)
 
-                    val chapter = Chapter(
-                        url = chapUrl,
-                        title = title,
-                        availableSources = sources,
-                        selectedSource = null, // Set later
-                        localSlug = originalLocalSlug,
-                        isRetry = isRetry,
-                        isBroken = isBroken
-                    )
+                        val chapter = Chapter(
+                            url = chapUrl,
+                            title = title,
+                            availableSources = sources,
+                            selectedSource = null, // Set later
+                            localSlug = originalLocalSlug,
+                            isRetry = isRetry,
+                            isBroken = isBroken
+                        )
 
-                    val initialSource = when {
-                        sanitizedTitle in preselectedNames -> {
-                            if (isBroken) ChapterSource.WEB else ChapterSource.CACHE
+                        val initialSource = when {
+                            sanitizedTitle in preselectedNames -> {
+                                if (isBroken) ChapterSource.WEB else ChapterSource.CACHE
+                            }
+                            preselectedNames.isNotEmpty() -> null
+                            isRetry || isBroken -> ChapterSource.WEB
+                            else -> getChapterDefaultSource(chapter)
                         }
-                        preselectedNames.isNotEmpty() -> null
-                        isRetry || isBroken -> ChapterSource.WEB
-                        else -> getChapterDefaultSource(chapter)
+
+                        chapter.copy(selectedSource = initialSource)
+
+                    }.sortedWith(compareBy(naturalSortComparator) { it.title })
+
+                    _state.update {
+                        it.copy(
+                            fetchedChapters = allChapters,
+                            showChapterDialog = true,
+                            chaptersToPreselect = emptySet()
+                        )
                     }
-
-                    chapter.copy(selectedSource = initialSource)
-
-                }.sortedWith(compareBy(naturalSortComparator) { it.title })
-
-                _state.update {
-                    it.copy(
-                        isFetchingChapters = false,
-                        fetchedChapters = allChapters,
-                        showChapterDialog = true,
-                        chaptersToPreselect = emptySet()
-                    )
+                } else {
+                    Logger.logError("Could not find any chapters at the provided URL.")
                 }
-            } else {
-                Logger.logError("Could not find any chapters at the provided URL.")
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    Logger.logError("Failed to fetch chapters", e)
+                }
+            } finally {
                 _state.update { it.copy(isFetchingChapters = false) }
             }
         }

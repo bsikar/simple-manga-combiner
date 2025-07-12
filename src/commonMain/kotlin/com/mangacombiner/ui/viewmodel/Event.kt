@@ -54,6 +54,7 @@ sealed interface Event {
         object PickLocalFile : Download
         object ClearInputs : Download
         object FetchChapters : Download
+        object CancelFetchChapters : Download
         object ConfirmChapterSelection : Download
         object CancelChapterSelection : Download
         object SelectAllChapters : Download

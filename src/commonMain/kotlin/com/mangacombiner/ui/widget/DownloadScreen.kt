@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.*
@@ -76,13 +77,24 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                         }
 
                         Button(
-                            onClick = { onEvent(Event.Download.FetchChapters) },
-                            enabled = state.seriesUrl.isNotBlank() && !state.isFetchingChapters && isIdle,
+                            onClick = {
+                                if (state.isFetchingChapters) {
+                                    onEvent(Event.Download.CancelFetchChapters)
+                                } else {
+                                    onEvent(Event.Download.FetchChapters)
+                                }
+                            },
+                            enabled = (state.seriesUrl.isNotBlank() && isIdle) || state.isFetchingChapters,
+                            colors = if (state.isFetchingChapters) {
+                                ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                            } else {
+                                ButtonDefaults.buttonColors()
+                            }
                         ) {
                             if (state.isFetchingChapters) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Fetching...")
+                                Text("Cancel Fetch")
                             } else {
                                 Text("Fetch Chapters")
                             }
