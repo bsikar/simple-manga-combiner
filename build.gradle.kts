@@ -85,6 +85,7 @@ kotlin {
                 implementation(libs.ktor.io.jvm) // This is the required dependency
                 implementation(libs.imageio.webp)
                 implementation("org.slf4j:slf4j-simple:2.0.13")
+                implementation(libs.kotlinx.coroutines.swing)
             }
         }
     }

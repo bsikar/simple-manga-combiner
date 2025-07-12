@@ -265,8 +265,6 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
                 Text(
                     text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
                     style = MaterialTheme.typography.caption,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     color = when {
                         isRunning -> MaterialTheme.colors.primary
                         job.status == "Paused" -> MaterialTheme.colors.secondary

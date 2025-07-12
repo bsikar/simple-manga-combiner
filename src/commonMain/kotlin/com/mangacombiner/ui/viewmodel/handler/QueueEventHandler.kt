@@ -3,6 +3,7 @@ package com.mangacombiner.ui.viewmodel.handler
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
+import com.mangacombiner.util.Logger
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -12,6 +13,7 @@ internal fun MainViewModel.handleQueueEvent(event: Event.Queue) {
         is Event.Queue.ClearCompleted -> clearCompletedJobs()
         is Event.Queue.CancelJob -> cancelJob(event.jobId)
         is Event.Queue.RequestEditJob -> _state.update { it.copy(editingJobId = event.jobId, editingJobContext = getJobContext(event.jobId)) }
+        is Event.Queue.RequestEditJobChapters -> onRequestEditJobChapters(event.jobId)
         is Event.Queue.CancelEditJob -> _state.update { it.copy(editingJobId = null, editingJobContext = null) }
         is Event.Queue.UpdateJob -> updateJob(event)
         is Event.Queue.PickJobOutputPath -> viewModelScope.launch {
@@ -21,6 +23,19 @@ internal fun MainViewModel.handleQueueEvent(event: Event.Queue) {
         is Event.Queue.MoveJob -> moveJob(event.jobId, event.direction)
         Event.Queue.PauseAll -> pauseAllJobs()
         Event.Queue.ResumeAll -> resumeAllJobs()
+    }
+}
+
+private fun MainViewModel.onRequestEditJobChapters(jobId: String) {
+    val op = getJobContext(jobId) ?: return
+    _state.update {
+        it.copy(
+            fetchedChapters = op.chapters,
+            showChapterDialog = true,
+            editingJobId = null, // Close the small edit dialog
+            editingJobContext = null,
+            editingJobIdForChapters = jobId // Set the new flag
+        )
     }
 }
 

@@ -92,15 +92,29 @@ fun CacheViewerScreen(state: UiState, onEvent: (Event) -> Unit) {
                 ) { Text("Deselect All") }
             }
             Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = { onEvent(Event.Cache.RequestDeleteSelected) },
-                enabled = state.cacheItemsToDelete.isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error),
-                modifier = Modifier.fillMaxWidth()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
-                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Delete Selected ($displayCount)")
+                Button(
+                    onClick = { onEvent(Event.Cache.RequestDeleteSelected) },
+                    enabled = state.cacheItemsToDelete.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Delete Selected ($displayCount)")
+                }
+                Button(
+                    onClick = { onEvent(Event.Cache.RequeueSelected) },
+                    enabled = state.cacheItemsToDelete.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Re-queue Selected")
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Re-queue Selected ($displayCount)")
+                }
             }
         }
     }
@@ -166,7 +180,11 @@ private fun CacheSeriesItem(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "${series.chapters.size} chapter(s) - ${series.totalSizeFormatted}",
+                        text = if (series.plannedChapterCount != null) {
+                            "${series.chapters.size} of ${series.plannedChapterCount} chapters cached - ${series.totalSizeFormatted}"
+                        } else {
+                            "${series.chapters.size} chapter(s) - ${series.totalSizeFormatted}"
+                        },
                         style = MaterialTheme.typography.caption
                     )
                 }
@@ -265,7 +283,7 @@ private fun CacheSeriesItem(
                             ) {
                                 Icon(Icons.Default.Download, contentDescription = "Import", modifier = Modifier.size(ButtonDefaults.IconSize))
                                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                                Text("Import to Downloader (${selectedChaptersInSeries.size})")
+                                Text("Edit in Downloader (${selectedChaptersInSeries.size})")
                             }
                         }
                     }

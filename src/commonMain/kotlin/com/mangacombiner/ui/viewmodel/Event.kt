@@ -101,6 +101,7 @@ sealed interface Event {
         object CancelDeleteSelected : Cache
         object SelectAll : Cache
         object DeselectAll : Cache
+        object RequeueSelected : Cache
     }
 
     sealed interface Queue : Event {
@@ -110,6 +111,7 @@ sealed interface Event {
         object PauseAll : Queue
         object ResumeAll : Queue
         data class RequestEditJob(val jobId: String) : Queue
+        data class RequestEditJobChapters(val jobId: String) : Queue
         data class UpdateJob(
             val jobId: String,
             val title: String,

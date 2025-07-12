@@ -22,10 +22,14 @@ data class CachedSeries(
     val path: String,
     val seriesUrl: String?,
     val chapters: List<CachedChapter>,
-    val totalSizeFormatted: String
+    val totalSizeFormatted: String,
+    val plannedChapterCount: Int?
 )
 
-class CacheService(private val platformProvider: PlatformProvider) {
+class CacheService(
+    private val platformProvider: PlatformProvider,
+    private val persistenceService: QueuePersistenceService
+) {
 
     private fun formatSize(bytes: Long): String {
         return when {
@@ -69,15 +73,17 @@ class CacheService(private val platformProvider: PlatformProvider) {
             }?.sortedWith(CachedChapterNameComparator) ?: emptyList()
 
             val urlFile = File(seriesDir, "url.txt")
-            val seriesUrl = if (urlFile.exists()) urlFile.readText().trim() else null
+            val metadata = persistenceService.loadOperationMetadata(seriesDir.absolutePath)
+            val seriesUrl = metadata?.seriesUrl ?: if (urlFile.exists()) urlFile.readText().trim() else null
             Logger.logDebug { "Series URL for ${seriesDir.name}: $seriesUrl" }
 
             CachedSeries(
-                seriesName = seriesDir.name.removePrefix("manga-dl-").replace('-', ' ').titlecase(),
+                seriesName = metadata?.customTitle ?: seriesDir.name.removePrefix("manga-dl-").replace('-', ' ').titlecase(),
                 path = seriesDir.absolutePath,
                 seriesUrl = seriesUrl,
                 chapters = chapters,
-                totalSizeFormatted = formatSize(seriesDir.walk().sumOf { it.length() })
+                totalSizeFormatted = formatSize(seriesDir.walk().sumOf { it.length() }),
+                plannedChapterCount = metadata?.chapters?.size
             )
         }?.sortedBy { it.seriesName } ?: emptyList()
     }

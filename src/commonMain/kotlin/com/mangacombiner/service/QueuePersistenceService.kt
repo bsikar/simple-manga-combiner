@@ -4,6 +4,7 @@ import com.mangacombiner.model.PersistedQueue
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.PlatformProvider
+import com.mangacombiner.util.toSlug
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -16,6 +17,10 @@ class QueuePersistenceService(private val platformProvider: PlatformProvider) {
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
     private val queueFile: File
         get() = File(platformProvider.getTmpDir(), "queue_cache.json")
+
+    private fun getMetadataFile(seriesPath: String): File {
+        return File(seriesPath, "metadata.json")
+    }
 
     /**
      * Saves the provided list of operations to the queue cache file.
@@ -67,6 +72,42 @@ class QueuePersistenceService(private val platformProvider: PlatformProvider) {
             }
         } catch (e: Exception) {
             Logger.logError("Failed to clear queue cache.", e)
+        }
+    }
+
+    /**
+     * Saves the metadata of a single download operation to its specific cache directory.
+     */
+    fun saveOperationMetadata(op: QueuedOperation) {
+        val seriesSlug = op.seriesUrl.toSlug()
+        val seriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
+        if (!seriesDir.exists()) seriesDir.mkdirs()
+
+        val metadataFile = getMetadataFile(seriesDir.absolutePath)
+        try {
+            val jsonString = json.encodeToString(op)
+            metadataFile.writeText(jsonString)
+            Logger.logDebug { "Saved metadata for ${op.customTitle}" }
+        } catch (e: Exception) {
+            Logger.logError("Failed to save operation metadata.", e)
+        }
+    }
+
+    /**
+     * Loads the metadata for a single download operation from its cache directory.
+     */
+    fun loadOperationMetadata(seriesPath: String): QueuedOperation? {
+        val metadataFile = getMetadataFile(seriesPath)
+        return if (metadataFile.exists()) {
+            try {
+                val jsonString = metadataFile.readText()
+                json.decodeFromString<QueuedOperation>(jsonString)
+            } catch (e: Exception) {
+                Logger.logError("Failed to load metadata from $seriesPath", e)
+                null
+            }
+        } else {
+            null
         }
     }
 }

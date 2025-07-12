@@ -5,6 +5,7 @@ import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.state.RangeAction
+import com.mangacombiner.util.Logger
 import com.mangacombiner.util.titlecase
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -24,8 +25,8 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         Event.Download.ClearInputs -> onClearDownloadInputs()
         Event.Download.PickLocalFile -> onPickLocalFile()
         Event.Download.PickOutputPath -> onPickOutputPath()
-        Event.Download.ConfirmChapterSelection -> _state.update { it.copy(showChapterDialog = false) }
-        Event.Download.CancelChapterSelection -> _state.update { it.copy(showChapterDialog = false, fetchedChapters = emptyList()) }
+        Event.Download.ConfirmChapterSelection -> onConfirmChapterSelection()
+        Event.Download.CancelChapterSelection -> onCancelChapterSelection()
         Event.Download.SelectAllChapters -> onSelectAllChapters(true)
         Event.Download.DeselectAllChapters -> onSelectAllChapters(false)
         Event.Download.UseAllLocal -> onBulkUpdateChapterSource(ChapterSource.LOCAL, ChapterSource.LOCAL)
@@ -37,6 +38,56 @@ internal fun MainViewModel.handleDownloadEvent(event: Event.Download) {
         Event.Download.UseAllBroken -> onBulkUpdateBrokenChapterSource(ChapterSource.CACHE)
         Event.Download.IgnoreAllBroken -> onBulkUpdateBrokenChapterSource(null)
         Event.Download.RedownloadAllBroken -> onBulkUpdateBrokenChapterSource(ChapterSource.WEB)
+    }
+}
+
+private fun MainViewModel.onConfirmChapterSelection() {
+    val s = _state.value
+    if (s.editingJobIdForChapters != null) {
+        // This is an EDIT of an existing job
+        val jobId = s.editingJobIdForChapters
+        val oldOp = getJobContext(jobId) ?: return
+        val newChapters = s.fetchedChapters.filter { it.selectedSource != null }
+
+        if (newChapters.isNotEmpty()) {
+            val newOp = oldOp.copy(chapters = newChapters)
+            queuedOperationContext[jobId] = newOp
+
+            _state.update {
+                it.copy(
+                    downloadQueue = it.downloadQueue.map { job ->
+                        if (job.id == jobId) job.copy(totalChapters = newChapters.size) else job
+                    },
+                    showChapterDialog = false,
+                    fetchedChapters = emptyList(),
+                    editingJobIdForChapters = null
+                )
+            }
+            Logger.logInfo("Updated chapters for job: ${oldOp.customTitle}")
+        } else {
+            // User deselected all chapters, maybe cancel the job? For now, just close.
+            _state.update {
+                it.copy(
+                    showChapterDialog = false,
+                    fetchedChapters = emptyList(),
+                    editingJobIdForChapters = null
+                )
+            }
+        }
+    } else {
+        // This is a NEW job, so just close the dialog.
+        // The "Add to Queue" button will handle the rest.
+        _state.update { it.copy(showChapterDialog = false) }
+    }
+}
+
+private fun MainViewModel.onCancelChapterSelection() {
+    _state.update {
+        it.copy(
+            showChapterDialog = false,
+            fetchedChapters = emptyList(),
+            editingJobIdForChapters = null // Also clear this flag
+        )
     }
 }
 

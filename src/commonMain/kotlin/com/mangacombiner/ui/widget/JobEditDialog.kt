@@ -108,6 +108,14 @@ fun JobEditDialog(
                     }
                 }
 
+                Button(
+                    onClick = { onEvent(Event.Queue.RequestEditJobChapters(jobContext.jobId)) },
+                    enabled = isEditable,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Edit Chapters...")
+                }
+
                 Spacer(Modifier.height(8.dp))
 
                 Row(

@@ -14,7 +14,7 @@ val appModule = module {
     single { FileConverter() }
     single { ProcessorService(get()) }
     single { DownloadService(get(), get()) }
-    single { CacheService(get()) } // Add CacheService as a class with its dependency
+    single { CacheService(get(), get()) }
     single { QueuePersistenceService(get()) }
 
     // ViewModel is now defined in platform-specific modules

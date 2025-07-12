@@ -1,12 +1,18 @@
 package com.mangacombiner.ui.viewmodel.handler
 
+import com.mangacombiner.model.DownloadJob
+import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.RangeAction
 import com.mangacombiner.ui.viewmodel.state.Screen
+import com.mangacombiner.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.UUID
 
 internal fun MainViewModel.handleCacheEvent(event: Event.Cache) {
     when (event) {
@@ -41,10 +47,16 @@ internal fun MainViewModel.handleCacheEvent(event: Event.Cache) {
         Event.Cache.RequestClearAll -> _state.update { it.copy(showClearCacheDialog = true) }
         Event.Cache.RequestDeleteSelected -> _state.update { it.copy(showDeleteCacheConfirmationDialog = true) }
         Event.Cache.SelectAll -> _state.update {
-            val allPaths = it.cacheContents.flatMap { series -> series.chapters.map { chapter -> chapter.path }
+            val allPaths = it.cacheContents.flatMap { series ->
+                if (series.chapters.isEmpty()) {
+                    listOf(series.path)
+                } else {
+                    series.chapters.map { chapter -> chapter.path }
+                }
             }
             it.copy(cacheItemsToDelete = allPaths.toSet())
         }
+        Event.Cache.RequeueSelected -> onRequeueSelected()
     }
 }
 
@@ -83,26 +95,33 @@ private fun MainViewModel.onUpdateCachedChapterRange(seriesPath: String, start: 
 }
 
 private fun MainViewModel.onLoadCachedSeries(seriesPath: String) {
-    val series = _state.value.cacheContents.find { it.path == seriesPath } ?: return
-    val selectedPaths = _state.value.cacheItemsToDelete
-    val selectedChapterNames = series.chapters
-        .filter { it.path in selectedPaths }
-        .map { it.name }
-        .toSet()
+    viewModelScope.launch(Dispatchers.IO) {
+        val originalOp = queuePersistenceService.loadOperationMetadata(seriesPath)
 
-    _state.update {
-        it.copy(
-            seriesUrl = series.seriesUrl ?: "",
-            customTitle = series.seriesName,
-            chaptersToPreselect = selectedChapterNames,
-            // Clear fields from any previous operations
-            sourceFilePath = null,
-            localChaptersForSync = emptyMap(),
-            failedItemsForSync = emptyMap()
-        )
+        if (originalOp == null) {
+            Logger.logError("Could not load metadata for cached series at path: $seriesPath")
+            return@launch
+        }
+
+        // Get the full list of originally planned chapter titles from the metadata.
+        val plannedChapterTitles = originalOp.chapters.map { it.title }.toSet()
+
+        withContext(Dispatchers.Main) {
+            _state.update {
+                it.copy(
+                    seriesUrl = originalOp.seriesUrl,
+                    customTitle = originalOp.customTitle,
+                    chaptersToPreselect = plannedChapterTitles,
+                    // Clear fields from any previous operations
+                    sourceFilePath = null,
+                    localChaptersForSync = emptyMap(),
+                    failedItemsForSync = emptyMap()
+                )
+            }
+            onEvent(Event.Navigate(Screen.DOWNLOAD))
+            onEvent(Event.Download.FetchChapters)
+        }
     }
-    onEvent(Event.Navigate(Screen.DOWNLOAD))
-    onEvent(Event.Download.FetchChapters)
 }
 
 private fun MainViewModel.onConfirmClearAllCache() {
@@ -115,7 +134,17 @@ private fun MainViewModel.onConfirmClearAllCache() {
 
 private fun MainViewModel.onConfirmDeleteSelectedCacheItems() {
     viewModelScope.launch(Dispatchers.IO) {
-        cacheService.deleteCacheItems(_state.value.cacheItemsToDelete.toList())
+        val allPossiblePaths = _state.value.cacheContents.flatMap { series ->
+            if (series.chapters.isEmpty()) listOf(series.path) else series.chapters.map { it.path }
+        }.toSet()
+        val selectedPaths = _state.value.cacheItemsToDelete.toSet()
+
+        if (selectedPaths == allPossiblePaths) {
+            Logger.logInfo("All cache items are selected. Clearing all cache.")
+            cacheService.clearAllAppCache()
+        } else {
+            cacheService.deleteCacheItems(_state.value.cacheItemsToDelete.toList())
+        }
         _state.update { it.copy(cacheItemsToDelete = emptySet(), showDeleteCacheConfirmationDialog = false) }
         onRefreshCacheView()
     }
@@ -124,5 +153,66 @@ private fun MainViewModel.onConfirmDeleteSelectedCacheItems() {
 private fun MainViewModel.onRefreshCacheView() {
     viewModelScope.launch(Dispatchers.IO) {
         _state.update { it.copy(cacheContents = cacheService.getCacheContents()) }
+    }
+}
+
+private fun MainViewModel.onRequeueSelected() {
+    viewModelScope.launch(Dispatchers.IO) {
+        // Get the set of unique PARENT series paths from the selection.
+        val seriesPathsToRequeue = _state.value.cacheItemsToDelete.mapNotNull { path ->
+            val file = File(path)
+            if (file.name.startsWith("manga-dl-")) {
+                // It's a root series directory
+                file.absolutePath
+            } else {
+                // It's a chapter directory, get the parent
+                file.parent
+            }
+        }.toSet()
+
+        if (seriesPathsToRequeue.isEmpty()) {
+            Logger.logInfo("No cached series selected to re-queue.")
+            return@launch
+        }
+
+        var requeuedCount = 0
+        val newJobs = mutableListOf<DownloadJob>()
+        val newOps = mutableMapOf<String, QueuedOperation>()
+
+        for (path in seriesPathsToRequeue) {
+            val originalOp = queuePersistenceService.loadOperationMetadata(path) ?: continue
+
+            val newJobId = UUID.randomUUID().toString()
+            // Create a new operation with the new ID
+            val newOp = originalOp.copy(jobId = newJobId)
+            val newJob = DownloadJob(
+                id = newJobId,
+                title = newOp.customTitle,
+                progress = 0f,
+                status = "Queued",
+                totalChapters = newOp.chapters.size,
+                downloadedChapters = 0
+            )
+            newJobs.add(newJob)
+            newOps[newJobId] = newOp
+            requeuedCount++
+        }
+
+        if (requeuedCount > 0) {
+            // Update state in one go on the main thread
+            withContext(Dispatchers.Main) {
+                newOps.forEach { (id, op) -> queuedOperationContext[id] = op }
+                _state.update {
+                    it.copy(
+                        downloadQueue = it.downloadQueue + newJobs,
+                        cacheItemsToDelete = emptySet(), // Clear selection after requeueing
+                        completionMessage = "$requeuedCount series re-added to the queue."
+                    )
+                }
+                Logger.logInfo("$requeuedCount series have been added to the download queue.")
+            }
+        } else {
+            Logger.logError("Could not find metadata for any of the selected items to re-queue.")
+        }
     }
 }

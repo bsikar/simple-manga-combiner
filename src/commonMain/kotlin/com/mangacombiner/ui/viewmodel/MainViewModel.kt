@@ -57,7 +57,7 @@ class MainViewModel(
 
     internal var activeOperationJob: Job? = null
     internal var fetchChaptersJob: Job? = null
-    private val queuedOperationContext = ConcurrentHashMap<String, QueuedOperation>()
+    internal val queuedOperationContext = ConcurrentHashMap<String, QueuedOperation>()
     private val runningJobCoroutines = ConcurrentHashMap<String, Job>()
     private val jobUpdateEvents = MutableSharedFlow<JobUpdateEvent>(extraBufferCapacity = 128)
 
@@ -737,6 +737,8 @@ class MainViewModel(
     private suspend fun runQueuedOperation(op: QueuedOperation) {
         val webChaptersCompleted = AtomicInteger(0)
         try {
+            queuePersistenceService.saveOperationMetadata(op)
+
             val chaptersFromCache = op.chapters.filter { it.selectedSource == ChapterSource.CACHE }
             jobUpdateEvents.tryEmit(JobUpdateEvent.DownloadedChaptersChanged(op.jobId, chaptersFromCache.size))
 
