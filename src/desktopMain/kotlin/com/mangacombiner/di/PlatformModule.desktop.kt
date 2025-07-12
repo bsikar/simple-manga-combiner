@@ -9,6 +9,7 @@ import com.mangacombiner.util.DesktopPlatformProvider
 import com.mangacombiner.util.FileMover
 import com.mangacombiner.util.PlatformProvider
 import org.koin.core.module.Module
+import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 
 actual fun platformModule(): Module = module {
@@ -18,7 +19,7 @@ actual fun platformModule(): Module = module {
     factory { FileMover() }
 
     // Provide the Desktop-specific implementation for the common interface
-    single<BackgroundDownloader> { DesktopDownloader() }
+    singleOf(::DesktopDownloader).bind<BackgroundDownloader>()
 
     // ViewModel for Desktop
     factory {

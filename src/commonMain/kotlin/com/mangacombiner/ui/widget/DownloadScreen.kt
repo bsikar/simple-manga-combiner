@@ -110,7 +110,7 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                             if (state.isFetchingChapters) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Cancel Fetch")
+                                Text("Cancel")
                             } else {
                                 Text("Fetch Chapters")
                             }

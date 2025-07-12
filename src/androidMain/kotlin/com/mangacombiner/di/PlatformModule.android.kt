@@ -1,8 +1,8 @@
 package com.mangacombiner.di
 
 import com.mangacombiner.data.SettingsRepository
+import com.mangacombiner.service.AndroidBackgroundDownloader
 import com.mangacombiner.service.BackgroundDownloader
-import com.mangacombiner.service.BackgroundDownloaderService
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.util.AndroidPlatformProvider
 import com.mangacombiner.util.ClipboardManager
@@ -19,8 +19,8 @@ actual fun platformModule(): Module = module {
     single { SettingsRepository(androidContext()) }
     factory { FileMover(androidContext()) }
 
-    // Provide the Android-specific service as the implementation for the common interface
-    single<BackgroundDownloader> { BackgroundDownloaderService() }
+    // Provide the proxy class as the implementation for the common interface
+    single<BackgroundDownloader> { AndroidBackgroundDownloader(androidContext(), get(), get()) }
 
     // ViewModel for Android
     viewModelOf(::MainViewModel)

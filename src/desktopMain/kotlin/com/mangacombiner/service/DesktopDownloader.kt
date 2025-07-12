@@ -10,19 +10,16 @@ import com.mangacombiner.util.toSlug
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.get
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 
-class DesktopDownloader : BackgroundDownloader, KoinComponent {
-
-    // Manually get dependencies since this class isn't directly created by Koin
-    private val downloadService: DownloadService = get()
-    private val fileMover: FileMover = get()
-    private val platformProvider: PlatformProvider = get()
-    private val queuePersistenceService: QueuePersistenceService = get()
+class DesktopDownloader(
+    private val downloadService: DownloadService,
+    private val fileMover: FileMover,
+    private val platformProvider: PlatformProvider,
+    private val queuePersistenceService: QueuePersistenceService
+) : BackgroundDownloader {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val runningJobs = ConcurrentHashMap<String, Job>()

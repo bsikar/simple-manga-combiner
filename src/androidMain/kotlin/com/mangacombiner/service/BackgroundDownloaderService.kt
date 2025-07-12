@@ -15,17 +15,14 @@ import com.mangacombiner.util.Logger
 import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.toSlug
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 
-class BackgroundDownloaderService : Service(), BackgroundDownloader, KoinComponent {
+class BackgroundDownloaderService : Service(), KoinComponent {
 
-    // Dependencies will be injected in onCreate
     private lateinit var downloadService: DownloadService
     private lateinit var fileMover: FileMover
     private lateinit var platformProvider: PlatformProvider
@@ -36,104 +33,83 @@ class BackgroundDownloaderService : Service(), BackgroundDownloader, KoinCompone
     private lateinit var notificationManager: NotificationManager
     private var wakeLock: PowerManager.WakeLock? = null
 
-    // This flow is observed by the ViewModel to get status updates.
-    private val _jobStatusFlow = MutableSharedFlow<JobStatusUpdate>(extraBufferCapacity = 128)
-    override val jobStatusFlow = _jobStatusFlow.asSharedFlow()
-
     override fun onCreate() {
         super.onCreate()
-
-        // Manually inject dependencies using Koin's get()
         downloadService = get()
         fileMover = get()
         platformProvider = get()
         queuePersistenceService = get()
-
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
-        Logger.logDebug { "BackgroundDownloaderService created." }
+        Logger.logDebug { "BackgroundDownloaderService instance created by OS." }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val jobId = intent?.getStringExtra(EXTRA_JOB_ID)
-        if (jobId == null) {
-            Logger.logError("Service started with no JOB_ID. Stopping.")
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
-        Logger.logDebug { "Service received start command for job: $jobId" }
-        if (runningJobs.containsKey(jobId)) {
-            Logger.logDebug { "Job $jobId is already running. Ignoring command." }
-            return START_NOT_STICKY
-        }
-
-        // We can't pass the whole operation in the intent easily, so we load it from cache.
-        // This is why saving the metadata before starting the service is crucial.
-        val seriesPath = intent.getStringExtra(EXTRA_SERIES_PATH) ?: ""
-        val op = queuePersistenceService.loadOperationMetadata(seriesPath)
-
-        if (op == null) {
-            Logger.logError("Could not load QueuedOperation for job $jobId. Stopping.")
-            _jobStatusFlow.tryEmit(JobStatusUpdate(jobId, errorMessage = "Operation context not found", isFinished = true))
-            return START_NOT_STICKY
-        }
-
-        val job = serviceScope.launch {
-            try {
-                // Acquire WakeLock to prevent CPU from sleeping
-                acquireWakeLock(op.customTitle)
-                // Run the actual download
-                runQueuedOperation(op)
-            } finally {
-                // Ensure WakeLock is always released
-                releaseWakeLock()
-                runningJobs.remove(jobId)
-                Logger.logDebug { "Coroutine for job $jobId finished. Running jobs: ${runningJobs.size}" }
-                // If this was the last job, stop the service.
-                if (runningJobs.isEmpty()) {
-                    Logger.logDebug { "No more jobs. Stopping service." }
-                    stopSelf()
+        when (intent?.action) {
+            ACTION_START_JOB -> handleStartJob(intent)
+            ACTION_STOP_JOB -> {
+                val jobId = intent.getStringExtra(EXTRA_JOB_ID)
+                if (jobId != null) {
+                    stopJob(jobId)
                 }
             }
+            ACTION_STOP_ALL -> stopAllJobs()
         }
 
-        runningJobs[jobId] = job
-        job.invokeOnCompletion {
-            runningJobs.remove(jobId)
+        // If no jobs are running after a command, the service can stop.
+        if (runningJobs.isEmpty()) {
+            stopSelf()
         }
 
         return START_NOT_STICKY
     }
 
-    override fun startJob(op: QueuedOperation) {
-        // Persist the operation's metadata so it can be retrieved in onStartCommand
-        queuePersistenceService.saveOperationMetadata(op)
-
-        val seriesSlug = op.seriesUrl.toSlug()
-        val seriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
-
-        // Create an intent to start this service
-        val intent = Intent(applicationContext, BackgroundDownloaderService::class.java).apply {
-            putExtra(EXTRA_JOB_ID, op.jobId)
-            putExtra(EXTRA_SERIES_PATH, seriesDir.absolutePath) // Pass path to load metadata
+    private fun handleStartJob(intent: Intent) {
+        val jobId = intent.getStringExtra(EXTRA_JOB_ID)
+        if (jobId == null) {
+            Logger.logError("Service received START_JOB with no JOB_ID. Stopping.")
+            return
         }
 
-        // Start the service in the foreground
-        // This is required on modern Android versions for background work
-        applicationContext.startForegroundService(intent)
-        Logger.logDebug { "Requested startForegroundService for job ${op.jobId}" }
+        if (runningJobs.containsKey(jobId)) {
+            Logger.logDebug { "Job $jobId is already running. Ignoring command." }
+            return
+        }
+
+        val seriesPath = intent.getStringExtra(EXTRA_SERIES_PATH) ?: ""
+        val op = queuePersistenceService.loadOperationMetadata(seriesPath)
+
+        if (op == null) {
+            Logger.logError("Could not load QueuedOperation for job $jobId. Stopping.")
+            JobStatusHolder.postUpdate(JobStatusUpdate(jobId, errorMessage = "Operation context not found", isFinished = true))
+            return
+        }
+
+        val job = serviceScope.launch {
+            try {
+                acquireWakeLock(op.customTitle)
+                runQueuedOperation(op)
+            } finally {
+                releaseWakeLock()
+                runningJobs.remove(jobId)
+                Logger.logDebug { "Coroutine for job $jobId finished. Running jobs: ${runningJobs.size}" }
+                if (runningJobs.isEmpty()) {
+                    stopSelf()
+                }
+            }
+        }
+        runningJobs[jobId] = job
     }
 
-    override fun stopJob(jobId: String) {
+    private fun stopJob(jobId: String) {
         runningJobs[jobId]?.cancel(CancellationException("Job was stopped by the queue manager."))
         runningJobs.remove(jobId)
-        Logger.logDebug { "Requested stop for job: $jobId" }
+        Logger.logDebug { "Stopped job in service: $jobId" }
     }
 
-    override fun stopAllJobs() {
+    private fun stopAllJobs() {
         runningJobs.keys.forEach { stopJob(it) }
-        Logger.logDebug { "Requested stop for all jobs." }
+        Logger.logDebug { "Stopped all jobs in service." }
     }
 
     private suspend fun runQueuedOperation(op: QueuedOperation) {
@@ -142,16 +118,16 @@ class BackgroundDownloaderService : Service(), BackgroundDownloader, KoinCompone
             startForeground(NOTIFICATION_ID, initialNotification)
 
             val chaptersFromCache = op.chapters.filter { it.selectedSource == ChapterSource.CACHE }
-            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, downloadedChapters = chaptersFromCache.size))
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = chaptersFromCache.size))
 
             Logger.logInfo("--- Starting BG Job: ${op.customTitle} (${op.jobId}) ---")
-            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, "Starting...", 0.05f))
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, "Starting...", 0.05f))
 
             val tempDir = File(platformProvider.getTmpDir())
             val seriesSlug = op.seriesUrl.toSlug()
             val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
 
-            if (op.seriesUrl.isNotBlank() && tempSeriesDir.name.startsWith("manga-dl-")) {
+            if (op.seriesUrl.isNotBlank()) {
                 File(tempSeriesDir, "url.txt").writeText(op.seriesUrl)
             }
 
@@ -160,7 +136,6 @@ class BackgroundDownloaderService : Service(), BackgroundDownloader, KoinCompone
                 .map { File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)) }
                 .toMutableList()
 
-            Logger.logDebug { "Job ${op.jobId}: ${chaptersFromCache.size} chapters from cache, ${chaptersToDownload.size} chapters to download." }
             var downloadResult: DownloadResult? = null
 
             if (chaptersToDownload.isNotEmpty()) {
@@ -174,26 +149,15 @@ class BackgroundDownloaderService : Service(), BackgroundDownloader, KoinCompone
                     tempDir = tempDir,
                     getUserAgents = { op.userAgents },
                     outputPath = op.outputPath,
-                    isPaused = {
-                        // In the service model, pause/resume is handled by cancelling and restarting the job.
-                        // The actual download loop inside DownloadService will rely on coroutine cancellation.
-                        false
-                    },
+                    isPaused = { false },
                     dryRun = false,
                     onProgressUpdate = { chapterProgress, status ->
-                        // Since this runs in a tight loop, we use tryEmit to avoid suspension
                         val update = JobStatusUpdate(op.jobId, status = status, progress = chapterProgress)
-                        _jobStatusFlow.tryEmit(update)
-
-                        notificationManager.notify(
-                            NOTIFICATION_ID,
-                            createNotification(status, (chapterProgress * 100).toInt(), 100)
-                        )
+                        JobStatusHolder.postUpdate(update)
+                        notificationManager.notify(NOTIFICATION_ID, createNotification(status, (chapterProgress * 100).toInt(), 100))
                     },
                     onChapterCompleted = { completedChapterUrl ->
-                        val update = JobStatusUpdate(op.jobId, downloadedChapters = 1) // Signal one more chapter done
-                        _jobStatusFlow.tryEmit(update)
-
+                        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = 1))
                         val currentOp = queuePersistenceService.loadOperationMetadata(tempSeriesDir.absolutePath) ?: op
                         val updatedChapters = currentOp.chapters.map { chapter ->
                             if (chapter.url == completedChapterUrl) {
@@ -209,48 +173,41 @@ class BackgroundDownloaderService : Service(), BackgroundDownloader, KoinCompone
                 downloadResult?.successfulFolders?.let { allChapterFolders.addAll(it) }
             }
 
-            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, status = "Packaging..."))
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Packaging..."))
             notificationManager.notify(NOTIFICATION_ID, createNotification("Packaging: ${op.customTitle}", 0, 0, true))
 
             val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
             val tempOutputFile = File(tempDir, finalFileName)
 
             if (op.outputFormat == "cbz") {
-                downloadService.processorService.createCbzFromFolders(
-                    op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters
-                )
+                downloadService.processorService.createCbzFromFolders(op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters)
             } else {
-                downloadService.processorService.createEpubFromFolders(
-                    op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters
-                )
+                downloadService.processorService.createEpubFromFolders(op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters)
             }
 
             fileMover.moveToFinalDestination(tempOutputFile, op.outputPath, finalFileName)
-            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, status = "Completed", progress = 1f, isFinished = true))
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Completed", progress = 1f, isFinished = true))
             Logger.logInfo("--- Finished BG Job: ${op.customTitle} ---")
 
-            // Show a final completion notification that is not ongoing
             notificationManager.notify(NOTIFICATION_ID_COMPLETED_OFFSET + op.jobId.hashCode(), createNotification("Completed: ${op.customTitle}", 0, 0, isOngoing = false))
-            stopForeground(STOP_FOREGROUND_REMOVE) // Use the non-deprecated constant
+            stopForeground(STOP_FOREGROUND_REMOVE)
 
         } catch (e: CancellationException) {
-            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, status = "Cancelled", isFinished = true))
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Cancelled", isFinished = true))
             Logger.logInfo("Job ${op.jobId} was cancelled.")
         } catch (e: Exception) {
             val errorMessage = "Error: ${e.message?.take(40) ?: "Unknown"}"
             Logger.logError("Job ${op.jobId} failed", e)
-            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = true, errorMessage = e.message))
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = true, errorMessage = e.message))
         }
     }
 
-    // --- Notification & WakeLock Management ---
-
     private fun acquireWakeLock(jobTitle: String) {
-        wakeLock?.release() // Release any existing lock
+        wakeLock?.release()
         wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).run {
             newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MangaCombiner::DownloadWakelock").apply {
                 Logger.logDebug { "Acquiring WakeLock for job: $jobTitle" }
-                acquire(30 * 60 * 1000L /* 30 minutes timeout */)
+                acquire(30 * 60 * 1000L)
             }
         }
     }
@@ -266,7 +223,7 @@ class BackgroundDownloaderService : Service(), BackgroundDownloader, KoinCompone
     private fun createNotificationChannel() {
         val name = "Download Service"
         val descriptionText = "Shows manga download progress"
-        val importance = NotificationManager.IMPORTANCE_LOW // Low importance to avoid sound
+        val importance = NotificationManager.IMPORTANCE_LOW
         val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
             description = descriptionText
         }
@@ -284,8 +241,6 @@ class BackgroundDownloaderService : Service(), BackgroundDownloader, KoinCompone
             .build()
     }
 
-    // --- Service Lifecycle ---
-
     override fun onBind(intent: Intent): IBinder? = null
 
     override fun onDestroy() {
@@ -296,10 +251,13 @@ class BackgroundDownloaderService : Service(), BackgroundDownloader, KoinCompone
     }
 
     companion object {
+        const val ACTION_START_JOB = "com.mangacombiner.action.START_JOB"
+        const val ACTION_STOP_JOB = "com.mangacombiner.action.STOP_JOB"
+        const val ACTION_STOP_ALL = "com.mangacombiner.action.STOP_ALL"
+        const val EXTRA_JOB_ID = "extra_job_id"
+        const val EXTRA_SERIES_PATH = "extra_series_path"
         private const val CHANNEL_ID = "MangaDownloaderChannel"
         private const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_ID_COMPLETED_OFFSET = 1000
-        const val EXTRA_JOB_ID = "extra_job_id"
-        const val EXTRA_SERIES_PATH = "extra_series_path"
     }
 }
