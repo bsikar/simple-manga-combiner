@@ -9,7 +9,6 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.*
@@ -108,8 +107,6 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                             }
                         ) {
                             if (state.isFetchingChapters) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
-                                Spacer(Modifier.width(8.dp))
                                 Text("Cancel")
                             } else {
                                 Text("Fetch Chapters")

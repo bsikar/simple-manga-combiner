@@ -48,7 +48,7 @@ class MainViewModel(
 
     // Tracks jobs the ViewModel has requested the service to start.
     // This prevents sending duplicate start commands.
-    private val activeServiceJobs = ConcurrentHashMap.newKeySet<String>()
+    internal val activeServiceJobs = ConcurrentHashMap.newKeySet<String>()
 
     init {
         val savedSettings = settingsRepository.loadSettings()
@@ -93,16 +93,36 @@ class MainViewModel(
     private fun loadQueueFromCache() {
         val loadedOperations = queuePersistenceService.loadQueue() ?: return
 
-        val restoredJobs = loadedOperations.map { op ->
-            queuedOperationContext[op.jobId] = op // Restore context
+        val restoredJobs = loadedOperations.mapNotNull { op ->
+            // The service might have been working on this job and saving its own progress.
+            // Let's check for a more up-to-date metadata file for this specific operation.
+            val seriesSlug = op.seriesUrl.toSlug()
+            val seriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
+            val latestOp = queuePersistenceService.loadOperationMetadata(seriesDir.absolutePath) ?: op
+
+            queuedOperationContext[latestOp.jobId] = latestOp // Restore the most up-to-date context
+
+            val selectedChapters = latestOp.chapters.filter { it.selectedSource != null }
+            if (selectedChapters.isEmpty()) {
+                queuedOperationContext.remove(latestOp.jobId)
+                return@mapNotNull null
+            }
+
+            // Correctly calculate progress based on what's been downloaded.
+            val downloadedCount = selectedChapters.count { it.availableSources.contains(ChapterSource.CACHE) }
+            val totalCount = selectedChapters.size
+            val progress = if (totalCount > 0) downloadedCount.toFloat() / totalCount else 0f
+
+            val status = if (progress >= 1.0f) "Completed" else "Paused"
+
             DownloadJob(
-                id = op.jobId,
-                title = op.customTitle,
-                progress = 0f, // Reset progress on load
-                status = "Paused", // Always start as Paused
-                totalChapters = op.chapters.count { it.selectedSource != null },
-                downloadedChapters = 0, // Reset progress
-                isIndividuallyPaused = true // Mark as individually paused so user must resume
+                id = latestOp.jobId,
+                title = latestOp.customTitle,
+                progress = progress,
+                status = status,
+                totalChapters = totalCount,
+                downloadedChapters = downloadedCount,
+                isIndividuallyPaused = status != "Completed" // Mark as individually paused unless it's already done
             )
         }
 
@@ -209,7 +229,18 @@ class MainViewModel(
             }
 
             val updatedQueue = state.downloadQueue.map { job ->
-                if (job.id != update.jobId) return@map job
+                if (job.id != update.jobId) {
+                    return@map job
+                }
+
+                // If the service reports cancellation, check if it was due to a pause action.
+                if (update.status == "Cancelled") {
+                    // If the whole queue is paused, or this specific job was individually paused,
+                    // then this "cancellation" is actually a pause. We should show "Paused" as the status.
+                    if (state.isQueueGloballyPaused || job.isIndividuallyPaused) {
+                        return@map job.copy(status = "Paused")
+                    }
+                }
 
                 val newStatus = update.status ?: job.status
 
@@ -623,35 +654,11 @@ class MainViewModel(
 
     internal fun getJobContext(jobId: String): QueuedOperation? = queuedOperationContext[jobId]
 
-    internal fun addCurrentJobToQueue() {
-        val s = state.value
-        val selectedChapters = s.fetchedChapters.filter { it.selectedSource != null }
-        if (selectedChapters.isEmpty()) {
-            Logger.logError("No chapters selected to add to the queue.")
-            return
-        }
+    internal fun addJobToQueueAndResetState(op: QueuedOperation) {
+        queuedOperationContext[op.jobId] = op
 
-        val jobId = UUID.randomUUID().toString()
-        val title = s.customTitle.ifBlank { s.seriesUrl.toSlug().replace('-', ' ').titlecase() }
-
-        val userAgents = when {
-            s.perWorkerUserAgent -> List(s.workers) { UserAgent.browsers.values.random(Random) }
-            s.userAgentName == "Random" -> listOf(UserAgent.browsers.values.random(Random))
-            else -> listOf(UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first())
-        }
-
-        queuedOperationContext[jobId] = QueuedOperation(
-            jobId = jobId,
-            seriesUrl = s.seriesUrl,
-            customTitle = title,
-            outputFormat = s.outputFormat,
-            outputPath = s.outputPath,
-            chapters = s.fetchedChapters, // Store the full list
-            workers = s.workers,
-            userAgents = userAgents,
-        )
-
-        val newJob = DownloadJob(jobId, title, 0f, "Queued", selectedChapters.size, 0)
+        val selectedChapters = op.chapters.filter { it.selectedSource != null }
+        val newJob = DownloadJob(op.jobId, op.customTitle, 0f, "Queued", selectedChapters.size, 0)
         _state.update {
             it.copy(
                 downloadQueue = it.downloadQueue + newJob,
@@ -662,10 +669,59 @@ class MainViewModel(
                 localChaptersForSync = emptyMap(),
                 failedItemsForSync = emptyMap(),
                 outputFileExists = false,
-                completionMessage = "$title added to queue."
+                completionMessage = "${op.customTitle} added to queue.",
+                // Clear the confirmation state
+                showAddDuplicateDialog = false,
+                jobContextToAdd = null
             )
         }
-        Logger.logInfo("Job '$title' ($jobId) added to queue.")
+        Logger.logInfo("Job '${op.customTitle}' (${op.jobId}) added to queue.")
+    }
+
+    private fun createQueuedOperationFromCurrentState(): QueuedOperation {
+        val s = state.value
+        val jobId = UUID.randomUUID().toString()
+        val title = s.customTitle.ifBlank { s.seriesUrl.toSlug().replace('-', ' ').titlecase() }
+
+        val userAgents = when {
+            s.perWorkerUserAgent -> List(s.workers) { UserAgent.browsers.values.random(Random) }
+            s.userAgentName == "Random" -> listOf(UserAgent.browsers.values.random(Random))
+            else -> listOf(UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first())
+        }
+
+        return QueuedOperation(
+            jobId = jobId,
+            seriesUrl = s.seriesUrl,
+            customTitle = title,
+            outputFormat = s.outputFormat,
+            outputPath = s.outputPath,
+            chapters = s.fetchedChapters,
+            workers = s.workers,
+            userAgents = userAgents,
+        )
+    }
+
+    internal fun addCurrentJobToQueue() {
+        val s = state.value
+        val selectedChapters = s.fetchedChapters.filter { it.selectedSource != null }
+        if (selectedChapters.isEmpty()) {
+            Logger.logError("No chapters selected to add to the queue.")
+            return
+        }
+
+        val jobContext = createQueuedOperationFromCurrentState()
+        val isDuplicate = queuedOperationContext.values.any { it.seriesUrl == jobContext.seriesUrl }
+
+        if (isDuplicate) {
+            _state.update {
+                it.copy(
+                    showAddDuplicateDialog = true,
+                    jobContextToAdd = jobContext
+                )
+            }
+        } else {
+            addJobToQueueAndResetState(jobContext)
+        }
     }
 
     internal fun cancelJob(jobId: String) {

@@ -108,6 +108,8 @@ sealed interface Event {
     sealed interface Queue : Event {
         enum class MoveDirection { UP, DOWN }
         object Add : Queue
+        object ConfirmAddDuplicate : Queue
+        object CancelAddDuplicate : Queue
         object ClearCompleted : Queue
         object PauseAll : Queue
         object ResumeAll : Queue

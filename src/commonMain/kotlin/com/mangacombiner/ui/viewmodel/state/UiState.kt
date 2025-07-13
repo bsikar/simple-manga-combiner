@@ -59,6 +59,8 @@ data class UiState(
     val lastDownloadResult: DownloadResult? = null,
     val chaptersToPreselect: Set<String> = emptySet(),
     val isQueueGloballyPaused: Boolean = false,
+    val showAddDuplicateDialog: Boolean = false,
+    val jobContextToAdd: QueuedOperation? = null,
 
     // Persisted Settings (Defaults point to AppSettings.Defaults)
     val theme: AppTheme = AppSettings.Defaults.THEME,

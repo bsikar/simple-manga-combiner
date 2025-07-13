@@ -10,6 +10,12 @@ import kotlinx.coroutines.launch
 internal fun MainViewModel.handleQueueEvent(event: Event.Queue) {
     when (event) {
         is Event.Queue.Add -> addCurrentJobToQueue()
+        is Event.Queue.ConfirmAddDuplicate -> state.value.jobContextToAdd?.let { addJobToQueueAndResetState(it) }
+        is Event.Queue.CancelAddDuplicate -> _state.update {
+            it.copy(
+                showAddDuplicateDialog = false, jobContextToAdd = null
+            )
+        }
         is Event.Queue.ClearCompleted -> clearCompletedJobs()
         is Event.Queue.CancelJob -> cancelJob(event.jobId)
         is Event.Queue.RequestEditJob -> _state.update { it.copy(editingJobId = event.jobId, editingJobContext = getJobContext(event.jobId)) }
@@ -74,20 +80,30 @@ private fun MainViewModel.resumeAllJobs() {
 
 private fun MainViewModel.togglePauseJob(jobId: String, force: Boolean? = null) {
     _state.update { currentState ->
+        val jobToUpdate = currentState.downloadQueue.find { it.id == jobId } ?: return@update currentState
+
+        val newPausedState = force ?: !jobToUpdate.isIndividuallyPaused
+
+        if (newPausedState) {
+            // We are PAUSING the job, so tell the service to stop it.
+            backgroundDownloader.stopJob(jobId)
+            activeServiceJobs.remove(jobId)
+        }
+        // When RESUMING (newPausedState is false), we just change the state to "Queued".
+        // The reactive queue processor will see the change and start the job if it's eligible.
+
         currentState.copy(
             downloadQueue = currentState.downloadQueue.map { job ->
                 if (job.id == jobId) {
-                    val newPausedState = force ?: !job.isIndividuallyPaused
-                    val newStatus: String
-                    if (newPausedState) {
-                        // If we are pausing it, always set status to "Paused" unless it's already finished.
-                        val isFinished = job.status == "Completed" || job.status.startsWith("Error") || job.status == "Cancelled"
-                        newStatus = if (isFinished) job.status else "Paused"
+                    val isFinished = job.status == "Completed" || job.status.startsWith("Error") || job.status == "Cancelled"
+                    if (isFinished) {
+                        job // Don't change finished jobs
                     } else {
-                        // If we are resuming, set it back to "Queued". The collector will start it if it has priority.
-                        newStatus = "Queued"
+                        job.copy(
+                            isIndividuallyPaused = newPausedState,
+                            status = if (newPausedState) "Paused" else "Queued"
+                        )
                     }
-                    job.copy(isIndividuallyPaused = newPausedState, status = newStatus)
                 } else {
                     job
                 }

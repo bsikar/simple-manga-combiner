@@ -35,7 +35,7 @@ class AndroidBackgroundDownloader(
             putExtra(BackgroundDownloaderService.EXTRA_JOB_ID, op.jobId)
             putExtra(BackgroundDownloaderService.EXTRA_SERIES_PATH, seriesDir.absolutePath)
         }
-        context.startForegroundService(intent)
+        context.startService(intent)
         Logger.logDebug { "Sent ACTION_START_JOB intent for ${op.jobId}" }
     }
 

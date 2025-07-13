@@ -14,10 +14,12 @@ import com.mangacombiner.util.FileMover
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.toSlug
+import io.ktor.client.plugins.ClientRequestException
 import kotlinx.coroutines.*
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -195,6 +197,14 @@ class BackgroundDownloaderService : Service(), KoinComponent {
         } catch (e: CancellationException) {
             JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Cancelled", isFinished = true))
             Logger.logInfo("Job ${op.jobId} was cancelled.")
+        } catch (e: ClientRequestException) {
+            val errorMessage = "Paused (Server Error)"
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = false, errorMessage = e.message))
+            Logger.logError("Job ${op.jobId} paused due to server error: ${e.response.status}", e)
+        } catch (e: IOException) {
+            val errorMessage = "Paused (Network Error)"
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = false, errorMessage = e.message))
+            Logger.logError("Job ${op.jobId} paused due to network error", e)
         } catch (e: Exception) {
             val errorMessage = "Error: ${e.message?.take(40) ?: "Unknown"}"
             Logger.logError("Job ${op.jobId} failed", e)

@@ -136,6 +136,23 @@ fun MainScreen(viewModel: MainViewModel) {
             if (state.showCompletionDialog) {
                 CompletionDialog(state, viewModel::onEvent)
             }
+            if (state.showAddDuplicateDialog) {
+                AlertDialog(
+                    onDismissRequest = { viewModel.onEvent(Event.Queue.CancelAddDuplicate) },
+                    title = { Text("Duplicate Job") },
+                    text = { Text("This series is already in the download queue. Do you want to add it again?") },
+                    confirmButton = {
+                        Button(onClick = { viewModel.onEvent(Event.Queue.ConfirmAddDuplicate) }) {
+                            Text("Add Anyway")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.onEvent(Event.Queue.CancelAddDuplicate) }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
             if (state.showCancelDialog) {
                 AlertDialog(
                     onDismissRequest = { viewModel.onEvent(Event.Operation.AbortCancel) },
