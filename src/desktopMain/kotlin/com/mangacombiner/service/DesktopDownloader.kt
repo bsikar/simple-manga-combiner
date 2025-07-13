@@ -20,7 +20,8 @@ class DesktopDownloader(
     private val downloadService: DownloadService,
     private val fileMover: FileMover,
     private val platformProvider: PlatformProvider,
-    private val queuePersistenceService: QueuePersistenceService
+    private val queuePersistenceService: QueuePersistenceService,
+    private val cacheService: CacheService
 ) : BackgroundDownloader {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -65,12 +66,7 @@ class DesktopDownloader(
 
     private suspend fun runQueuedOperation(op: QueuedOperation) {
         try {
-            val chaptersFromCache = op.chapters.filter { it.selectedSource == ChapterSource.CACHE }
-            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, downloadedChapters = chaptersFromCache.size))
-
             Logger.logInfo("--- Starting Desktop Job: ${op.customTitle} (${op.jobId}) ---")
-            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, "Starting...", 0.05f))
-
             val tempDir = File(platformProvider.getTmpDir())
             val seriesSlug = op.seriesUrl.toSlug()
             val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
@@ -79,10 +75,32 @@ class DesktopDownloader(
                 File(tempSeriesDir, "url.txt").writeText(op.seriesUrl)
             }
 
-            val chaptersToDownload = op.chapters.filter { it.selectedSource == ChapterSource.WEB }
-            val allChapterFolders = chaptersFromCache
+            // Re-evaluate chapter status against the current cache on disk
+            val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
+            val selectedChapters = op.chapters.filter { it.selectedSource != null }
+
+            val chaptersAlreadyComplete = selectedChapters.filter {
+                val sanitizedTitle = FileUtils.sanitizeFilename(it.title)
+                // A chapter is complete if it exists in the cache and isn't marked as incomplete.
+                cachedChapterStatus[sanitizedTitle] == true
+            }
+
+            // Chapters to download are any selected chapters that are NOT complete in the cache.
+            // This correctly includes new, broken, and incomplete chapters.
+            val chaptersToDownload = selectedChapters.filter {
+                val sanitizedTitle = FileUtils.sanitizeFilename(it.title)
+                cachedChapterStatus[sanitizedTitle] != true
+            }
+
+            val allChapterFolders = chaptersAlreadyComplete
                 .map { File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)) }
                 .toMutableList()
+
+            // Correctly set initial progress
+            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, "Starting...", 0.05f))
+            if (chaptersAlreadyComplete.isNotEmpty()) {
+                _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, downloadedChapters = chaptersAlreadyComplete.size))
+            }
 
             var downloadResult: DownloadResult? = null
 

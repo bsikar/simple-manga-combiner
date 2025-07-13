@@ -29,6 +29,7 @@ class BackgroundDownloaderService : Service(), KoinComponent {
     private lateinit var fileMover: FileMover
     private lateinit var platformProvider: PlatformProvider
     private lateinit var queuePersistenceService: QueuePersistenceService
+    private lateinit var cacheService: CacheService
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val runningJobs = ConcurrentHashMap<String, Job>()
@@ -41,6 +42,7 @@ class BackgroundDownloaderService : Service(), KoinComponent {
         fileMover = get()
         platformProvider = get()
         queuePersistenceService = get()
+        cacheService = get()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
         Logger.logDebug { "BackgroundDownloaderService instance created by OS." }
@@ -119,12 +121,7 @@ class BackgroundDownloaderService : Service(), KoinComponent {
             val initialNotification = createNotification("Starting: ${op.customTitle}", 0, 0, true)
             startForeground(NOTIFICATION_ID, initialNotification)
 
-            val chaptersFromCache = op.chapters.filter { it.selectedSource == ChapterSource.CACHE }
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = chaptersFromCache.size))
-
             Logger.logInfo("--- Starting BG Job: ${op.customTitle} (${op.jobId}) ---")
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, "Starting...", 0.05f))
-
             val tempDir = File(platformProvider.getTmpDir())
             val seriesSlug = op.seriesUrl.toSlug()
             val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
@@ -133,10 +130,32 @@ class BackgroundDownloaderService : Service(), KoinComponent {
                 File(tempSeriesDir, "url.txt").writeText(op.seriesUrl)
             }
 
-            val chaptersToDownload = op.chapters.filter { it.selectedSource == ChapterSource.WEB }
-            val allChapterFolders = chaptersFromCache
+            // Re-evaluate chapter status against the current cache on disk
+            val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
+            val selectedChapters = op.chapters.filter { it.selectedSource != null }
+
+            val chaptersAlreadyComplete = selectedChapters.filter {
+                val sanitizedTitle = FileUtils.sanitizeFilename(it.title)
+                // A chapter is complete if it exists in the cache and isn't marked as incomplete.
+                cachedChapterStatus[sanitizedTitle] == true
+            }
+
+            // Chapters to download are any selected chapters that are NOT complete in the cache.
+            // This correctly includes new, broken, and incomplete chapters.
+            val chaptersToDownload = selectedChapters.filter {
+                val sanitizedTitle = FileUtils.sanitizeFilename(it.title)
+                cachedChapterStatus[sanitizedTitle] != true
+            }
+
+            val allChapterFolders = chaptersAlreadyComplete
                 .map { File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)) }
                 .toMutableList()
+
+            // Correctly set initial progress
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, "Starting...", 0.05f))
+            if (chaptersAlreadyComplete.isNotEmpty()) {
+                JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = chaptersAlreadyComplete.size))
+            }
 
             var downloadResult: DownloadResult? = null
 
