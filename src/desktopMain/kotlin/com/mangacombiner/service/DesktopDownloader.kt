@@ -11,6 +11,8 @@ import io.ktor.client.plugins.ClientRequestException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -65,6 +67,7 @@ class DesktopDownloader(
     }
 
     private suspend fun runQueuedOperation(op: QueuedOperation) {
+        val metadataUpdateMutex = Mutex()
         try {
             Logger.logInfo("--- Starting Desktop Job: ${op.customTitle} (${op.jobId}) ---")
             val tempDir = File(platformProvider.getTmpDir())
@@ -122,18 +125,22 @@ class DesktopDownloader(
                         _jobStatusFlow.tryEmit(update)
                     },
                     onChapterCompleted = { completedChapterUrl ->
-                        val update = JobStatusUpdate(op.jobId, downloadedChapters = 1)
-                        _jobStatusFlow.tryEmit(update)
+                        scope.launch {
+                            metadataUpdateMutex.withLock {
+                                val update = JobStatusUpdate(op.jobId, downloadedChapters = 1)
+                                _jobStatusFlow.tryEmit(update)
 
-                        val currentOp = queuePersistenceService.loadOperationMetadata(tempSeriesDir.absolutePath) ?: op
-                        val updatedChapters = currentOp.chapters.map { chapter ->
-                            if (chapter.url == completedChapterUrl) {
-                                chapter.copy(availableSources = chapter.availableSources + ChapterSource.CACHE)
-                            } else {
-                                chapter
+                                val currentOp = queuePersistenceService.loadOperationMetadata(tempSeriesDir.absolutePath) ?: op
+                                val updatedChapters = currentOp.chapters.map { chapter ->
+                                    if (chapter.url == completedChapterUrl) {
+                                        chapter.copy(availableSources = chapter.availableSources + ChapterSource.CACHE)
+                                    } else {
+                                        chapter
+                                    }
+                                }
+                                queuePersistenceService.saveOperationMetadata(currentOp.copy(chapters = updatedChapters))
                             }
                         }
-                        queuePersistenceService.saveOperationMetadata(currentOp.copy(chapters = updatedChapters))
                     }
                 )
                 downloadResult = downloadService.downloadChapters(downloadOptions, tempSeriesDir)

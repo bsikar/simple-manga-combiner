@@ -16,6 +16,8 @@ import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.toSlug
 import io.ktor.client.plugins.ClientRequestException
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import java.io.File
@@ -117,6 +119,7 @@ class BackgroundDownloaderService : Service(), KoinComponent {
     }
 
     private suspend fun runQueuedOperation(op: QueuedOperation) {
+        val metadataUpdateMutex = Mutex()
         try {
             val initialNotification = createNotification("Starting: ${op.customTitle}", 0, 0, true)
             startForeground(NOTIFICATION_ID, initialNotification)
@@ -178,16 +181,20 @@ class BackgroundDownloaderService : Service(), KoinComponent {
                         notificationManager.notify(NOTIFICATION_ID, createNotification(status, (chapterProgress * 100).toInt(), 100))
                     },
                     onChapterCompleted = { completedChapterUrl ->
-                        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = 1))
-                        val currentOp = queuePersistenceService.loadOperationMetadata(tempSeriesDir.absolutePath) ?: op
-                        val updatedChapters = currentOp.chapters.map { chapter ->
-                            if (chapter.url == completedChapterUrl) {
-                                chapter.copy(availableSources = chapter.availableSources + ChapterSource.CACHE)
-                            } else {
-                                chapter
+                        serviceScope.launch {
+                            metadataUpdateMutex.withLock {
+                                JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = 1))
+                                val currentOp = queuePersistenceService.loadOperationMetadata(tempSeriesDir.absolutePath) ?: op
+                                val updatedChapters = currentOp.chapters.map { chapter ->
+                                    if (chapter.url == completedChapterUrl) {
+                                        chapter.copy(availableSources = chapter.availableSources + ChapterSource.CACHE)
+                                    } else {
+                                        chapter
+                                    }
+                                }
+                                queuePersistenceService.saveOperationMetadata(currentOp.copy(chapters = updatedChapters))
                             }
                         }
-                        queuePersistenceService.saveOperationMetadata(currentOp.copy(chapters = updatedChapters))
                     }
                 )
                 downloadResult = downloadService.downloadChapters(downloadOptions, tempSeriesDir)

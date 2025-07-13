@@ -176,11 +176,29 @@ class MainViewModel(
                         return@collect
                     }
 
-                    val desiredActiveJobIds = queue
-                        .filterNot { it.isIndividuallyPaused || it.status in listOf("Completed", "Cancelled") || it.status.startsWith("Error") }
+                    val packagingJobs = queue.filter { job ->
+                        job.status.startsWith("Packaging") && !job.isIndividuallyPaused
+                    }
+
+                    val otherRunnableJobs = queue.filter { job ->
+                        !job.status.startsWith("Packaging") &&
+                                !job.isIndividuallyPaused &&
+                                job.status !in listOf("Completed", "Cancelled") &&
+                                !job.status.startsWith("Error")
+                    }
+
+                    // The concurrent limit only applies to non-packaging jobs
+                    val desiredDownloadingJobIds = otherRunnableJobs
                         .take(batchWorkers)
                         .map { it.id }
                         .toSet()
+
+                    // All packaging jobs are desired to continue running
+                    val desiredPackagingJobIds = packagingJobs
+                        .map { it.id }
+                        .toSet()
+
+                    val desiredActiveJobIds = desiredDownloadingJobIds + desiredPackagingJobIds
 
                     val jobsToStop = activeServiceJobs - desiredActiveJobIds
                     val jobsToStart = desiredActiveJobIds - activeServiceJobs
@@ -272,7 +290,7 @@ class MainViewModel(
                 job.copy(
                     status = newStatus,
                     progress = newProgress,
-                    downloadedChapters = newDownloadedChapters
+                    downloadedChapters = if (newStatus == "Completed") job.totalChapters else newDownloadedChapters
                 )
             }
             state.copy(downloadQueue = updatedQueue)
