@@ -276,21 +276,24 @@ class MainViewModel(
                 }
 
                 val newStatus = update.status ?: job.status
+                var newDownloadedChapters = job.downloadedChapters + (update.downloadedChapters ?: 0)
+                var newProgress = job.progress
 
-                // Calculate new progress based on sub-step progress from the service
-                val newProgress = update.progress?.let { chapterProgress ->
-                    if (job.totalChapters > 0) {
-                        (job.downloadedChapters + chapterProgress) / job.totalChapters
-                    } else 0f
-                } ?: if (newStatus == "Completed") 1f else job.progress
-
-                // Update downloaded chapters count (service sends increments of 1)
-                val newDownloadedChapters = job.downloadedChapters + (update.downloadedChapters ?: 0)
+                if (newStatus == "Completed") {
+                    newDownloadedChapters = job.totalChapters
+                    newProgress = 1f
+                } else if (update.downloadedChapters != null && update.downloadedChapters > 0) {
+                    // This is a chapter completion update. Update both counter and progress.
+                    newProgress = if (job.totalChapters > 0) newDownloadedChapters.toFloat() / job.totalChapters else 0f
+                } else if (update.progress != null) {
+                    // This is a sub-step progress update for an in-flight chapter. Only update progress.
+                    newProgress = if (job.totalChapters > 0) (job.downloadedChapters + update.progress) / job.totalChapters else 0f
+                }
 
                 job.copy(
                     status = newStatus,
                     progress = newProgress,
-                    downloadedChapters = if (newStatus == "Completed") job.totalChapters else newDownloadedChapters
+                    downloadedChapters = newDownloadedChapters
                 )
             }
             state.copy(downloadQueue = updatedQueue)
