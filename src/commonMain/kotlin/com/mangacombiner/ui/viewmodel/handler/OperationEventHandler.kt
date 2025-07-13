@@ -21,6 +21,7 @@ internal fun MainViewModel.handleOperationEvent(event: Event.Operation) {
         Event.Operation.ConfirmBrokenDownload -> onConfirmBrokenDownload()
         Event.Operation.DiscardFailed -> onDiscardFailed()
         Event.Operation.RetryFailed -> onRetryFailed()
+        Event.Operation.DismissNetworkError -> _state.update { it.copy(showNetworkErrorDialog = false, networkErrorMessage = null) }
     }
 }
 

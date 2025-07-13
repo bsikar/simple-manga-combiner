@@ -11,6 +11,8 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -47,7 +49,11 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
                     trailingIcon = {
                         if (state.searchQuery.isNotBlank()) {
                             IconButton(
-                                onClick = { onEvent(Event.Search.UpdateQuery("")) },
+                                onClick = {
+                                    onEvent(Event.Search.UpdateQuery(""))
+                                    // Also clear the search results
+                                    onEvent(Event.Search.ClearResults)
+                                },
                                 enabled = isIdle
                             ) {
                                 Icon(Icons.Filled.Clear, "Clear Search")

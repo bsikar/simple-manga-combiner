@@ -195,8 +195,8 @@ class BackgroundDownloaderService : Service(), KoinComponent {
             stopForeground(STOP_FOREGROUND_REMOVE)
 
         } catch (e: CancellationException) {
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Cancelled", isFinished = true))
-            Logger.logInfo("Job ${op.jobId} was cancelled.")
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Paused", isFinished = true))
+            Logger.logInfo("Job ${op.jobId} was stopped by its manager.")
         } catch (e: ClientRequestException) {
             val errorMessage = "Paused (Server Error)"
             JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = false, errorMessage = e.message))

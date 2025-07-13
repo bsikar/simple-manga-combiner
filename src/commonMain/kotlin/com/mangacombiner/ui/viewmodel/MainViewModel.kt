@@ -182,25 +182,41 @@ class MainViewModel(
                         .map { it.id }
                         .toSet()
 
-                    // Stop (throttle) any running job that is no longer in the desired set.
                     val jobsToStop = activeServiceJobs - desiredActiveJobIds
-                    jobsToStop.forEach { jobId ->
-                        val job = queue.find { it.id == jobId }
-                        if (job != null && !job.isIndividuallyPaused) {
-                            Logger.logDebug { "Throttling job due to lower priority: ${job.title}" }
-                            backgroundDownloader.stopJob(jobId)
-                            activeServiceJobs.remove(jobId)
-                        }
+                    val jobsToStart = desiredActiveJobIds - activeServiceJobs
+
+                    if (jobsToStop.isEmpty() && jobsToStart.isEmpty()) {
+                        return@collect
                     }
 
-                    // Start any desired job that is not currently running.
-                    val jobsToStart = desiredActiveJobIds - activeServiceJobs
+                    // --- Perform side effects (stopping/starting jobs) ---
+                    jobsToStop.forEach { jobId ->
+                        Logger.logDebug { "Throttling job due to lower priority: $jobId" }
+                        backgroundDownloader.stopJob(jobId)
+                        activeServiceJobs.remove(jobId)
+                    }
+
                     jobsToStart.forEach { jobId ->
-                        val job = queue.find { it.id == jobId }
-                        if (job != null && !job.isIndividuallyPaused && (job.status == "Queued" || job.status == "Paused")) {
-                            Logger.logDebug { "Activating job due to high priority: ${job.title}" }
-                            startJob(job)
+                        Logger.logDebug { "Activating job due to high priority: $jobId" }
+                        startJob(jobId)
+                    }
+
+                    // --- Atomically update the UI state ---
+                    _state.update { currentState ->
+                        val newQueue = currentState.downloadQueue.map { job ->
+                            when (job.id) {
+                                in jobsToStop -> job.copy(status = "Paused") // Throttled jobs are now Paused
+                                in jobsToStart -> {
+                                    if (queuedOperationContext.containsKey(job.id)) {
+                                        job.copy(status = "Waiting...") // Started jobs are now Waiting
+                                    } else {
+                                        job.copy(status = "Error: Context not found")
+                                    }
+                                }
+                                else -> job // No change
+                            }
                         }
+                        currentState.copy(downloadQueue = newQueue)
                     }
                 }
         }
@@ -235,9 +251,8 @@ class MainViewModel(
 
                 // If the service reports cancellation, check if it was due to a pause action.
                 if (update.status == "Cancelled") {
-                    // If the whole queue is paused, or this specific job was individually paused,
-                    // then this "cancellation" is actually a pause. We should show "Paused" as the status.
-                    if (state.isQueueGloballyPaused || job.isIndividuallyPaused) {
+                    // If the UI already thinks the job is paused (due to throttling or user action), then keep it as "Paused".
+                    if (state.isQueueGloballyPaused || job.isIndividuallyPaused || job.status == "Paused") {
                         return@map job.copy(status = "Paused")
                     }
                 }
@@ -437,6 +452,14 @@ class MainViewModel(
                     }
                 } else {
                     Logger.logError("Could not find any chapters at the provided URL.")
+                }
+            } catch (e: NetworkException) {
+                Logger.logError("Failed to fetch chapters due to network error", e)
+                _state.update {
+                    it.copy(
+                        showNetworkErrorDialog = true,
+                        networkErrorMessage = "Chapter fetching failed. Please check your network connection."
+                    )
                 }
             } catch (e: Exception) {
                 if (e !is CancellationException) {
@@ -773,23 +796,18 @@ class MainViewModel(
         Logger.logInfo("Updated settings for job: ${event.title}")
     }
 
-    private fun startJob(job: DownloadJob) {
-        if (activeServiceJobs.contains(job.id)) return
+    private fun startJob(jobId: String) {
+        if (activeServiceJobs.contains(jobId)) return
 
-        val op = queuedOperationContext[job.id]
+        val op = queuedOperationContext[jobId]
         if (op != null) {
             backgroundDownloader.startJob(op)
-            activeServiceJobs.add(job.id)
-            _state.update {
-                it.copy(downloadQueue = it.downloadQueue.map { j ->
-                    if (j.id == job.id) j.copy(status = "Waiting...") else j
-                })
-            }
+            activeServiceJobs.add(jobId)
         } else {
-            Logger.logError("Could not find operation context for job ${job.id}")
+            Logger.logError("Could not find operation context for job $jobId")
             _state.update {
                 it.copy(downloadQueue = it.downloadQueue.map { j ->
-                    if (j.id == job.id) j.copy(status = "Error: Context not found") else j
+                    if (j.id == jobId) j.copy(status = "Error: Context not found") else j
                 })
             }
         }

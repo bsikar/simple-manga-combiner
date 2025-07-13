@@ -1,6 +1,7 @@
 package com.mangacombiner.ui.viewmodel.handler
 
 import com.mangacombiner.model.SearchResult
+import com.mangacombiner.service.NetworkException
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.Screen
@@ -23,6 +24,15 @@ internal fun MainViewModel.handleSearchEvent(event: Event.Search) {
         is Event.Search.SortResults -> onSortSearchResults(event.sortOption)
         is Event.Search.ToggleResultExpansion -> onToggleSearchResultExpansion(event.url)
         Event.Search.Perform -> performSearch()
+        Event.Search.ClearResults -> {
+            _state.update {
+                it.copy(
+                    searchResults = emptyList(),
+                    originalSearchResults = emptyList()
+                )
+            }
+            Logger.logInfo("Search results cleared.")
+        }
     }
 }
 
@@ -83,49 +93,65 @@ private fun MainViewModel.performSearch() {
 
         val userAgent = UserAgent.browsers[_state.value.userAgentName] ?: UserAgent.browsers.values.first()
         val client = createHttpClient(_state.value.proxyUrl)
-        val initialResults = try {
-            scraperService.search(client, query, userAgent)
-        } catch (e: Exception) {
-            Logger.logError("Failed to fetch initial search results", e)
-            emptyList<SearchResult>()
-        }
 
-        if (initialResults.isEmpty()) {
-            Logger.logInfo("No results found for '$query'.")
-            _state.update { it.copy(isSearching = false) }
-            client.close()
-            return@launch
-        }
+        try {
+            val initialResults = scraperService.search(client, query, userAgent)
 
-        _state.update {
-            it.copy(
-                isSearching = false,
-                searchResults = initialResults.map { sr -> sr.copy(isFetchingDetails = true) }
-            )
-        }
+            if (initialResults.isEmpty()) {
+                Logger.logInfo("No results found for '$query'.")
+                _state.update { it.copy(isSearching = false) }
+                return@launch
+            }
 
-        coroutineScope {
-            val detailedResults = initialResults.map { searchResult ->
-                async {
-                    val chapters = scraperService.findChapterUrlsAndTitles(client, searchResult.url, userAgent)
-                    val chapterRange = getChapterRange(chapters)
-                    searchResult.copy(
-                        isFetchingDetails = false,
-                        chapters = chapters,
-                        chapterCount = chapters.size,
-                        chapterRange = chapterRange
-                    )
-                }
-            }.awaitAll()
             _state.update {
                 it.copy(
-                    searchResults = detailedResults,
-                    originalSearchResults = detailedResults,
-                    searchSortOption = SearchSortOption.DEFAULT
+                    isSearching = false,
+                    searchResults = initialResults.map { sr -> sr.copy(isFetchingDetails = true) }
                 )
             }
+
+            coroutineScope {
+                val detailedResults = initialResults.map { searchResult ->
+                    async {
+                        val chapters = scraperService.findChapterUrlsAndTitles(client, searchResult.url, userAgent)
+                        val chapterRange = getChapterRange(chapters)
+                        searchResult.copy(
+                            isFetchingDetails = false,
+                            chapters = chapters,
+                            chapterCount = chapters.size,
+                            chapterRange = chapterRange
+                        )
+                    }
+                }.awaitAll()
+                _state.update {
+                    it.copy(
+                        searchResults = detailedResults,
+                        originalSearchResults = detailedResults,
+                        searchSortOption = SearchSortOption.DEFAULT
+                    )
+                }
+            }
+        } catch (e: NetworkException) {
+            Logger.logError("Search failed due to network error", e)
+            _state.update {
+                it.copy(
+                    isSearching = false,
+                    showNetworkErrorDialog = true,
+                    networkErrorMessage = "Search failed. Please check your network connection."
+                )
+            }
+        } catch (e: Exception) {
+            Logger.logError("An unexpected error occurred during search", e)
+            _state.update {
+                it.copy(
+                    isSearching = false,
+                    showNetworkErrorDialog = true,
+                    networkErrorMessage = "An unexpected error occurred."
+                )
+            }
+        } finally {
+            client.close()
         }
-        client.close()
     }
 }
 

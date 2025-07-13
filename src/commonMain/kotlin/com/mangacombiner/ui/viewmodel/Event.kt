@@ -39,6 +39,7 @@ sealed interface Event {
         data class SortResults(val sortOption: SearchSortOption) : Search
         data class ToggleResultExpansion(val url: String) : Search
         object Perform : Search
+        object ClearResults: Search
     }
 
     sealed interface Download : Event {
@@ -84,6 +85,7 @@ sealed interface Event {
         object ConfirmBrokenDownload : Operation
         object DiscardFailed : Operation
         object RetryFailed : Operation
+        object DismissNetworkError : Operation
     }
 
     sealed interface Cache : Event {

@@ -141,8 +141,8 @@ class DesktopDownloader(
             Logger.logInfo("--- Finished Desktop Job: ${op.customTitle} ---")
 
         } catch (e: CancellationException) {
-            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, status = "Cancelled", isFinished = true))
-            Logger.logInfo("Job ${op.jobId} was cancelled.")
+            _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, status = "Paused", isFinished = true))
+            Logger.logInfo("Job ${op.jobId} was stopped by its manager.")
         } catch (e: ClientRequestException) {
             val errorMessage = "Paused (Server Error)"
             _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = false, errorMessage = e.message))

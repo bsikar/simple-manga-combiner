@@ -61,6 +61,8 @@ data class UiState(
     val isQueueGloballyPaused: Boolean = false,
     val showAddDuplicateDialog: Boolean = false,
     val jobContextToAdd: QueuedOperation? = null,
+    val showNetworkErrorDialog: Boolean = false,
+    val networkErrorMessage: String? = null,
 
     // Persisted Settings (Defaults point to AppSettings.Defaults)
     val theme: AppTheme = AppSettings.Defaults.THEME,

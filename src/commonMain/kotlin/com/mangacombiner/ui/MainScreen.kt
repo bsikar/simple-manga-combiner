@@ -136,6 +136,18 @@ fun MainScreen(viewModel: MainViewModel) {
             if (state.showCompletionDialog) {
                 CompletionDialog(state, viewModel::onEvent)
             }
+            if (state.showNetworkErrorDialog) {
+                AlertDialog(
+                    onDismissRequest = { viewModel.onEvent(Event.Operation.DismissNetworkError) },
+                    title = { Text("Network Error") },
+                    text = { Text(state.networkErrorMessage ?: "Please check your network connection and try again.") },
+                    confirmButton = {
+                        Button(onClick = { viewModel.onEvent(Event.Operation.DismissNetworkError) }) {
+                            Text("OK")
+                        }
+                    }
+                )
+            }
             if (state.showAddDuplicateDialog) {
                 AlertDialog(
                     onDismissRequest = { viewModel.onEvent(Event.Queue.CancelAddDuplicate) },

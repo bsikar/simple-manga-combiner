@@ -31,7 +31,11 @@ actual fun createHttpClient(proxyUrl: String?): HttpClient = HttpClient(CIO) {
             }
         }
     }
-    install(HttpTimeout) { requestTimeoutMillis = 60000L }
+    install(HttpTimeout) {
+        requestTimeoutMillis = 20000L
+        connectTimeoutMillis = 15000L
+        socketTimeoutMillis = 15000L
+    }
     install(HttpRequestRetry) {
         retryOnServerErrors(maxRetries = 3)
         exponentialDelay()
