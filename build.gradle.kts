@@ -135,10 +135,11 @@ compose.desktop {
 
             // Add icon configuration
             macOS {
-                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.png"))
+                bundleID = "com.mangacombiner"
+                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.icns"))
             }
             windows {
-                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.png"))
+                iconFile.set(project.file("src/desktopMain/resources/icon_desktop.ico"))
             }
             linux {
                 iconFile.set(project.file("src/desktopMain/resources/icon_desktop.png"))
@@ -189,3 +190,4 @@ val generateVersionFile by tasks.register("generateVersionFile") {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn(generateVersionFile)
 }
+
