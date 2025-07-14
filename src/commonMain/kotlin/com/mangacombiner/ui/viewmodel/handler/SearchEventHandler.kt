@@ -12,10 +12,13 @@ import com.mangacombiner.util.createHttpClient
 import com.mangacombiner.util.titlecase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.NonCancellable
 
 internal fun MainViewModel.handleSearchEvent(event: Event.Search) {
     when (event) {
@@ -24,6 +27,7 @@ internal fun MainViewModel.handleSearchEvent(event: Event.Search) {
         is Event.Search.SortResults -> onSortSearchResults(event.sortOption)
         is Event.Search.ToggleResultExpansion -> onToggleSearchResultExpansion(event.url)
         Event.Search.Perform -> performSearch()
+        Event.Search.Cancel -> onCancelSearch()
         Event.Search.ClearResults -> {
             _state.update {
                 it.copy(
@@ -34,6 +38,9 @@ internal fun MainViewModel.handleSearchEvent(event: Event.Search) {
             Logger.logInfo("Search results cleared.")
         }
     }
+}
+private fun MainViewModel.onCancelSearch() {
+    searchJob?.cancel()
 }
 
 private fun MainViewModel.onSelectSearchResult(url: String) {
@@ -87,7 +94,8 @@ private fun MainViewModel.performSearch() {
         return
     }
 
-    viewModelScope.launch(Dispatchers.IO) {
+    searchJob?.cancel()
+    searchJob = viewModelScope.launch(Dispatchers.IO) {
         _state.update { it.copy(isSearching = true, searchResults = emptyList(), originalSearchResults = emptyList()) }
         Logger.logInfo("Searching for '$query'...")
 
@@ -99,13 +107,11 @@ private fun MainViewModel.performSearch() {
 
             if (initialResults.isEmpty()) {
                 Logger.logInfo("No results found for '$query'.")
-                _state.update { it.copy(isSearching = false) }
                 return@launch
             }
 
             _state.update {
                 it.copy(
-                    isSearching = false,
                     searchResults = initialResults.map { sr -> sr.copy(isFetchingDetails = true) }
                 )
             }
@@ -131,11 +137,13 @@ private fun MainViewModel.performSearch() {
                     )
                 }
             }
+        } catch (e: CancellationException) {
+            Logger.logInfo("Search was cancelled.")
+            throw e
         } catch (e: NetworkException) {
             Logger.logError("Search failed due to network error", e)
             _state.update {
                 it.copy(
-                    isSearching = false,
                     showNetworkErrorDialog = true,
                     networkErrorMessage = "Search failed. Please check your network connection."
                 )
@@ -144,13 +152,15 @@ private fun MainViewModel.performSearch() {
             Logger.logError("An unexpected error occurred during search", e)
             _state.update {
                 it.copy(
-                    isSearching = false,
                     showNetworkErrorDialog = true,
                     networkErrorMessage = "An unexpected error occurred."
                 )
             }
         } finally {
-            client.close()
+            withContext(NonCancellable) {
+                _state.update { it.copy(isSearching = false) }
+                client.close()
+            }
         }
     }
 }

@@ -44,6 +44,7 @@ class MainViewModel(
 
     internal var activeOperationJob: Job? = null
     internal var fetchChaptersJob: Job? = null
+    internal var searchJob: Job? = null
     internal val queuedOperationContext = ConcurrentHashMap<String, QueuedOperation>()
 
     // Tracks jobs the ViewModel has requested the service to start.
