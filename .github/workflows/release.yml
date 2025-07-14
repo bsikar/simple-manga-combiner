@@ -5,6 +5,27 @@ on:
       - 'v*'
 
 jobs:
+  # Job to build the platform-independent CLI Jar only once
+  build-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      - name: Build CLI Jar
+        run: ./gradlew cliJar # Only build the CLI jar
+      - name: Upload CLI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangaCombiner-cli
+          path: build/libs/manga-combiner-cli-*.jar # Be specific
+
   # This job builds the desktop installers for macOS, Windows, and Linux
   build-desktop:
     strategy:
@@ -14,43 +35,39 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-
-      - name: Build Desktop Installers and CLI
-        run: ./gradlew packageDistributionForCurrentOS cliJar
-
+      - name: Build Desktop Installers
+        run: ./gradlew packageDistributionForCurrentOS # Removed cliJar from this command
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: MangaCombiner-${{ matrix.os }}
+          # Upload only the final installer/package files
           path: |
-            build/compose/binaries/main/
-            build/libs/*.jar
+            build/compose/binaries/main/**/*.dmg
+            build/compose/binaries/main/**/*.msi
+            build/compose/binaries/main/**/*.deb
+            build/compose/binaries/main/**/*.rpm
 
-  # This job builds the Android AAB (for the Play Store) and APK (for direct install)
+  # This job builds the Android AAB and APK
   build-android:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-
       - name: Decode Keystore & Create Properties File
         run: |
           echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > my-release-key.keystore
@@ -58,10 +75,8 @@ jobs:
           echo "storePassword=${{ secrets.RELEASE_STORE_PASSWORD }}" >> keystore.properties
           echo "keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}" >> keystore.properties
           echo "keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}" >> keystore.properties
-
       - name: Build Android App Bundle and APK
         run: ./gradlew bundleRelease assembleRelease
-
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -70,12 +85,13 @@ jobs:
             build/outputs/bundle/release/*.aab
             build/outputs/apk/release/*.apk
 
-  # This job creates the GitHub Release page automatically after all builds succeed
+  # This job creates the GitHub Release after all builds succeed
   create-release:
-    needs: [build-desktop, build-android]
+    # This job now depends on the new CLI job as well
+    needs: [build-cli, build-desktop, build-android]
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Grant permission to create/delete releases
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -87,7 +103,6 @@ jobs:
         with:
           path: artifacts/
 
-      # This step deletes a release if it already exists for this tag
       - name: Delete existing release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,5 +112,13 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # This uploads all files from the subdirectories inside the 'artifacts' folder.
-          files: artifacts/**/*
+          # This corrected pattern only uploads the specific packages you want
+          # instead of every single file, which avoids the name conflicts.
+          files: |
+            artifacts/MangaCombiner-cli/*.jar
+            artifacts/MangaCombiner-Android/*.aab
+            artifacts/MangaCombiner-Android/*.apk
+            artifacts/MangaCombiner-macos-latest/**/*.dmg
+            artifacts/MangaCombiner-windows-latest/**/*.msi
+            artifacts/MangaCombiner-ubuntu-latest/**/*.deb
+            artifacts/MangaCombiner-ubuntu-latest/**/*.rpm
