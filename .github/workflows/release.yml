@@ -48,7 +48,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
@@ -71,20 +71,27 @@ jobs:
             build/outputs/bundle/release/*.aab
             build/outputs/apk/release/*.apk
 
+  # This job creates the GitHub Release page automatically after all builds succeed
   create-release:
     needs: [build-desktop, build-android]
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Grant permission to create/delete releases
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
 
+      # This step deletes a release if it already exists for this tag
+      - name: Delete existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ${{ github.ref_name }} --yes || true
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           # This uploads all files from the subdirectories inside the 'artifacts' folder.
           files: artifacts/**/*
-
