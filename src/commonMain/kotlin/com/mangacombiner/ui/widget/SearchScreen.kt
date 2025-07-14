@@ -62,14 +62,23 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
                     }
                 )
                 Button(
-                    onClick = { onEvent(Event.Search.Perform) },
-                    enabled = state.searchQuery.isNotBlank() && !state.isSearching && isIdle,
+                    onClick = {
+                        if (state.isSearching) {
+                            onEvent(Event.Search.Cancel)
+                        } else {
+                            onEvent(Event.Search.Perform)
+                        }
+                    },
+                    enabled = (state.searchQuery.isNotBlank() && isIdle) || state.isSearching,
+                    colors = if (state.isSearching) {
+                        ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                    } else {
+                        ButtonDefaults.buttonColors()
+                    },
                     modifier = Modifier.align(Alignment.End)
                 ) {
                     if (state.isSearching) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Searching...")
+                        Text("Cancel")
                     } else {
                         Text("Search")
                     }

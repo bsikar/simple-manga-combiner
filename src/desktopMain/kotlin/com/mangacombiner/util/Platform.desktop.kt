@@ -4,12 +4,14 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
+import io.ktor.serialization.kotlinx.json.json
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.URI
@@ -32,9 +34,9 @@ actual fun createHttpClient(proxyUrl: String?): HttpClient = HttpClient(CIO) {
         }
     }
     install(HttpTimeout) {
-        requestTimeoutMillis = 20000L
-        connectTimeoutMillis = 15000L
-        socketTimeoutMillis = 15000L
+        requestTimeoutMillis = 30000L
+        connectTimeoutMillis = 20000L
+        socketTimeoutMillis = 20000L
     }
     install(HttpRequestRetry) {
         retryOnServerErrors(maxRetries = 3)
@@ -45,6 +47,9 @@ actual fun createHttpClient(proxyUrl: String?): HttpClient = HttpClient(CIO) {
         level = LogLevel.ALL
     }
     install(HttpCookies)
+    install(ContentNegotiation) {
+        json() // Configure the client to handle JSON responses
+    }
     defaultRequest {
         header(HttpHeaders.Accept, "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
         header(HttpHeaders.AcceptLanguage, "en-US,en;q=0.9")

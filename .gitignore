@@ -34,3 +34,8 @@ replay_pid*
 build
 
 .DS_Store
+*.keystore
+
+!gradle/wrapper/gradle-wrapper.jar
+
+local.properties

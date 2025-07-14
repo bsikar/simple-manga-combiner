@@ -40,6 +40,7 @@ sealed interface Event {
         data class ToggleResultExpansion(val url: String) : Search
         object Perform : Search
         object ClearResults: Search
+        object Cancel: Search
     }
 
     sealed interface Download : Event {
