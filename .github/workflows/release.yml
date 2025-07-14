@@ -19,12 +19,12 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
       - name: Build CLI Jar
-        run: ./gradlew cliJar # Only build the CLI jar
+        run: ./gradlew cliJar
       - name: Upload CLI Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MangaCombiner-cli
-          path: build/libs/manga-combiner-cli-*.jar # Be specific
+          path: build/libs/manga-combiner-cli-*.jar
 
   # This job builds the desktop installers for macOS, Windows, and Linux
   build-desktop:
@@ -43,12 +43,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
       - name: Build Desktop Installers
-        run: ./gradlew packageDistributionForCurrentOS # Removed cliJar from this command
+        run: ./gradlew packageDistributionForCurrentOS
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: MangaCombiner-${{ matrix.os }}
-          # Upload only the final installer/package files
           path: |
             build/compose/binaries/main/**/*.dmg
             build/compose/binaries/main/**/*.msi
@@ -81,13 +80,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MangaCombiner-Android
+          # Use a more robust, recursive path to find the build outputs
           path: |
-            build/outputs/bundle/release/*.aab
-            build/outputs/apk/release/*.apk
+            **/build/outputs/bundle/release/*.aab
+            **/build/outputs/apk/release/*.apk
 
   # This job creates the GitHub Release after all builds succeed
   create-release:
-    # This job now depends on the new CLI job as well
     needs: [build-cli, build-desktop, build-android]
     runs-on: ubuntu-latest
     permissions:
@@ -103,6 +102,10 @@ jobs:
         with:
           path: artifacts/
 
+      # This new step will show you exactly what files were downloaded
+      - name: Display structure of downloaded artifacts
+        run: ls -R artifacts
+
       - name: Delete existing release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -112,8 +115,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # This corrected pattern only uploads the specific packages you want
-          # instead of every single file, which avoids the name conflicts.
           files: |
             artifacts/MangaCombiner-cli/*.jar
             artifacts/MangaCombiner-Android/*.aab
