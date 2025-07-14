@@ -71,10 +71,11 @@ jobs:
             build/outputs/bundle/release/*.aab
             build/outputs/apk/release/*.apk
 
-  # This optional job creates the GitHub Release page automatically after all builds succeed
   create-release:
     needs: [build-desktop, build-android]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
