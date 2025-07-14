@@ -80,7 +80,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MangaCombiner-Android
-          # Use a more robust, recursive path to find the build outputs
           path: |
             **/build/outputs/bundle/release/*.aab
             **/build/outputs/apk/release/*.apk
@@ -102,10 +101,6 @@ jobs:
         with:
           path: artifacts/
 
-      # This new step will show you exactly what files were downloaded
-      - name: Display structure of downloaded artifacts
-        run: ls -R artifacts
-
       - name: Delete existing release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -117,8 +112,8 @@ jobs:
         with:
           files: |
             artifacts/MangaCombiner-cli/*.jar
-            artifacts/MangaCombiner-Android/*.aab
-            artifacts/MangaCombiner-Android/*.apk
+            artifacts/MangaCombiner-Android/**/*.aab
+            artifacts/MangaCombiner-Android/**/*.apk
             artifacts/MangaCombiner-macos-latest/**/*.dmg
             artifacts/MangaCombiner-windows-latest/**/*.msi
             artifacts/MangaCombiner-ubuntu-latest/**/*.deb
