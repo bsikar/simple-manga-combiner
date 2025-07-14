@@ -1,14 +1,13 @@
 name: Build Release Packages
 
-# This workflow runs when you push a tag that starts with 'v' (e.g., v1.0.0, v1.2.3)
 on:
   push:
     tags:
       - 'v*'
 
 jobs:
-  build:
-    # Use a matrix strategy to run the same steps on different OSes
+  # This is your existing job for desktop builds
+  build-desktop:
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
@@ -29,7 +28,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Build with Gradle
-        # For Windows, the script is gradlew.bat, but the action handles this
         run: ./gradlew packageDistributionForCurrentOS cliJar
 
       - name: Upload Artifacts
@@ -39,3 +37,41 @@ jobs:
           path: |
             build/compose/binaries/main/
             build/libs/*.jar
+            
+  # This is the new job for the Android build
+  build-android:
+    # This job should run after the desktop jobs are successful
+    needs: build-desktop
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Decode Keystore & Create Properties File
+        # This step re-creates the keystore and the properties file from your secrets
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > my-release-key.keystore
+          echo "storeFile=../my-release-key.keystore" > keystore.properties
+          echo "storePassword=${{ secrets.RELEASE_STORE_PASSWORD }}" >> keystore.properties
+          echo "keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}" >> keystore.properties
+          echo "keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}" >> keystore.properties
+
+      - name: Build Android App Bundle
+        run: ./gradlew bundleRelease
+
+      - name: Upload Android App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangaCombiner-Android
+          path: build/outputs/bundle/release/*.aab
+
