@@ -46,7 +46,8 @@ kotlin {
                 api(libs.koin.core)
                 api("io.insert-koin:koin-compose:1.1.2")
 
-                implementation(libs.kotlinx.coroutines.core)
+                // FIX: Change from implementation to api to ensure it's packaged correctly.
+                api(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.cli)
@@ -160,6 +161,7 @@ tasks.register<ShadowJar>("cliJar") {
         attributes["Main-Class"] = "com.mangacombiner.desktop.CliRunnerKt"
     }
 
+    // FIX: Revert to the syntactically correct way to include classes and dependencies.
     from(kotlin.targets.getByName("desktop").compilations.getByName("main").output)
     from(project.configurations.named("desktopRuntimeClasspath"))
 
@@ -190,4 +192,3 @@ val generateVersionFile by tasks.register("generateVersionFile") {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn(generateVersionFile)
 }
-

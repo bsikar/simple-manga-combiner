@@ -1,21 +1,24 @@
 package com.mangacombiner.service
 
 import com.mangacombiner.model.ComicInfo
-import com.mangacombiner.ui.viewmodel.OperationState
-import com.mangacombiner.util.Logger
-import com.mangacombiner.util.SlugUtils
-import com.mangacombiner.util.ZipUtils
-import com.mangacombiner.util.naturalSortComparator
-import kotlinx.coroutines.flow.StateFlow
+import com.mangacombiner.util.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import net.lingala.zip4j.model.ZipParameters
+import net.lingala.zip4j.model.enums.CompressionMethod
 import nl.adaptivity.xmlutil.serialization.XML
+import java.awt.image.BufferedImage
 import java.io.File
+import javax.imageio.IIOImage
+import javax.imageio.ImageIO
+import javax.imageio.plugins.jpeg.JPEGImageWriteParam
 import kotlin.coroutines.coroutineContext
+import kotlin.math.roundToInt
 
 class ProcessorService(
     private val fileConverter: FileConverter
@@ -29,94 +32,83 @@ class ProcessorService(
     private val xmlSerializer = XML { indentString = " " }
     private val jsonSerializer = Json { prettyPrint = true }
 
+    private suspend fun processImage(
+        inputFile: File,
+        outputFile: File,
+        maxWidth: Int?,
+        jpegQuality: Int?
+    ): File {
+        val dims = getImageDimensions(inputFile.path) ?: return inputFile
+        val needsResize = maxWidth != null && dims.width > maxWidth
+        val isJpeg = inputFile.extension.equals("jpg", true) || inputFile.extension.equals("jpeg", true)
+        val needsRecompress = isJpeg && jpegQuality != null
+
+        if (!needsResize && !needsRecompress) {
+            return inputFile
+        }
+
+        withContext(Dispatchers.IO) {
+            val image: BufferedImage = ImageIO.read(inputFile) ?: return@withContext
+
+            var imageToProcess = image
+
+            if (needsResize) {
+                val newHeight = (image.height.toDouble() / image.width * maxWidth!!).roundToInt()
+                val imageType = if (isJpeg) BufferedImage.TYPE_INT_RGB else image.type
+                val resized = BufferedImage(maxWidth, newHeight, imageType)
+                val g = resized.createGraphics()
+                g.drawImage(image, 0, 0, maxWidth, newHeight, null)
+                g.dispose()
+                imageToProcess = resized
+            }
+
+            if (needsRecompress) {
+                val writer = ImageIO.getImageWritersByFormatName("jpg").next()
+                val writeParam = writer.defaultWriteParam.apply {
+                    compressionMode = JPEGImageWriteParam.MODE_EXPLICIT
+                    compressionQuality = jpegQuality!! / 100f
+                }
+                outputFile.outputStream().use { fos ->
+                    val ios = ImageIO.createImageOutputStream(fos)
+                    writer.output = ios
+                    writer.write(null, IIOImage(imageToProcess, null, null), writeParam)
+                    writer.dispose()
+                    ios.close()
+                }
+            } else {
+                ImageIO.write(imageToProcess, inputFile.extension, outputFile)
+            }
+        }
+        return outputFile
+    }
+
     private fun String.isImageFile(): Boolean =
         substringAfterLast('.').lowercase() in IMAGE_EXTENSIONS
 
-    private val chapterComparator = Comparator<File> { f1, f2 ->
-        val parts1 = SlugUtils.parseChapterSlugsForSorting(f1.name)
-        val parts2 = SlugUtils.parseChapterSlugsForSorting(f2.name)
-        if (parts1.isEmpty() || parts2.isEmpty()) return@Comparator f1.name.compareTo(f2.name)
-        val maxIndex = minOf(parts1.size, parts2.size)
-        for (i in 0 until maxIndex) {
-            val compare = parts1[i].compareTo(parts2[i])
-            if (compare != 0) return@Comparator compare
-        }
-        return@Comparator parts1.size.compareTo(parts2.size)
-    }
-
     private fun sortChapterFolders(folders: List<File>): List<File> {
-        Logger.logDebug { "Sorting ${folders.size} chapter folders." }
-        return folders.sortedWith(chapterComparator).also { sorted ->
-            Logger.logDebug { "Sorted folder order: ${sorted.joinToString { it.name }}" }
-        }
+        return folders.sortedWith(compareBy(naturalSortComparator) { it.name })
     }
 
-    private fun addImageToCbz(zipFile: ZipFile, folder: File, imageFile: File) {
-        val zipParams = ZipParameters().apply { fileNameInZip = "${folder.name}/${imageFile.name}" }
-        Logger.logDebug { "Adding to CBZ: ${zipParams.fileNameInZip}" }
-        zipFile.addFile(imageFile, zipParams)
-    }
-
-    private suspend fun addChaptersToCbz(zipFile: ZipFile, sortedFolders: List<File>) {
+    private suspend fun addChaptersToCbz(zipFile: ZipFile, sortedFolders: List<File>, tempImageDir: File?, maxWidth: Int?, jpegQuality: Int?) {
         for (folder in sortedFolders) {
             coroutineContext.ensureActive()
             val imageFiles = folder.listFiles()?.filter { it.isFile && it.name.isImageFile() }?.sorted() ?: continue
-            Logger.logDebug { "Adding ${imageFiles.size} images from chapter folder: ${folder.name}" }
-            for (imageFile in imageFiles) {
+            for ((index, imageFile) in imageFiles.withIndex()) {
                 coroutineContext.ensureActive()
-                addImageToCbz(zipFile, folder, imageFile)
+
+                val fileToAdd = if (tempImageDir != null) {
+                    val tempFile = File(tempImageDir, "${folder.name}_${index}.${imageFile.extension}")
+                    processImage(imageFile, tempFile, maxWidth, jpegQuality)
+                } else {
+                    imageFile
+                }
+
+                val zipParams = ZipParameters().apply {
+                    fileNameInZip = "${folder.name}/${imageFile.name}"
+                    compressionMethod = CompressionMethod.STORE // Always store images without re-compressing
+                }
+                zipFile.addFile(fileToAdd, zipParams)
             }
-        }
-    }
-
-    private suspend fun populateCbzFile(
-        zipFile: ZipFile,
-        mangaTitle: String,
-        sortedFolders: List<File>,
-        seriesUrl: String?,
-        failedChapters: Map<String, List<String>>? = null
-    ) {
-        val cbzGenerator = CbzStructureGenerator(xmlSerializer)
-        val (bookmarks, totalPageCount) = cbzGenerator.createBookmarks(sortedFolders)
-
-        if (totalPageCount == 0) {
-            Logger.logInfo("Warning: No images found for $mangaTitle. Skipping CBZ creation.")
-            return
-        }
-        Logger.logDebug { "Generating ComicInfo.xml for $totalPageCount pages." }
-        coroutineContext.ensureActive()
-        val comicInfoXml = cbzGenerator.generateComicInfoXml(mangaTitle, bookmarks, totalPageCount, seriesUrl)
-        val params = ZipParameters().apply { fileNameInZip = COMIC_INFO_FILE }
-        zipFile.addStream(comicInfoXml.byteInputStream(), params)
-        Logger.logDebug { "Added ComicInfo.xml to archive." }
-
-        if (!failedChapters.isNullOrEmpty()) {
-            coroutineContext.ensureActive()
-            val failuresJson = jsonSerializer.encodeToString(failedChapters)
-            val failuresParams = ZipParameters().apply { fileNameInZip = FAILURES_FILE }
-            zipFile.addStream(failuresJson.byteInputStream(), failuresParams)
-            Logger.logInfo("Embedding failure metadata into the archive.")
-            Logger.logDebug { "Failures JSON content: $failuresJson" }
-        }
-
-        addChaptersToCbz(zipFile, sortedFolders)
-    }
-
-    private suspend fun buildCbz(
-        outputFile: File,
-        mangaTitle: String,
-        sortedFolders: List<File>,
-        seriesUrl: String?,
-        failedChapters: Map<String, List<String>>? = null
-    ) {
-        try {
-            ZipFile(outputFile).use { zipFile ->
-                populateCbzFile(zipFile, mangaTitle, sortedFolders, seriesUrl, failedChapters)
-            }
-            coroutineContext.ensureActive()
-            Logger.logInfo("Successfully created: ${outputFile.name}")
-        } catch (e: ZipException) {
-            Logger.logError("Failed to create CBZ file ${outputFile.name}", e)
         }
     }
 
@@ -125,32 +117,45 @@ class ProcessorService(
         chapterFolders: List<File>,
         outputFile: File,
         seriesUrl: String? = null,
-        failedChapters: Map<String, List<String>>? = null
+        failedChapters: Map<String, List<String>>? = null,
+        maxWidth: Int? = null,
+        jpegQuality: Int? = null
     ) {
-        if (outputFile.exists()) {
-            Logger.logDebug { "Output file exists, deleting before recreation: ${outputFile.absolutePath}" }
-            outputFile.delete()
-        }
+        if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
 
         val sortedFolders = sortChapterFolders(chapterFolders)
         Logger.logInfo("Creating CBZ archive: ${outputFile.name}...")
-        buildCbz(outputFile, mangaTitle, sortedFolders, seriesUrl, failedChapters)
-    }
 
-    private suspend fun addChaptersToEpub(
-        epubZip: ZipFile,
-        sortedFolders: List<File>,
-        epubGenerator: EpubStructureGenerator,
-        metadata: EpubStructureGenerator.EpubMetadata
-    ) {
-        for (folder in sortedFolders) {
-            coroutineContext.ensureActive()
-            val images = folder.listFiles()?.filter { it.isFile && it.name.isImageFile() }?.sorted()
-            if (!images.isNullOrEmpty()) {
-                Logger.logDebug { "Adding chapter to EPUB: ${folder.name} with ${images.size} images." }
-                epubGenerator.addChapterToEpub(images, folder.name, metadata, epubZip)
+        val tempImageDir = if (maxWidth != null || jpegQuality != null) {
+            File(outputFile.parent, "cbz-temp-${System.currentTimeMillis()}").apply { mkdirs() }
+        } else {
+            null
+        }
+
+        try {
+            ZipFile(outputFile).use { zipFile ->
+                val cbzGenerator = CbzStructureGenerator(xmlSerializer)
+                val (bookmarks, totalPageCount) = cbzGenerator.createBookmarks(sortedFolders)
+
+                if (totalPageCount > 0) {
+                    val comicInfoXml = cbzGenerator.generateComicInfoXml(mangaTitle, bookmarks, totalPageCount, seriesUrl)
+                    // Text files are compressed by default
+                    zipFile.addStream(comicInfoXml.byteInputStream(), ZipParameters().apply { fileNameInZip = COMIC_INFO_FILE })
+                }
+
+                if (!failedChapters.isNullOrEmpty()) {
+                    val failuresJson = jsonSerializer.encodeToString(failedChapters)
+                    zipFile.addStream(failuresJson.byteInputStream(), ZipParameters().apply { fileNameInZip = FAILURES_FILE })
+                }
+
+                addChaptersToCbz(zipFile, sortedFolders, tempImageDir, maxWidth, jpegQuality)
             }
+            Logger.logInfo("Successfully created: ${outputFile.name}")
+        } catch (e: Exception) {
+            Logger.logError("Failed to create CBZ file ${outputFile.name}", e)
+        } finally {
+            tempImageDir?.deleteRecursively()
         }
     }
 
@@ -159,40 +164,55 @@ class ProcessorService(
         chapterFolders: List<File>,
         outputFile: File,
         seriesUrl: String? = null,
-        failedChapters: Map<String, List<String>>? = null
+        failedChapters: Map<String, List<String>>? = null,
+        maxWidth: Int? = null,
+        jpegQuality: Int? = null
     ) {
-        if (outputFile.exists()) {
-            Logger.logDebug { "Output file exists, deleting before recreation: ${outputFile.absolutePath}" }
-            outputFile.delete()
-        }
+        if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()
+
         Logger.logInfo("Creating EPUB archive: ${outputFile.name}...")
 
         val epubGenerator = EpubStructureGenerator()
         val metadata = EpubStructureGenerator.EpubMetadata()
         val sortedFolders = sortChapterFolders(chapterFolders)
+        val tempImageDir = File(outputFile.parent, "epub-temp-${System.currentTimeMillis()}").apply { mkdirs() }
 
         try {
             ZipFile(outputFile).use { epubZip ->
                 epubGenerator.addEpubCoreFiles(epubZip)
-                addChaptersToEpub(epubZip, sortedFolders, epubGenerator, metadata)
 
-                coroutineContext.ensureActive()
+                for (folder in sortedFolders) {
+                    coroutineContext.ensureActive()
+                    val images = folder.listFiles()?.filter { it.isFile && it.name.isImageFile() }?.sorted()
+                    if (!images.isNullOrEmpty()) {
+                        val processedImages = images.mapIndexed { index, img ->
+                            val tempFile = File(tempImageDir, "${folder.name}_${index}.${img.extension}")
+                            processImage(img, tempFile, maxWidth, jpegQuality)
+                        }
+
+                        // Always store images without re-compressing
+                        val imageZipParams = ZipParameters().apply {
+                            compressionMethod = CompressionMethod.STORE
+                        }
+                        epubGenerator.addChapterToEpub(processedImages, folder.name, metadata, epubZip, imageZipParams)
+                    }
+                }
 
                 if (!failedChapters.isNullOrEmpty()) {
                     val failuresJson = jsonSerializer.encodeToString(failedChapters)
+                    // Text files are compressed by default
                     val failuresParams = ZipParameters().apply { fileNameInZip = "OEBPS/$FAILURES_FILE" }
                     epubZip.addStream(failuresJson.byteInputStream(), failuresParams)
                     metadata.manifestItems.add("""<item id="failures" href="$FAILURES_FILE" media-type="application/json"/>""")
-                    Logger.logInfo("Embedding failure metadata into the archive.")
-                    Logger.logDebug { "Failures JSON content: $failuresJson" }
                 }
                 epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, seriesUrl, metadata)
             }
-            coroutineContext.ensureActive()
             Logger.logInfo("Successfully created: ${outputFile.name}")
-        } catch (e: ZipException) {
+        } catch (e: Exception) {
             Logger.logError("Failed to create EPUB file ${outputFile.name}", e)
+        } finally {
+            tempImageDir.deleteRecursively()
         }
     }
 
@@ -211,9 +231,7 @@ class ProcessorService(
                 emptySet<String>() to null
             }
         }
-        Logger.logDebug { "Found ${slugs.size} chapter slugs and URL: $url" }
         val failedItems = ZipUtils.getFailedItems(file, jsonSerializer)
-        Logger.logDebug { "Found ${failedItems.size} failed items in metadata." }
         return Triple(slugs.sortedWith(naturalSortComparator), url, failedItems)
     }
 

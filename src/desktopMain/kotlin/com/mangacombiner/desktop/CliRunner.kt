@@ -1,59 +1,332 @@
 package com.mangacombiner.desktop
 
 import com.mangacombiner.di.appModule
+import com.mangacombiner.di.platformModule
 import com.mangacombiner.model.AppSettings
-import com.mangacombiner.service.DownloadOptions
-import com.mangacombiner.service.DownloadService
-import com.mangacombiner.service.FileConverter
-import com.mangacombiner.service.LocalFileOptions
-import com.mangacombiner.service.ProcessorService
-import com.mangacombiner.service.ScraperService
-import com.mangacombiner.util.FileUtils
-import com.mangacombiner.util.Logger
-import com.mangacombiner.util.PlatformProvider
-import com.mangacombiner.util.UserAgent
-import com.mangacombiner.util.createHttpClient
-import com.mangacombiner.util.logOperationSettings
-import com.mangacombiner.util.titlecase
-import com.mangacombiner.util.toSlug
+import com.mangacombiner.model.SearchResult
+import com.mangacombiner.service.*
+import com.mangacombiner.util.*
 import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
 import kotlinx.cli.multiple
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
 import java.io.File
 import kotlin.random.Random
 
-fun main(args: Array<String>) {
-    startKoin {
-        modules(appModule)
+/**
+ * Data class to pass results from the download phase to the packaging phase.
+ */
+private data class DownloadResultForPackaging(
+    val mangaTitle: String,
+    val downloadDir: File,
+    val seriesSlug: String,
+    val outputFile: File,
+    val sourceUrl: String,
+    val failedChapters: Map<String, List<String>>?,
+    val allFoldersForPackaging: List<File>
+)
+
+/**
+ * PHASE 2: Takes a completed download and packages it into the final file format.
+ */
+private suspend fun packageSeries(
+    result: DownloadResultForPackaging,
+    cliArgs: CliArguments,
+    processorService: ProcessorService
+) {
+    Logger.logInfo("Creating ${cliArgs.format.uppercase()} for ${result.mangaTitle} from ${result.allFoldersForPackaging.size} total chapters...")
+    if (cliArgs.format == "cbz") {
+        processorService.createCbzFromFolders(result.mangaTitle, result.allFoldersForPackaging, result.outputFile, result.sourceUrl, result.failedChapters, cliArgs.maxWidth, cliArgs.jpegQuality)
+    } else {
+        processorService.createEpubFromFolders(result.mangaTitle, result.allFoldersForPackaging, result.outputFile, result.sourceUrl, result.failedChapters, cliArgs.maxWidth, cliArgs.jpegQuality)
+    }
+    if (result.outputFile.exists()) {
+        // Always log the full path
+        Logger.logInfo("Successfully created: ${result.outputFile.absolutePath}")
+        if (cliArgs.cleanCache) {
+            val size = result.downloadDir.walk().sumOf { it.length() }
+            Logger.logInfo("Cleaning cache for ${result.seriesSlug}... Reclaimed ${formatSize(size)}")
+            result.downloadDir.deleteRecursively()
+        }
+    }
+}
+
+/**
+ * PHASE 1: Downloads all chapters for a single series to the cache.
+ * Returns a data object for the packaging phase, or null on failure.
+ */
+private suspend fun downloadSeriesToCache(
+    source: String,
+    cliArgs: CliArguments,
+    downloadService: DownloadService,
+    scraperService: ScraperService,
+    platformProvider: PlatformProvider,
+    cacheService: CacheService
+): DownloadResultForPackaging? {
+    val tempDir = File(platformProvider.getTmpDir())
+    val listClient = createHttpClient(cliArgs.proxy)
+
+    try {
+        if (!source.startsWith("http", ignoreCase = true)) {
+            Logger.logError("Cannot download from local file source '$source'. Skipping.")
+            return null
+        }
+
+        val mangaTitle = cliArgs.title?.ifBlank { null } ?: source.toSlug().replace('-', ' ').titlecase()
+        val finalOutputPath = cliArgs.outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" }
+        val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${cliArgs.format}"
+        val outputFile = File(finalOutputPath, finalFileName)
+
+        if (outputFile.exists()) {
+            when {
+                cliArgs.skipExisting -> { Logger.logInfo("Output file ${outputFile.name} already exists. Skipping."); return null }
+                cliArgs.updateExisting -> {
+                    Logger.logInfo("Update logic is not yet fully implemented in this CLI version. Use --force to redownload.")
+                    return null
+                }
+                !cliArgs.force && !cliArgs.dryRun -> {
+                    Logger.logError("Output file exists for $source: ${outputFile.absolutePath}. Use --force, --skip-existing, or --update-existing.")
+                    return null
+                }
+            }
+        }
+
+        Logger.logInfo("--- Processing URL: $source ---")
+        val listScraperAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
+        var allOnlineChapters = scraperService.findChapterUrlsAndTitles(listClient, source, listScraperAgent)
+        if (allOnlineChapters.isEmpty()) {
+            Logger.logError("No chapters found at $source. Skipping."); return null
+        }
+
+        if (cliArgs.exclude.isNotEmpty()) {
+            allOnlineChapters = allOnlineChapters.filter { (url, _) -> url.trimEnd('/').substringAfterLast('/') !in cliArgs.exclude }
+        }
+
+        val seriesSlug = source.toSlug()
+        var chaptersToDownload = allOnlineChapters
+
+        if (!cliArgs.ignoreCache) {
+            val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
+            val (cached, toDownload) = allOnlineChapters.partition {
+                cachedChapterStatus[FileUtils.sanitizeFilename(it.second)] == true
+            }
+            if (cached.isNotEmpty()) Logger.logInfo("${cached.size} chapters already in cache. Skipping download portion.")
+            chaptersToDownload = toDownload
+        }
+
+        val downloadDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
+
+        if (chaptersToDownload.isEmpty()) {
+            Logger.logInfo("All chapters are available in cache. Proceeding to packaging...")
+            if (downloadDir.exists()) {
+                val allFoldersForPackaging = downloadDir.listFiles { file -> file.isDirectory }?.toList() ?: emptyList()
+                return DownloadResultForPackaging(mangaTitle, downloadDir, seriesSlug, outputFile, source, null, allFoldersForPackaging)
+            } else {
+                Logger.logError("Cache is inconsistent; files not found. Please try again with --ignore-cache.")
+                return null
+            }
+        }
+
+        val downloadOptions = createDownloadOptions(source, chaptersToDownload.toMap(), mangaTitle, cliArgs, platformProvider)
+        logOperationSettings(downloadOptions, chaptersToDownload.size, cliArgs.userAgentName, cliArgs.perWorkerUserAgent, cacheCount = allOnlineChapters.size - chaptersToDownload.size, optimizeMode = cliArgs.optimize, cleanCache = cliArgs.cleanCache, skipExisting = cliArgs.skipExisting, updateExisting = cliArgs.updateExisting, force = cliArgs.force, maxWidth = cliArgs.maxWidth, jpegQuality = cliArgs.jpegQuality)
+
+        if (cliArgs.dryRun) {
+            Logger.logInfo("DRY RUN: Would download ${chaptersToDownload.size} new chapters for $source.")
+            return null
+        }
+
+        val downloadResult = downloadService.downloadChapters(downloadOptions, downloadDir)
+        return if (downloadResult != null && downloadResult.successfulFolders.isNotEmpty()) {
+            val allFoldersForPackaging = (downloadDir.listFiles { file -> file.isDirectory }?.toList() ?: emptyList())
+            DownloadResultForPackaging(mangaTitle, downloadDir, seriesSlug, outputFile, source, downloadResult.failedChapters, allFoldersForPackaging)
+        } else {
+            null
+        }
+    } catch (e: Exception) {
+        Logger.logError("A fatal error occurred while processing '$source'", e)
+        return null
+    } finally {
+        listClient.close()
+    }
+}
+
+/**
+ * Handles processing of a single local file.
+ */
+private suspend fun processLocalFile(
+    source: String,
+    cliArgs: CliArguments,
+    fileConverter: FileConverter,
+    processorService: ProcessorService,
+    platformProvider: PlatformProvider
+) {
+    Logger.logInfo("--- Processing File: $source ---")
+    if (cliArgs.dryRun) {
+        Logger.logInfo("DRY RUN: Would process local file ${File(source).name}. No files will be changed.")
+        return
     }
 
-    val parser = ArgParser("manga-combiner-cli")
-    val source by parser.argument(ArgType.String, "source", "Source URL or local file path")
-    val format by parser.option(ArgType.String, "format", description = "Output format ('cbz' or 'epub')").default(AppSettings.Defaults.OUTPUT_FORMAT)
+    val inputFile = File(source)
+    val mangaTitle = cliArgs.title?.ifBlank { null } ?: inputFile.nameWithoutExtension
+    val finalOutputPath = cliArgs.outputPath.ifBlank { inputFile.parent }
+    val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${cliArgs.format}"
+    val outputFile = File(finalOutputPath, finalFileName)
+
+    if (outputFile.exists() && !cliArgs.force && !cliArgs.skipExisting) {
+        Logger.logError("Output file exists for $source: ${outputFile.absolutePath}. Use --force or --skip-existing.")
+        return
+    }
+    if (outputFile.exists() && cliArgs.skipExisting) {
+        Logger.logInfo("Output file ${outputFile.name} already exists. Skipping.")
+        return
+    }
+
+    val localFileOptions = LocalFileOptions(
+        inputFile = inputFile, customTitle = mangaTitle, outputFormat = cliArgs.format,
+        forceOverwrite = cliArgs.force, deleteOriginal = cliArgs.deleteOriginal,
+        useStreamingConversion = false, useTrueStreaming = false, useTrueDangerousMode = false,
+        skipIfTargetExists = !cliArgs.force, tempDirectory = platformProvider.getTmpDir(),
+        dryRun = cliArgs.dryRun
+    )
+
+    val result = fileConverter.process(localFileOptions, mangaTitle, outputFile, processorService)
+    if (result.success) {
+        Logger.logInfo("Successfully processed: ${result.outputFile?.absolutePath}")
+        if (cliArgs.deleteOriginal && inputFile.delete()) {
+            Logger.logInfo("Deleted original file: ${inputFile.name}")
+        }
+    } else {
+        Logger.logError("Processing failed for $source: ${result.error}")
+    }
+}
+
+// Data class to hold parsed CLI arguments
+data class CliArguments(
+    val source: List<String>,
+    val search: Boolean,
+    val downloadAll: Boolean,
+    val cleanCache: Boolean,
+    val deleteCache: Boolean,
+    val ignoreCache: Boolean,
+    val keep: List<String>,
+    val remove: List<String>,
+    val skipExisting: Boolean,
+    val updateExisting: Boolean,
+    val format: String,
+    val title: String?,
+    val outputPath: String,
+    val force: Boolean,
+    val deleteOriginal: Boolean,
+    val debug: Boolean,
+    val dryRun: Boolean,
+    val exclude: List<String>,
+    val workers: Int,
+    val userAgentName: String,
+    val proxy: String?,
+    val perWorkerUserAgent: Boolean,
+    val batchWorkers: Int,
+    val optimize: Boolean,
+    val maxWidth: Int?,
+    val jpegQuality: Int?
+)
+
+private fun createDownloadOptions(
+    sourceUrl: String, chapters: Map<String, String>, title: String?,
+    cliArgs: CliArguments, platformProvider: PlatformProvider
+): DownloadOptions {
+    return DownloadOptions(
+        seriesUrl = sourceUrl, chaptersToDownload = chapters, cliTitle = title,
+        getWorkers = { cliArgs.workers }, exclude = cliArgs.exclude, format = cliArgs.format,
+        tempDir = File(platformProvider.getTmpDir()),
+        getUserAgents = {
+            when {
+                cliArgs.perWorkerUserAgent -> List(cliArgs.workers) { UserAgent.browsers.values.random(Random) }
+                cliArgs.userAgentName == "Random" -> listOf(UserAgent.browsers.values.random(Random))
+                else -> listOf(UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first())
+            }
+        },
+        outputPath = cliArgs.outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" },
+        isPaused = { false },
+        dryRun = cliArgs.dryRun,
+        onProgressUpdate = { progress, status ->
+            Logger.logInfo("[${sourceUrl.toSlug()}] $status (${(progress * 100).toInt()}%)")
+        },
+        onChapterCompleted = {}
+    )
+}
+
+private suspend fun CoroutineScope.runDownloadsAndPackaging(
+    sources: List<String>, cliArgs: CliArguments, downloadService: DownloadService,
+    processorService: ProcessorService, scraperService: ScraperService,
+    platformProvider: PlatformProvider,
+    cacheService: CacheService
+) {
+    val downloadSemaphore = Semaphore(cliArgs.batchWorkers)
+    val packagingChannel = Channel<DownloadResultForPackaging>(Channel.UNLIMITED)
+
+    val packagingCollector = launch {
+        val packagingJobs = mutableListOf<Job>()
+        for (result in packagingChannel) {
+            packagingJobs.add(launch {
+                packageSeries(result, cliArgs, processorService)
+            })
+        }
+        packagingJobs.joinAll()
+    }
+
+    val downloadJobs = sources.map { src ->
+        launch {
+            downloadSemaphore.withPermit {
+                val downloadResult = downloadSeriesToCache(src, cliArgs, downloadService, scraperService, platformProvider, cacheService)
+                if (downloadResult != null) {
+                    packagingChannel.send(downloadResult)
+                }
+            }
+        }
+    }
+
+    downloadJobs.joinAll()
+    packagingChannel.close()
+    packagingCollector.join()
+}
+
+fun main(args: Array<String>) {
+    startKoin { modules(appModule, platformModule()) }
+
+    val parser = ArgParser("manga-combiner-cli v${AppVersion.NAME}", useDefaultHelpShortName = false)
+    val source by parser.option(ArgType.String, "source", "s", "Source URL, local file, or search query.").multiple()
+    val search by parser.option(ArgType.Boolean, "search", description = "Search for a series and print results.").default(false)
+    val downloadAll by parser.option(ArgType.Boolean, "download-all", description = "Download all results from a search. Must be used with --search.").default(false)
+    val ignoreCache by parser.option(ArgType.Boolean, "ignore-cache", description = "Force re-download of all chapters, ignoring existing cache.").default(false)
+    val cleanCache by parser.option(ArgType.Boolean, "clean-cache", description = "Delete a series' temporary folders after its download succeeds.").default(false)
+    val deleteCache by parser.option(ArgType.Boolean, "delete-cache", description = "Delete cached downloads and exit.").default(false)
+    val keep by parser.option(ArgType.String, "keep", description = "Pattern to keep when deleting cache (e.g., --keep 'One Piece'). Can be used multiple times.").multiple()
+    val remove by parser.option(ArgType.String, "remove", description = "Pattern to remove when deleting cache (e.g., --remove 'Jujutsu'). Can be used multiple times.").multiple()
+    val skipExisting by parser.option(ArgType.Boolean, "skip-existing", description = "Skip download if the output file already exists.").default(false)
+    val updateExisting by parser.option(ArgType.Boolean, "update-existing", description = "Update existing file with new chapters from the source URL.").default(false)
+    val redownloadExisting by parser.option(ArgType.Boolean, "redownload-existing", description = "Alias for --force.").default(false)
+    val force by parser.option(ArgType.Boolean, "force", "f", "Force overwrite/redownload of an existing file.").default(false)
+    val optimize by parser.option(ArgType.Boolean, "optimize", description = "Enable image optimizations to reduce final file size (sets --max-image-width 1200, --jpeg-quality 85). This will significantly increase processing time.").default(false)
+    val maxWidth by parser.option(ArgType.Int, "max-image-width", description = "Resize images to this maximum width in pixels.")
+    val jpegQuality by parser.option(ArgType.Int, "jpeg-quality", description = "Set JPEG compression quality (1-100).")
+    val format by parser.option(ArgType.String, "format", description = "Output format ('cbz' or 'epub')").default("epub")
     val title by parser.option(ArgType.String, "title", "t", "Custom output file title.")
     val outputPath by parser.option(ArgType.String, "output", "o", "Directory to save the final file.").default("")
-    val force by parser.option(ArgType.Boolean, "force", "f", "Force overwrite of output file.").default(false)
-    val deleteOriginal by parser.option(ArgType.Boolean, "delete-original", "Delete source on success.").default(false)
-    val debug by parser.option(ArgType.Boolean, "debug", description = "Enable debug logging.").default(AppSettings.Defaults.DEBUG_LOG)
-    val dryRun by parser.option(ArgType.Boolean, "dry-run", description = "Simulate the operation without creating files.").default(false)
+    val deleteOriginal by parser.option(ArgType.Boolean, "delete-original", description = "Delete source on success.").default(false)
+    val debug by parser.option(ArgType.Boolean, "debug", description = "Enable debug logging.").default(false)
+    val dryRun by parser.option(ArgType.Boolean, "dry-run", description = "Simulate operations without creating final files.").default(false)
     val exclude by parser.option(ArgType.String, "exclude", "e", "Chapter URL slug to exclude.").multiple()
-    val workers by parser.option(ArgType.Int, "workers", "w", "Number of concurrent download workers.").default(AppSettings.Defaults.WORKERS)
-    val userAgentName by parser.option(
-        ArgType.String,
-        "user-agent",
-        "ua",
-        "Browser profile to impersonate."
-    ).default(AppSettings.Defaults.USER_AGENT_NAME)
+    val workers by parser.option(ArgType.Int, "workers", "w", "Number of concurrent image download workers.").default(4)
+    val batchWorkers by parser.option(ArgType.Int, "batch-workers", "bw", "Number of concurrent series to process.").default(1)
+    val userAgentName by parser.option(ArgType.String, "user-agent", "ua", "Browser profile to impersonate.").default("Chrome (Windows)")
     val proxy by parser.option(ArgType.String, "proxy", description = "Proxy URL (e.g., http://host:port)")
-    val perWorkerUserAgent by parser.option(
-        ArgType.Boolean,
-        "per-worker-ua",
-        description = "Use a different random user agent for each worker."
-    ).default(AppSettings.Defaults.PER_WORKER_USER_AGENT)
+    val perWorkerUserAgent by parser.option(ArgType.Boolean, "per-worker-ua", description = "Use a different random user agent for each worker.").default(false)
 
     try {
         parser.parse(args)
@@ -62,178 +335,121 @@ fun main(args: Array<String>) {
         return
     }
 
-    val allowedUserAgents = UserAgent.browsers.keys + "Random"
-    if (userAgentName !in allowedUserAgents) {
-        println("Error: '$userAgentName' is not a valid user agent. Please choose from: ${allowedUserAgents.joinToString(", ")}")
-        return
-    }
+    val finalMaxWidth = maxWidth ?: if (optimize) 1200 else null
+    val finalJpegQuality = jpegQuality ?: if (optimize) 85 else null
+    val finalForce = force || redownloadExisting
 
-    Logger.isDebugEnabled = debug
+    val cliArgs = CliArguments(source, search, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality)
+    Logger.isDebugEnabled = cliArgs.debug
 
     val downloadService: DownloadService = get(DownloadService::class.java)
     val processorService: ProcessorService = get(ProcessorService::class.java)
     val scraperService: ScraperService = get(ScraperService::class.java)
     val platformProvider: PlatformProvider = get(PlatformProvider::class.java)
     val fileConverter: FileConverter = get(FileConverter::class.java)
+    val cacheService: CacheService = get(CacheService::class.java)
+
+    if (listOf(cliArgs.force, cliArgs.skipExisting, cliArgs.updateExisting).count { it } > 1) {
+        println("Error: --force/--redownload-existing, --skip-existing, and --update-existing are mutually exclusive.")
+        return
+    }
+    if (cliArgs.keep.isNotEmpty() && cliArgs.remove.isNotEmpty()) {
+        println("Error: --keep and --remove are mutually exclusive.")
+        return
+    }
+
+    if (cliArgs.deleteCache) {
+        val allSeries = cacheService.getCacheContents()
+        val seriesToDelete = when {
+            cliArgs.remove.isNotEmpty() -> allSeries.filter { s -> cliArgs.remove.any { p -> s.seriesName.contains(p, ignoreCase = true) } }
+            cliArgs.keep.isNotEmpty() -> allSeries.filterNot { s -> cliArgs.keep.any { p -> s.seriesName.contains(p, ignoreCase = true) } }
+            else -> allSeries
+        }
+
+        if (seriesToDelete.isEmpty()) {
+            Logger.logInfo("No cache items match the criteria for deletion.")
+            return
+        }
+        val totalSize = seriesToDelete.sumOf { it.totalSizeInBytes }
+        Logger.logInfo("The following items will be deleted (Total: ${formatSize(totalSize)}):")
+        seriesToDelete.forEach { println("- ${it.seriesName} (${it.totalSizeFormatted})") }
+
+        if (cliArgs.dryRun) {
+            Logger.logInfo("\nDRY RUN: Aborting before deletion.")
+            return
+        }
+        val pathsToDelete = seriesToDelete.map { it.path }
+        cacheService.deleteCacheItems(pathsToDelete)
+        return
+    }
+
+    if (cliArgs.source.isEmpty()) {
+        println("Error: At least one --source must be provided.")
+        return
+    }
 
     runBlocking {
-        val defaultUserAgent = UserAgent.browsers["Chrome (Windows)"]!!
-        val listClient = createHttpClient(proxy)
-        val tempDir = File(platformProvider.getTmpDir())
-
-        try {
-            when {
-                source.startsWith("http", ignoreCase = true) -> {
-                    Logger.logInfo("Fetching chapter list from URL...")
-                    val listScraperAgent = UserAgent.browsers[userAgentName] ?: defaultUserAgent
-                    var chapters = scraperService.findChapterUrlsAndTitles(listClient, source, listScraperAgent)
-                    if (chapters.isEmpty()) {
-                        Logger.logError("No chapters found at the provided URL. Aborting.")
-                        return@runBlocking
-                    }
-
-                    if (exclude.isNotEmpty()) {
-                        chapters = chapters.filter { (url, _) ->
-                            url.trimEnd('/').substringAfterLast('/') !in exclude
-                        }
-                    }
-                    val seriesSlug = source.toSlug()
-                    val downloadDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
-
-                    val downloadOptions = DownloadOptions(
-                        seriesUrl = source,
-                        chaptersToDownload = chapters.toMap(),
-                        cliTitle = title,
-                        getWorkers = { workers },
-                        exclude = exclude,
-                        format = format,
-                        tempDir = tempDir,
-                        getUserAgents = {
-                            when {
-                                perWorkerUserAgent -> List(workers) { UserAgent.browsers.values.random(Random) }
-                                userAgentName == "Random" -> listOf(UserAgent.browsers.values.random(Random))
-                                else -> listOf(UserAgent.browsers[userAgentName] ?: defaultUserAgent)
-                            }
-                        },
-                        outputPath = outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" },
-                        isPaused = { false },
-                        dryRun = dryRun,
-                        onProgressUpdate = { progress, status ->
-                            val percentage = (progress * 100).toInt()
-                            val barWidth = 20
-                            val doneWidth = (barWidth * progress).toInt()
-                            val bar = "[${"#".repeat(doneWidth)}${"-".repeat(barWidth - doneWidth)}]"
-                            print("\r$bar $percentage% - $status      ")
-                        },
-                        onChapterCompleted = {}
-                    )
-
-                    logOperationSettings(downloadOptions, chapters.size, userAgentName, perWorkerUserAgent)
-
-                    if (dryRun) {
-                        Logger.logInfo("\nDRY RUN: Would download ${chapters.size} chapters. No files will be created.")
-                        return@runBlocking
-                    }
-
-                    val downloadResult = downloadService.downloadChapters(downloadOptions, downloadDir)
-                    println() // New line after progress bar
-
-                    if (downloadResult != null && downloadResult.successfulFolders.isNotEmpty()) {
-                        val mangaTitle = title?.ifBlank { null } ?: source.toSlug().replace('-', ' ').titlecase()
-                        val finalOutputPath = downloadOptions.outputPath
-                        val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.$format"
-                        val outputFile = File(finalOutputPath, finalFileName)
-
-                        if (outputFile.exists() && !force) {
-                            Logger.logError("Output file already exists: ${outputFile.absolutePath}. Use --force to overwrite.")
-                            return@runBlocking
-                        }
-
-                        Logger.logInfo("Creating ${format.uppercase()} archive: ${outputFile.name}...")
-
-                        if (format == "cbz") {
-                            processorService.createCbzFromFolders(
-                                mangaTitle,
-                                downloadResult.successfulFolders,
-                                outputFile,
-                                source,
-                                downloadResult.failedChapters
-                            )
-                        } else {
-                            processorService.createEpubFromFolders(
-                                mangaTitle,
-                                downloadResult.successfulFolders,
-                                outputFile,
-                                source,
-                                downloadResult.failedChapters
-                            )
-                        }
-
-                        if (outputFile.exists() && outputFile.length() > 0) {
-                            Logger.logInfo("Successfully created: ${outputFile.absolutePath}")
-
-                            if (downloadResult.failedChapters.isNotEmpty()) {
-                                Logger.logInfo("Note: ${downloadResult.failedChapters.size} chapters had download failures and are embedded in the archive metadata.")
-                            }
-                        } else {
-                            Logger.logError("Failed to create output file.")
-                        }
-                    } else {
-                        Logger.logError("Download failed or no chapters were successfully downloaded.")
-                    }
+        if (cliArgs.search) {
+            val query = cliArgs.source.joinToString(" ")
+            val userAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
+            Logger.logInfo("Searching for '$query'...")
+            val client = createHttpClient(cliArgs.proxy)
+            try {
+                val initialResults = scraperService.search(client, query, userAgent)
+                if (initialResults.isEmpty()) {
+                    Logger.logInfo("No results found."); return@runBlocking
                 }
 
-                File(source).exists() -> {
-                    val inputFile = File(source)
-                    val mangaTitle = title?.ifBlank { null } ?: inputFile.nameWithoutExtension
-                    val finalOutputPath = outputPath.ifBlank { inputFile.parent }
-                    val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.$format"
-                    val outputFile = File(finalOutputPath, finalFileName)
-
-                    if (outputFile.exists() && !force) {
-                        Logger.logError("Output file already exists: ${outputFile.absolutePath}. Use --force to overwrite.")
-                        return@runBlocking
-                    }
-
-                    if (dryRun) {
-                        Logger.logInfo("DRY RUN: Would process ${inputFile.name} -> ${outputFile.name}")
-                        return@runBlocking
-                    }
-
-                    Logger.logInfo("Processing local file: ${inputFile.name}")
-
-                    val localFileOptions = LocalFileOptions(
-                        inputFile = inputFile,
-                        customTitle = mangaTitle,
-                        outputFormat = format,
-                        forceOverwrite = force,
-                        deleteOriginal = deleteOriginal,
-                        useStreamingConversion = false,
-                        useTrueStreaming = false,
-                        useTrueDangerousMode = false,
-                        skipIfTargetExists = !force,
-                        tempDirectory = platformProvider.getTmpDir(),
-                        dryRun = dryRun
-                    )
-
-                    val result = fileConverter.process(localFileOptions, mangaTitle, outputFile, processorService)
-
-                    if (result.success) {
-                        Logger.logInfo("Successfully processed: ${result.outputFile?.absolutePath}")
-                        if (deleteOriginal && inputFile.delete()) {
-                            Logger.logInfo("Deleted original file: ${inputFile.name}")
-                        }
-                    } else {
-                        Logger.logError("Processing failed: ${result.error}")
-                    }
+                Logger.logInfo("Found ${initialResults.size} results. Fetching chapter counts...")
+                val detailedResults = coroutineScope {
+                    initialResults.map { async { scraperService.findChapterUrlsAndTitles(client, it.url, userAgent).let { ch -> it.copy(chapterCount = ch.size) } } }.awaitAll()
                 }
 
-                else -> Logger.logError("Source is not a valid URL or existing file path.")
+                if (cliArgs.downloadAll) {
+                    var seriesToDownload = detailedResults
+                    if (!cliArgs.force && !cliArgs.skipExisting && !cliArgs.updateExisting) {
+                        val (skippable, processable) = detailedResults.partition {
+                            val mangaTitle = it.url.toSlug().replace('-', ' ').titlecase()
+                            val finalOutputPath = cliArgs.outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" }
+                            val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${cliArgs.format}"
+                            File(finalOutputPath, finalFileName).exists()
+                        }
+                        skippable.forEach { Logger.logError("[SKIP] Output file for '${it.title}' already exists. Use --force, --skip-existing, or --update-existing.") }
+                        seriesToDownload = processable
+                    }
+
+                    println()
+                    if (seriesToDownload.isNotEmpty()) {
+                        Logger.logInfo("The following ${seriesToDownload.size} series will be downloaded:")
+                        seriesToDownload.forEach { println("- ${it.title} (${it.chapterCount ?: "N/A"} Chapters)") }
+                        Logger.logInfo("--- Starting batch download ---")
+                        runDownloadsAndPackaging(seriesToDownload.map { it.url }, cliArgs, downloadService, processorService, scraperService, platformProvider, cacheService)
+                    } else {
+                        Logger.logInfo("No new series to download based on the pre-flight check.")
+                    }
+                } else {
+                    println()
+                    detailedResults.forEachIndexed { i, r -> println("[${i + 1}] ${r.title} (${r.chapterCount ?: "N/A"} Chapters)\n    URL: ${r.url}\n") }
+                }
+            } catch (e: Exception) {
+                Logger.logError("Search failed", e)
+            } finally {
+                client.close()
             }
-        } catch (e: Exception) {
-            Logger.logError("A fatal error occurred", e)
-        } finally {
-            listClient.close()
+            return@runBlocking
         }
+
+        val (localFiles, urls) = cliArgs.source.partition { File(it).exists() }
+        if (localFiles.isNotEmpty()) {
+            Logger.logInfo("--- Processing ${localFiles.size} local file(s) ---")
+            for (file in localFiles) {
+                processLocalFile(file, cliArgs, fileConverter, processorService, platformProvider)
+            }
+        }
+        if (urls.isNotEmpty()) {
+            runDownloadsAndPackaging(urls, cliArgs, downloadService, processorService, scraperService, platformProvider, cacheService)
+        }
+
+        Logger.logInfo("--- All operations complete. ---")
     }
 }

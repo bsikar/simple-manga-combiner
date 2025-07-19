@@ -1,15 +1,24 @@
 package com.mangacombiner.service
 
 import com.mangacombiner.model.OpfMetadata
-import com.mangacombiner.util.Logger
 import com.mangacombiner.util.getImageDimensions
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionMethod
 import java.io.File
-import java.io.IOException
 import java.util.UUID
 import kotlin.text.Charsets
+
+/**
+ * Escapes special XML characters to prevent parsing errors.
+ */
+private fun String.escapeXml(): String {
+    return this.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&apos;")
+}
 
 internal class EpubStructureGenerator {
 
@@ -20,9 +29,6 @@ internal class EpubStructureGenerator {
         const val DEFAULT_IMAGE_HEIGHT = 1920
     }
 
-    /**
-     * Holds the state of the EPUB file as it's being built.
-     */
     class EpubMetadata {
         val manifestItems = mutableListOf<String>()
         val spineItems = mutableListOf<String>()
@@ -31,9 +37,6 @@ internal class EpubStructureGenerator {
         var totalPages = 0
     }
 
-    /**
-     * Adds the mandatory, uncompressed 'mimetype' file and the container.xml file.
-     */
     fun addEpubCoreFiles(epubZip: ZipFile) {
         val mimetypeParams = ZipParameters().apply {
             fileNameInZip = "mimetype"
@@ -47,45 +50,40 @@ internal class EpubStructureGenerator {
         epubZip.addStream(createContainerXml().byteInputStream(Charsets.UTF_8), containerParams)
     }
 
-    /**
-     * Adds a chapter to the EPUB with all its images.
-     */
-    fun addChapterToEpub(images: List<File>, chapterName: String, metadata: EpubMetadata, epubZip: ZipFile) {
+    fun addChapterToEpub(
+        images: List<File>,
+        chapterName: String,
+        metadata: EpubMetadata,
+        epubZip: ZipFile,
+        imageZipParams: ZipParameters = ZipParameters()
+    ) {
         var firstPageOfChapter = true
-        // Sanitize chapter name to be valid for file paths and XML IDs
         val safeChapterName = chapterName.replace(Regex("""\s+"""), "_").replace(Regex("""[^a-zA-Z0-9_-]"""), "")
 
         images.forEachIndexed { index, imageFile ->
             val pageIndex = metadata.totalPages + index + 1
-
-            // Use the new platform-agnostic function to get dimensions
             val imageDim = getImageDimensions(imageFile.absolutePath)?.let { it.width to it.height }
                 ?: (DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT)
 
-            // Use the sanitized chapter name for IDs and HREFs
             val imageId = "img_${safeChapterName}_$pageIndex"
             val imageHref = "images/$imageId.${imageFile.extension}"
             val pageId = "page_${safeChapterName}_$pageIndex"
             val pageHref = "text/$pageId.xhtml"
 
-            // Add image file
-            val imageParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$imageHref" }
-            epubZip.addFile(imageFile, imageParams)
+            val finalImageParams = ZipParameters(imageZipParams).apply { fileNameInZip = "$OPF_BASE_PATH/$imageHref" }
+            epubZip.addFile(imageFile, finalImageParams)
             metadata.manifestItems.add(
-                """<item id="$imageId" href="$imageHref" media-type="image/${imageFile.extension}"/>"""
+                """<item id="$imageId" href="$imageHref" media-type="image/${imageFile.extension.lowercase()}"/>"""
             )
 
-            // Add XHTML page file
             val xhtmlContent = createXhtmlPage(chapterName, pageIndex, "../$imageHref", imageDim.first, imageDim.second)
             val pageParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$pageHref" }
             epubZip.addStream(xhtmlContent.byteInputStream(Charsets.UTF_8), pageParams)
             metadata.manifestItems.add("""<item id="$pageId" href="$pageHref" media-type="application/xhtml+xml"/>""")
             metadata.spineItems.add("""<itemref idref="$pageId"/>""")
 
-            // Add chapter entry to navMap (table of contents) only for first page of chapter
             if (firstPageOfChapter) {
                 val cleanChapterName = chapterName.replace(Regex("[_-]"), " ").replaceFirstChar { it.titlecase() }
-                // Use current playOrder value and then increment it
                 metadata.navPoints.add(createNavPoint(metadata.playOrder, cleanChapterName, pageHref))
                 metadata.playOrder++
                 firstPageOfChapter = false
@@ -94,18 +92,11 @@ internal class EpubStructureGenerator {
         metadata.totalPages += images.size
     }
 
-    /**
-     * Adds the final metadata files (content.opf, toc.ncx) using the collected metadata.
-     */
     fun addEpubMetadataFiles(epubZip: ZipFile, title: String, seriesUrl: String?, metadata: EpubMetadata) {
         val bookId = UUID.randomUUID().toString()
-
-        // Add content.opf
         val opfContent = createContentOpf(title, bookId, seriesUrl, metadata.manifestItems, metadata.spineItems)
         val opfParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/content.opf" }
         epubZip.addStream(opfContent.byteInputStream(Charsets.UTF_8), opfParams)
-
-        // Add toc.ncx
         val ncxContent = createTocNcx(title, bookId, metadata.navPoints)
         val ncxParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/toc.ncx" }
         epubZip.addStream(ncxContent.byteInputStream(Charsets.UTF_8), ncxParams)
@@ -125,15 +116,19 @@ internal class EpubStructureGenerator {
         <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
         <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
             <head>
-                <title>$title - Page $pageIndex</title>
+                <title>${title.escapeXml()} - Page $pageIndex</title>
                 <meta name="viewport" content="width=$w, height=$h"/>
                 <style type="text/css">
-                    body { margin: 0; padding: 0; }
-                    img { width: 100%; height: 100%; object-fit: contain; }
+                    body, html { padding: 0; margin: 0; }
+                    svg { padding: 0; margin: 0; }
                 </style>
             </head>
             <body>
-                <div><img src="$imageHref" alt="Page $pageIndex"/></div>
+                <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink"
+                     width="100%" height="100%" viewBox="0 0 $w $h">
+                    <title>${title.escapeXml()} - Page $pageIndex</title>
+                    <image width="$w" height="$h" xlink:href="$imageHref"/>
+                </svg>
             </body>
         </html>
     """.trimIndent()
@@ -150,7 +145,7 @@ internal class EpubStructureGenerator {
         <?xml version="1.0" encoding="UTF-8"?>
         <package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-                <dc:title>$title</dc:title>
+                <dc:title>${title.escapeXml()}</dc:title>
                 <dc:creator opf:role="aut">${OpfMetadata.Defaults.CREATOR}</dc:creator>
                 <dc:language>en</dc:language>
                 <dc:identifier id="BookId" opf:scheme="UUID">$bookId</dc:identifier>
@@ -173,7 +168,7 @@ $sourceTag
             <head>
                 <meta name="dtb:uid" content="$bookId"/>
             </head>
-            <docTitle><text>$title</text></docTitle>
+            <docTitle><text>${title.escapeXml()}</text></docTitle>
             <navMap>
                 ${navPoints.joinToString("\n        ")}
             </navMap>
@@ -182,7 +177,7 @@ $sourceTag
 
     private fun createNavPoint(playOrder: Int, title: String, contentSrc: String): String = """
         <navPoint id="navPoint-$playOrder" playOrder="$playOrder">
-            <navLabel><text>$title</text></navLabel>
+            <navLabel><text>${title.escapeXml()}</text></navLabel>
             <content src="$contentSrc"/>
         </navPoint>
     """.trimIndent()
