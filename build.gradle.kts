@@ -46,7 +46,6 @@ kotlin {
                 api(libs.koin.core)
                 api("io.insert-koin:koin-compose:1.1.2")
 
-                // FIX: Change from implementation to api to ensure it's packaged correctly.
                 api(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.core)
                 implementation(libs.kotlinx.serialization.json)
@@ -83,7 +82,9 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 api(libs.koin.jvm)
                 implementation(libs.ktor.client.cio)
-                implementation(libs.ktor.io.jvm) // This is the required dependency
+                implementation(libs.ktor.io.jvm)
+                implementation(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.serialization.kotlinx.json.jvm)
                 implementation(libs.imageio.webp)
                 implementation("org.slf4j:slf4j-simple:2.0.13")
                 implementation(libs.kotlinx.coroutines.swing)
@@ -161,7 +162,6 @@ tasks.register<ShadowJar>("cliJar") {
         attributes["Main-Class"] = "com.mangacombiner.desktop.CliRunnerKt"
     }
 
-    // FIX: Revert to the syntactically correct way to include classes and dependencies.
     from(kotlin.targets.getByName("desktop").compilations.getByName("main").output)
     from(project.configurations.named("desktopRuntimeClasspath"))
 

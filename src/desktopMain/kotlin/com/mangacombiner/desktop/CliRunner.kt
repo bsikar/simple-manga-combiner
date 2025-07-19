@@ -210,6 +210,7 @@ private suspend fun processLocalFile(
 data class CliArguments(
     val source: List<String>,
     val search: Boolean,
+    val scrape: Boolean,
     val downloadAll: Boolean,
     val cleanCache: Boolean,
     val deleteCache: Boolean,
@@ -302,6 +303,7 @@ fun main(args: Array<String>) {
     val parser = ArgParser("manga-combiner-cli v${AppVersion.NAME}", useDefaultHelpShortName = false)
     val source by parser.option(ArgType.String, "source", "s", "Source URL, local file, or search query.").multiple()
     val search by parser.option(ArgType.Boolean, "search", description = "Search for a series and print results.").default(false)
+    val scrape by parser.option(ArgType.Boolean, "scrape", description = "Scrape and download all series from the provided source URL (e.g., a list/genre page).").default(false)
     val downloadAll by parser.option(ArgType.Boolean, "download-all", description = "Download all results from a search. Must be used with --search.").default(false)
     val ignoreCache by parser.option(ArgType.Boolean, "ignore-cache", description = "Force re-download of all chapters, ignoring existing cache.").default(false)
     val cleanCache by parser.option(ArgType.Boolean, "clean-cache", description = "Delete a series' temporary folders after its download succeeds.").default(false)
@@ -339,7 +341,7 @@ fun main(args: Array<String>) {
     val finalJpegQuality = jpegQuality ?: if (optimize) 85 else null
     val finalForce = force || redownloadExisting
 
-    val cliArgs = CliArguments(source, search, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality)
+    val cliArgs = CliArguments(source, search, scrape, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality)
     Logger.isDebugEnabled = cliArgs.debug
 
     val downloadService: DownloadService = get(DownloadService::class.java)
@@ -349,6 +351,10 @@ fun main(args: Array<String>) {
     val fileConverter: FileConverter = get(FileConverter::class.java)
     val cacheService: CacheService = get(CacheService::class.java)
 
+    if (cliArgs.scrape && cliArgs.search) {
+        println("Error: --scrape and --search are mutually exclusive.")
+        return
+    }
     if (listOf(cliArgs.force, cliArgs.skipExisting, cliArgs.updateExisting).count { it } > 1) {
         println("Error: --force/--redownload-existing, --skip-existing, and --update-existing are mutually exclusive.")
         return
@@ -389,6 +395,52 @@ fun main(args: Array<String>) {
     }
 
     runBlocking {
+        if (cliArgs.scrape) {
+            val userAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
+            val client = createHttpClient(cliArgs.proxy)
+            try {
+                val startUrl = cliArgs.source.firstOrNull()
+                if (startUrl == null) {
+                    Logger.logError("A source URL must be provided with --scrape.")
+                    return@runBlocking
+                }
+                Logger.logInfo("Starting scrape from URL: $startUrl")
+                val allSeries = scraperService.findAllSeriesUrls(client, startUrl, userAgent)
+
+                if (allSeries.isEmpty()) {
+                    Logger.logInfo("No series found to download.")
+                    return@runBlocking
+                }
+
+                var seriesToDownload = allSeries
+                if (!cliArgs.force && !cliArgs.skipExisting && !cliArgs.updateExisting) {
+                    val (skippable, processable) = allSeries.partition {
+                        val mangaTitle = it.url.toSlug().replace('-', ' ').titlecase()
+                        val finalOutputPath = cliArgs.outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" }
+                        val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${cliArgs.format}"
+                        File(finalOutputPath, finalFileName).exists()
+                    }
+                    skippable.forEach { Logger.logError("[SKIP] Output file for '${it.title}' already exists. Use --force, --skip-existing, or --update-existing.") }
+                    seriesToDownload = processable
+                }
+
+                println()
+                if (seriesToDownload.isNotEmpty()) {
+                    Logger.logInfo("The following ${seriesToDownload.size} series will be downloaded:")
+                    seriesToDownload.forEach { println("- ${it.title}") }
+                    Logger.logInfo("--- Starting batch scrape and download ---")
+                    runDownloadsAndPackaging(seriesToDownload.map { it.url }, cliArgs, downloadService, processorService, scraperService, platformProvider, cacheService)
+                } else {
+                    Logger.logInfo("No new series to download based on the pre-flight check.")
+                }
+            } catch (e: Exception) {
+                Logger.logError("Scraping failed", e)
+            } finally {
+                client.close()
+            }
+            return@runBlocking
+        }
+
         if (cliArgs.search) {
             val query = cliArgs.source.joinToString(" ")
             val userAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
