@@ -30,7 +30,7 @@ jobs:
   build-desktop:
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [macos-latest, ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -116,5 +116,6 @@ jobs:
             artifacts/MangaCombiner-Android/**/*.apk
             artifacts/MangaCombiner-macos-latest/**/*.dmg
             artifacts/MangaCombiner-windows-latest/**/*.msi
-            artifacts/MangaCombiner-ubuntu-latest/**/*.deb
-            artifacts/MangaCombiner-ubuntu-latest/**/*.rpm
+            artifacts/MangaCombiner-ubuntu-22.04/**/*.deb
+            artifacts/MangaCombiner-ubuntu-22.04/**/*.rpm
+
