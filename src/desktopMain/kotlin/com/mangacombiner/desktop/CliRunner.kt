@@ -445,25 +445,35 @@ fun main(args: Array<String>) {
                     return@runBlocking
                 }
 
-                val allSeries: List<SearchResult>
+                var allSeries: List<SearchResult>
                 val cachedData = if (!cliArgs.refreshCache) scrapeCacheService.loadCache() else null
 
                 if (cachedData != null) {
                     val ageInMillis = System.currentTimeMillis() - cachedData.lastUpdated
                     val ageInHours = TimeUnit.MILLISECONDS.toHours(ageInMillis)
                     Logger.logInfo("Using cached scrape data from $ageInHours hours ago. Use --refresh-cache to force an update.")
-                    allSeries = cachedData.series.map { SearchResult(it.title, it.url, "") }
+                    allSeries = cachedData.series.map { SearchResult(it.title, it.url, "", chapterCount = it.chapterCount) }
                 } else {
                     Logger.logInfo("Starting scrape from URL: $startUrl")
                     val results = scraperService.findAllSeriesUrls(client, startUrl, userAgent)
-                    if (results.isNotEmpty()) {
+                    Logger.logInfo("Found ${results.size} series. Fetching chapter counts for sorting and caching...")
+                    val detailedResults = coroutineScope {
+                        results.map {
+                            async {
+                                scraperService.findChapterUrlsAndTitles(client, it.url, userAgent)
+                                    .let { ch -> it.copy(chapterCount = ch.size) }
+                            }
+                        }.awaitAll()
+                    }
+
+                    if (detailedResults.isNotEmpty()) {
                         val cacheToSave = ScrapedSeriesCache(
                             lastUpdated = System.currentTimeMillis(),
-                            series = results.map { ScrapedSeries(it.title, it.url) }
+                            series = detailedResults.map { ScrapedSeries(it.title, it.url, it.chapterCount) }
                         )
                         scrapeCacheService.saveCache(cacheToSave)
                     }
-                    allSeries = results
+                    allSeries = detailedResults
                 }
 
                 if (allSeries.isEmpty()) {
@@ -488,7 +498,7 @@ fun main(args: Array<String>) {
                 println()
                 if (seriesToDownload.isNotEmpty()) {
                     Logger.logInfo("The following ${seriesToDownload.size} series will be downloaded:")
-                    seriesToDownload.forEach { println("- ${it.title}") }
+                    seriesToDownload.forEach { println("- ${it.title} (${it.chapterCount ?: 0} Chapters)") }
                     Logger.logInfo("--- Starting batch scrape and download ---")
                     runDownloadsAndPackaging(seriesToDownload.map { it.url }, cliArgs, downloadService, processorService, scraperService, platformProvider, cacheService)
                 } else {

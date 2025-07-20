@@ -5,7 +5,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ScrapedSeries(
     val title: String,
-    val url: String
+    val url: String,
+    val chapterCount: Int?
 )
 
 @Serializable
