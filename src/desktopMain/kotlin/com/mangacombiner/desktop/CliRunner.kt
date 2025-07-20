@@ -1,7 +1,6 @@
 package com.mangacombiner.desktop
 
 import com.mangacombiner.di.appModule
-import com.mangacombiner.di.platformModule
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.*
@@ -18,6 +17,10 @@ import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
 import java.io.File
 import kotlin.random.Random
+import com.mangacombiner.data.SettingsRepository
+import org.koin.core.context.stopKoin
+import org.koin.core.module.Module
+import org.koin.dsl.module
 
 /**
  * Data class to pass results from the download phase to the packaging phase.
@@ -234,7 +237,8 @@ data class CliArguments(
     val batchWorkers: Int,
     val optimize: Boolean,
     val maxWidth: Int?,
-    val jpegQuality: Int?
+    val jpegQuality: Int?,
+    val cacheDir: String?
 )
 
 private fun createDownloadOptions(
@@ -298,8 +302,6 @@ private suspend fun CoroutineScope.runDownloadsAndPackaging(
 }
 
 fun main(args: Array<String>) {
-    startKoin { modules(appModule, platformModule()) }
-
     val parser = ArgParser("manga-combiner-cli v${AppVersion.NAME}", useDefaultHelpShortName = false)
     val source by parser.option(ArgType.String, "source", "s", "Source URL, local file, or search query.").multiple()
     val search by parser.option(ArgType.Boolean, "search", description = "Search for a series and print results.").default(false)
@@ -329,6 +331,7 @@ fun main(args: Array<String>) {
     val userAgentName by parser.option(ArgType.String, "user-agent", "ua", "Browser profile to impersonate.").default("Chrome (Windows)")
     val proxy by parser.option(ArgType.String, "proxy", description = "Proxy URL (e.g., http://host:port)")
     val perWorkerUserAgent by parser.option(ArgType.Boolean, "per-worker-ua", description = "Use a different random user agent for each worker.").default(false)
+    val cacheDir by parser.option(ArgType.String, "cache-dir", description = "Specify a custom directory for cache and temporary files.")
 
     try {
         parser.parse(args)
@@ -341,8 +344,21 @@ fun main(args: Array<String>) {
     val finalJpegQuality = jpegQuality ?: if (optimize) 85 else null
     val finalForce = force || redownloadExisting
 
-    val cliArgs = CliArguments(source, search, scrape, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality)
+    val cliArgs = CliArguments(source, search, scrape, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality, cacheDir)
     Logger.isDebugEnabled = cliArgs.debug
+
+    // Custom Koin setup for CLI to inject the custom cache directory
+    stopKoin()
+    startKoin {
+        modules(
+            appModule,
+            module {
+                factory<PlatformProvider> { DesktopPlatformProvider(cliArgs.cacheDir) }
+                single { SettingsRepository() }
+                factory { FileMover() }
+            }
+        )
+    }
 
     val downloadService: DownloadService = get(DownloadService::class.java)
     val processorService: ProcessorService = get(ProcessorService::class.java)

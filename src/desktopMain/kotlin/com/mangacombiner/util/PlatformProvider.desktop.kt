@@ -4,8 +4,18 @@ import java.awt.Desktop
 import java.io.File
 import java.util.Locale
 
-class DesktopPlatformProvider : PlatformProvider {
-    override fun getTmpDir(): String = System.getProperty("java.io.tmpdir")
+class DesktopPlatformProvider(private val customCacheDir: String? = null) : PlatformProvider {
+    override fun getTmpDir(): String {
+        return if (!customCacheDir.isNullOrBlank()) {
+            val dir = File(customCacheDir)
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
+            dir.absolutePath
+        } else {
+            System.getProperty("java.io.tmpdir")
+        }
+    }
     private val userHome = System.getProperty("user.home")
     override fun getUserDownloadsDir(): String? = File(userHome, "Downloads").path
     override fun getUserDocumentsDir(): String? = File(userHome, "Documents").path
@@ -70,4 +80,3 @@ class DesktopPlatformProvider : PlatformProvider {
         }
     }
 }
-
