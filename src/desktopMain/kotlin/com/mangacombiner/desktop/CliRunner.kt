@@ -2,7 +2,6 @@ package com.mangacombiner.desktop
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.di.appModule
-import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.ScrapedSeries
 import com.mangacombiner.model.ScrapedSeriesCache
 import com.mangacombiner.model.SearchResult
@@ -241,6 +240,7 @@ data class CliArguments(
     val optimize: Boolean,
     val maxWidth: Int?,
     val jpegQuality: Int?,
+    val sortBy: String,
     val cacheDir: String?
 )
 
@@ -304,6 +304,20 @@ private suspend fun CoroutineScope.runDownloadsAndPackaging(
     packagingCollector.join()
 }
 
+/**
+ * Sorts a list of SearchResult objects based on the provided sort key.
+ */
+private fun sortSeries(series: List<SearchResult>, sortBy: String): List<SearchResult> {
+    Logger.logInfo("Sorting ${series.size} series by '$sortBy'...")
+    return when (sortBy) {
+        "chapters-asc" -> series.sortedBy { it.chapterCount ?: 0 }
+        "chapters-desc" -> series.sortedByDescending { it.chapterCount ?: 0 }
+        "alpha-asc" -> series.sortedBy { it.title }
+        "alpha-desc" -> series.sortedByDescending { it.title }
+        else -> series // "default"
+    }
+}
+
 fun main(args: Array<String>) {
     val parser = ArgParser("manga-combiner-cli v${AppVersion.NAME}", useDefaultHelpShortName = false)
     val source by parser.option(ArgType.String, "source", "s", "Source URL, local file, or search query.").multiple()
@@ -336,6 +350,11 @@ fun main(args: Array<String>) {
     val proxy by parser.option(ArgType.String, "proxy", description = "Proxy URL (e.g., http://host:port)")
     val perWorkerUserAgent by parser.option(ArgType.Boolean, "per-worker-ua", description = "Use a different random user agent for each worker.").default(false)
     val cacheDir by parser.option(ArgType.String, "cache-dir", description = "Specify a custom directory for cache and temporary files.")
+    val sortBy by parser.option(
+        ArgType.Choice(listOf("default", "chapters-asc", "chapters-desc", "alpha-asc", "alpha-desc"), { it }),
+        "sort-by",
+        description = "Sort series before batch downloading (default, chapters-asc, chapters-desc, alpha-asc, alpha-desc)."
+    ).default("default")
 
     try {
         parser.parse(args)
@@ -348,7 +367,7 @@ fun main(args: Array<String>) {
     val finalJpegQuality = jpegQuality ?: if (optimize) 85 else null
     val finalForce = force || redownloadExisting
 
-    val cliArgs = CliArguments(source, search, scrape, refreshCache, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality, cacheDir)
+    val cliArgs = CliArguments(source, search, scrape, refreshCache, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality, sortBy, cacheDir)
     Logger.isDebugEnabled = cliArgs.debug
 
     // Custom Koin setup for CLI to inject the custom cache directory
@@ -452,9 +471,11 @@ fun main(args: Array<String>) {
                     return@runBlocking
                 }
 
-                var seriesToDownload = allSeries
+                val sortedSeries = sortSeries(allSeries, cliArgs.sortBy)
+                var seriesToDownload = sortedSeries
+
                 if (!cliArgs.force && !cliArgs.skipExisting && !cliArgs.updateExisting) {
-                    val (skippable, processable) = allSeries.partition {
+                    val (skippable, processable) = sortedSeries.partition {
                         val mangaTitle = it.url.toSlug().replace('-', ' ').titlecase()
                         val finalOutputPath = cliArgs.outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" }
                         val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${cliArgs.format}"
@@ -498,9 +519,10 @@ fun main(args: Array<String>) {
                 }
 
                 if (cliArgs.downloadAll) {
-                    var seriesToDownload = detailedResults
+                    val sortedResults = sortSeries(detailedResults, cliArgs.sortBy)
+                    var seriesToDownload = sortedResults
                     if (!cliArgs.force && !cliArgs.skipExisting && !cliArgs.updateExisting) {
-                        val (skippable, processable) = detailedResults.partition {
+                        val (skippable, processable) = sortedResults.partition {
                             val mangaTitle = it.url.toSlug().replace('-', ' ').titlecase()
                             val finalOutputPath = cliArgs.outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" }
                             val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${cliArgs.format}"
