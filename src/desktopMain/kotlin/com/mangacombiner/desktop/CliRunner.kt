@@ -1,7 +1,10 @@
 package com.mangacombiner.desktop
 
+import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.di.appModule
 import com.mangacombiner.model.AppSettings
+import com.mangacombiner.model.ScrapedSeries
+import com.mangacombiner.model.ScrapedSeriesCache
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.*
 import com.mangacombiner.util.*
@@ -14,13 +17,12 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import org.koin.core.context.startKoin
+import org.koin.core.context.stopKoin
+import org.koin.dsl.module
 import org.koin.java.KoinJavaComponent.get
 import java.io.File
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
-import com.mangacombiner.data.SettingsRepository
-import org.koin.core.context.stopKoin
-import org.koin.core.module.Module
-import org.koin.dsl.module
 
 /**
  * Data class to pass results from the download phase to the packaging phase.
@@ -214,6 +216,7 @@ data class CliArguments(
     val source: List<String>,
     val search: Boolean,
     val scrape: Boolean,
+    val refreshCache: Boolean,
     val downloadAll: Boolean,
     val cleanCache: Boolean,
     val deleteCache: Boolean,
@@ -306,6 +309,7 @@ fun main(args: Array<String>) {
     val source by parser.option(ArgType.String, "source", "s", "Source URL, local file, or search query.").multiple()
     val search by parser.option(ArgType.Boolean, "search", description = "Search for a series and print results.").default(false)
     val scrape by parser.option(ArgType.Boolean, "scrape", description = "Scrape and download all series from the provided source URL (e.g., a list/genre page).").default(false)
+    val refreshCache by parser.option(ArgType.Boolean, "refresh-cache", description = "Force a new scrape, overwriting the existing cache. Use with --scrape.").default(false)
     val downloadAll by parser.option(ArgType.Boolean, "download-all", description = "Download all results from a search. Must be used with --search.").default(false)
     val ignoreCache by parser.option(ArgType.Boolean, "ignore-cache", description = "Force re-download of all chapters, ignoring existing cache.").default(false)
     val cleanCache by parser.option(ArgType.Boolean, "clean-cache", description = "Delete a series' temporary folders after its download succeeds.").default(false)
@@ -344,7 +348,7 @@ fun main(args: Array<String>) {
     val finalJpegQuality = jpegQuality ?: if (optimize) 85 else null
     val finalForce = force || redownloadExisting
 
-    val cliArgs = CliArguments(source, search, scrape, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality, cacheDir)
+    val cliArgs = CliArguments(source, search, scrape, refreshCache, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality, cacheDir)
     Logger.isDebugEnabled = cliArgs.debug
 
     // Custom Koin setup for CLI to inject the custom cache directory
@@ -366,6 +370,7 @@ fun main(args: Array<String>) {
     val platformProvider: PlatformProvider = get(PlatformProvider::class.java)
     val fileConverter: FileConverter = get(FileConverter::class.java)
     val cacheService: CacheService = get(CacheService::class.java)
+    val scrapeCacheService: ScrapeCacheService = get(ScrapeCacheService::class.java)
 
     if (cliArgs.scrape && cliArgs.search) {
         println("Error: --scrape and --search are mutually exclusive.")
@@ -420,8 +425,27 @@ fun main(args: Array<String>) {
                     Logger.logError("A source URL must be provided with --scrape.")
                     return@runBlocking
                 }
-                Logger.logInfo("Starting scrape from URL: $startUrl")
-                val allSeries = scraperService.findAllSeriesUrls(client, startUrl, userAgent)
+
+                val allSeries: List<SearchResult>
+                val cachedData = if (!cliArgs.refreshCache) scrapeCacheService.loadCache() else null
+
+                if (cachedData != null) {
+                    val ageInMillis = System.currentTimeMillis() - cachedData.lastUpdated
+                    val ageInHours = TimeUnit.MILLISECONDS.toHours(ageInMillis)
+                    Logger.logInfo("Using cached scrape data from $ageInHours hours ago. Use --refresh-cache to force an update.")
+                    allSeries = cachedData.series.map { SearchResult(it.title, it.url, "") }
+                } else {
+                    Logger.logInfo("Starting scrape from URL: $startUrl")
+                    val results = scraperService.findAllSeriesUrls(client, startUrl, userAgent)
+                    if (results.isNotEmpty()) {
+                        val cacheToSave = ScrapedSeriesCache(
+                            lastUpdated = System.currentTimeMillis(),
+                            series = results.map { ScrapedSeries(it.title, it.url) }
+                        )
+                        scrapeCacheService.saveCache(cacheToSave)
+                    }
+                    allSeries = results
+                }
 
                 if (allSeries.isEmpty()) {
                     Logger.logInfo("No series found to download.")

@@ -6,16 +6,33 @@ import java.util.Locale
 
 class DesktopPlatformProvider(private val customCacheDir: String? = null) : PlatformProvider {
     override fun getTmpDir(): String {
-        return if (!customCacheDir.isNullOrBlank()) {
+        // If a custom cache dir is provided via CLI, use it as the single source of truth.
+        if (!customCacheDir.isNullOrBlank()) {
             val dir = File(customCacheDir)
             if (!dir.exists()) {
                 dir.mkdirs()
             }
-            dir.absolutePath
-        } else {
-            System.getProperty("java.io.tmpdir")
+            return dir.absolutePath
         }
+
+        // Otherwise, default to a persistent location instead of the OS temp dir
+        val os = System.getProperty("os.name", "generic").lowercase(Locale.ENGLISH)
+        val userHome = System.getProperty("user.home")
+        val appDir = File(
+            when {
+                "win" in os -> File(System.getenv("LOCALAPPDATA"))
+                "mac" in os || "darwin" in os -> File(userHome, "Library/Application Support")
+                else -> File(userHome, ".local/share") // Linux XDG standard
+            },
+            "MangaCombiner"
+        )
+
+        if (!appDir.exists()) {
+            appDir.mkdirs()
+        }
+        return appDir.absolutePath
     }
+
     private val userHome = System.getProperty("user.home")
     override fun getUserDownloadsDir(): String? = File(userHome, "Downloads").path
     override fun getUserDocumentsDir(): String? = File(userHome, "Documents").path

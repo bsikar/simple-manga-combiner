@@ -15,6 +15,7 @@ val appModule = module {
     single { DownloadService(get(), get()) }
     single { CacheService(get(), get()) }
     single { QueuePersistenceService(get()) }
+    single { ScrapeCacheService(get()) }
 
     // ViewModels and other platform specifics are defined in platformModule()
 }
