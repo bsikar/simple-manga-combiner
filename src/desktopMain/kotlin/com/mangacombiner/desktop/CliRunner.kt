@@ -454,26 +454,30 @@ fun main(args: Array<String>) {
                     Logger.logInfo("Using cached scrape data from $ageInHours hours ago. Use --refresh-cache to force an update.")
                     allSeries = cachedData.series.map { SearchResult(it.title, it.url, "", chapterCount = it.chapterCount) }
                 } else {
-                    Logger.logInfo("Starting scrape from URL: $startUrl")
+                    Logger.logInfo("Starting initial scrape from URL: $startUrl")
                     val results = scraperService.findAllSeriesUrls(client, startUrl, userAgent)
-                    Logger.logInfo("Found ${results.size} series. Fetching chapter counts for sorting and caching...")
-                    val detailedResults = coroutineScope {
-                        results.map {
-                            async {
-                                scraperService.findChapterUrlsAndTitles(client, it.url, userAgent)
-                                    .let { ch -> it.copy(chapterCount = ch.size) }
-                            }
-                        }.awaitAll()
-                    }
+                    Logger.logInfo("Found ${results.size} series. Now fetching chapter counts for caching (this may take a while)...")
 
-                    if (detailedResults.isNotEmpty()) {
-                        val cacheToSave = ScrapedSeriesCache(
-                            lastUpdated = System.currentTimeMillis(),
-                            series = detailedResults.map { ScrapedSeries(it.title, it.url, it.chapterCount) }
-                        )
-                        scrapeCacheService.saveCache(cacheToSave)
+                    val processedSeries = mutableListOf<ScrapedSeries>()
+                    for ((index, seriesResult) in results.withIndex()) {
+                        try {
+                            coroutineContext.ensureActive()
+                            Logger.logInfo("Processing [${index + 1}/${results.size}]: ${seriesResult.title}")
+                            val chapters = scraperService.findChapterUrlsAndTitles(client, seriesResult.url, userAgent)
+                            processedSeries.add(ScrapedSeries(seriesResult.title, seriesResult.url, chapters.size))
+                        } catch (e: Exception) {
+                            Logger.logError("Failed to fetch chapters for ${seriesResult.title}: ${e.message}")
+                            processedSeries.add(ScrapedSeries(seriesResult.title, seriesResult.url, chapterCount = null))
+                        } finally {
+                            // Save incrementally after each series
+                            val cacheToSave = ScrapedSeriesCache(
+                                lastUpdated = System.currentTimeMillis(),
+                                series = processedSeries
+                            )
+                            scrapeCacheService.saveCache(cacheToSave)
+                        }
                     }
-                    allSeries = detailedResults
+                    allSeries = processedSeries.map { SearchResult(it.title, it.url, "", chapterCount = it.chapterCount) }
                 }
 
                 if (allSeries.isEmpty()) {
