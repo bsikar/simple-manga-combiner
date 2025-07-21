@@ -108,13 +108,13 @@ The CLI offers a wide range of options for automation.
 
 ```bash
 # Download a single series to your Downloads folder
-manga-combiner-cli --source [https://example.com/manga/one-piece](https://example.com/manga/one-piece)
+manga-combiner-cli --source https://example.com/manga/one-piece
 
 # Search for a series and download all results, optimizing for small file sizes
 manga-combiner-cli --source "attack on titan" --search --download-all --preset small-size
 
 # Batch download all series from a list page with 3 concurrent series downloads
-manga-combiner-cli --source [https://example.com/genre/action](https://example.com/genre/action) --scrape --batch-workers 3
+manga-combiner-cli --source https://example.com/genre/action --scrape --batch-workers 3
 
 # Delete cached files for 'naruto' to save space
 manga-combiner-cli --delete-cache --remove "naruto"
