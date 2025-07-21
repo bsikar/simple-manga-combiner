@@ -2,11 +2,7 @@ package com.mangacombiner.service
 
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
-import com.mangacombiner.util.FileUtils
-import com.mangacombiner.util.FileMover
-import com.mangacombiner.util.Logger
-import com.mangacombiner.util.PlatformProvider
-import com.mangacombiner.util.toSlug
+import com.mangacombiner.util.*
 import io.ktor.client.plugins.ClientRequestException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -23,7 +19,8 @@ class DesktopDownloader(
     private val fileMover: FileMover,
     private val platformProvider: PlatformProvider,
     private val queuePersistenceService: QueuePersistenceService,
-    private val cacheService: CacheService
+    private val cacheService: CacheService,
+    private val scraperService: ScraperService
 ) : BackgroundDownloader {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -151,15 +148,27 @@ class DesktopDownloader(
             val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
             val tempOutputFile = File(tempDir, finalFileName)
 
-            if (op.outputFormat == "cbz") {
-                downloadService.processorService.createCbzFromFolders(
-                    op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters
-                )
-            } else {
-                downloadService.processorService.createEpubFromFolders(
-                    op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters
-                )
+            // Fetch metadata if it wasn't already attached to the operation
+            val metadata = op.seriesMetadata ?: run {
+                Logger.logDebug { "Metadata not found in operation, fetching from ${op.seriesUrl}" }
+                val client = createHttpClient(null)
+                try {
+                    scraperService.fetchSeriesDetails(client, op.seriesUrl, op.userAgents.first()).first
+                } finally {
+                    client.close()
+                }
             }
+
+
+            downloadService.processorService.createEpubFromFolders(
+                mangaTitle = op.customTitle,
+                chapterFolders = allChapterFolders,
+                outputFile = tempOutputFile,
+                seriesUrl = op.seriesUrl,
+                failedChapters = downloadResult?.failedChapters,
+                seriesMetadata = metadata
+            )
+
 
             fileMover.moveToFinalDestination(tempOutputFile, op.outputPath, finalFileName)
             _jobStatusFlow.tryEmit(JobStatusUpdate(op.jobId, status = "Completed", progress = 1f, isFinished = true))

@@ -1,32 +1,13 @@
 package com.mangacombiner.util
 
-import com.mangacombiner.model.ComicInfo
 import com.mangacombiner.service.ProcessorService
 import kotlinx.serialization.json.Json
-import nl.adaptivity.xmlutil.serialization.XML
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
 import java.io.File
 import java.nio.file.Files
 
 object ZipUtils {
-    fun inferChapterSlugsFromZip(cbzFile: File): Set<String> {
-        if (!cbzFile.exists() || !cbzFile.isFile || !cbzFile.canRead()) return emptySet()
-        return try {
-            ZipFile(cbzFile).use { zipFile ->
-                zipFile.fileHeaders
-                    .asSequence()
-                    .filter { !it.isDirectory && !it.fileName.lowercase().endsWith(ProcessorService.COMIC_INFO_FILE) && !it.fileName.lowercase().endsWith(ProcessorService.FAILURES_FILE) }
-                    .mapNotNull { File(it.fileName).parent }
-                    .filter { it.isNotBlank() }
-                    .toSet()
-            }
-        } catch (e: ZipException) {
-            Logger.logError("Error reading CBZ ${cbzFile.name} to infer chapter slugs", e)
-            emptySet()
-        }
-    }
-
     fun inferChapterSlugsFromEpub(epubFile: File): Set<String> {
         if (!epubFile.exists() || !epubFile.isFile || !epubFile.canRead()) return emptySet()
         return try {
@@ -40,23 +21,6 @@ object ZipUtils {
         } catch (e: ZipException) {
             Logger.logError("Error reading EPUB ${epubFile.name} to infer chapter slugs", e)
             emptySet()
-        }
-    }
-
-    fun getSourceUrlFromCbz(cbzFile: File, xml: XML): String? {
-        if (!cbzFile.exists()) return null
-        return try {
-            ZipFile(cbzFile).use { zipFile ->
-                val comicInfoFile = zipFile.getFileHeader(ProcessorService.COMIC_INFO_FILE)
-                if (comicInfoFile != null) {
-                    zipFile.getInputStream(comicInfoFile).use {
-                        xml.decodeFromString(ComicInfo.serializer(), it.reader().readText()).web
-                    }
-                } else null
-            }
-        } catch (e: Exception) {
-            Logger.logError("Could not read ComicInfo.xml from ${cbzFile.name}", e)
-            null
         }
     }
 

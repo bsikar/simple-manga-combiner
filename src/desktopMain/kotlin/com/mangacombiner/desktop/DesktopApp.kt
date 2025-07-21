@@ -138,8 +138,8 @@ fun main() {
                 viewModel.filePickerRequest.collect { request ->
                     when (request) {
                         is FilePickerRequest.OpenFile -> {
-                            val path = showFilePickerAwt("Select EPUB or CBZ File") { _, name ->
-                                name.endsWith(".cbz", true) || name.endsWith(".epub", true)
+                            val path = showFilePickerAwt("Select EPUB File") { _, name ->
+                                name.endsWith(".epub", true)
                             }
                             path?.let {
                                 viewModel.onFileSelected(it)

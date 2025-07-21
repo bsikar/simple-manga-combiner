@@ -3,7 +3,7 @@ package com.mangacombiner.service
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.util.Logger
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
+import io.ktor.client.call.*
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.get
@@ -21,6 +21,62 @@ import kotlin.random.Random
 
 class ScraperService {
 
+    suspend fun fetchSeriesDetails(client: HttpClient, seriesUrl: String, userAgent: String): Pair<SeriesMetadata, List<Pair<String, String>>> {
+        Logger.logDebug { "Scraping series page for all details: $seriesUrl" }
+        val baseUrl = URI(seriesUrl).let { "${it.scheme}://${it.host}" }
+        try {
+            val response: String = client.get(seriesUrl) {
+                header(HttpHeaders.UserAgent, userAgent)
+                header(HttpHeaders.Referrer, baseUrl)
+            }.body()
+            val soup = Jsoup.parse(response, seriesUrl)
+
+            // --- Metadata Extraction ---
+            val title = soup.selectFirst("div.post-title h1")?.text()?.trim()
+                ?: "Unknown Title"
+            val coverImageUrl = soup.selectFirst("div.summary_image img")?.absUrl("src")
+
+            val authors = soup.select("div.author-content a").map { it.text().trim() }.takeIf { it.isNotEmpty() }
+            val artists = soup.select("div.artist-content a").map { it.text().trim() }.takeIf { it.isNotEmpty() }
+            val genres = soup.select("div.genres-content a").map { it.text().trim() }.takeIf { it.isNotEmpty() }
+
+            var type: String? = null
+            var release: String? = null
+            var status: String? = null
+
+            soup.select("div.post-content_item").forEach { item ->
+                when (item.selectFirst("div.summary-heading h5")?.text()?.trim()?.lowercase()) {
+                    "type" -> type = item.selectFirst("div.summary-content")?.text()?.trim()
+                    "release" -> release = item.selectFirst("div.summary-content")?.text()?.trim()
+                    "status" -> status = item.selectFirst("div.summary-content")?.text()?.trim()
+                }
+            }
+
+            val seriesMetadata = SeriesMetadata(
+                title = title,
+                coverImageUrl = coverImageUrl,
+                authors = authors,
+                artists = artists,
+                genres = genres,
+                type = type,
+                release = release,
+                status = status
+            )
+
+            // --- Chapter List Extraction ---
+            val chapters = findChapterUrlsAndTitles(soup, seriesUrl)
+
+            return seriesMetadata to chapters
+        } catch (e: Exception) {
+            when (e) {
+                is ClientRequestException, is IOException -> {
+                    throw NetworkException("Failed to fetch series details from $seriesUrl: ${e.message}", e)
+                }
+                else -> throw e
+            }
+        }
+    }
+
     suspend fun findChapterUrlsAndTitles(client: HttpClient, seriesUrl: String, userAgent: String): List<Pair<String, String>> {
         Logger.logDebug { "Scraping series page for chapter URLs and titles: $seriesUrl" }
         val baseUrl = URI(seriesUrl).let { "${it.scheme}://${it.host}" }
@@ -30,13 +86,7 @@ class ScraperService {
                 header(HttpHeaders.Referrer, baseUrl)
             }.body()
             val soup = Jsoup.parse(response, seriesUrl)
-            val chapterLinks = soup.select("li.wp-manga-chapter a")
-
-            if (chapterLinks.isEmpty()) {
-                Logger.logDebug { "No chapters found using selector 'li.wp-manga-chapter a'." }
-                return emptyList()
-            }
-            return chapterLinks.map { it.absUrl("href") to it.text().trim() }.reversed()
+            return findChapterUrlsAndTitles(soup, seriesUrl)
         } catch (e: Exception) {
             when (e) {
                 is ClientRequestException, is IOException -> {
@@ -45,6 +95,15 @@ class ScraperService {
                 else -> throw e
             }
         }
+    }
+
+    private fun findChapterUrlsAndTitles(soup: org.jsoup.nodes.Document, seriesUrl: String): List<Pair<String, String>> {
+        val chapterLinks = soup.select("li.wp-manga-chapter a")
+        if (chapterLinks.isEmpty()) {
+            Logger.logDebug { "No chapters found using selector 'li.wp-manga-chapter a'." }
+            return emptyList()
+        }
+        return chapterLinks.map { it.absUrl("href") to it.text().trim() }.reversed()
     }
 
     suspend fun search(client: HttpClient, query: String, userAgent: String): List<SearchResult> {

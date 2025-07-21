@@ -36,7 +36,7 @@ actual class FileMover(private val context: Context) {
         parentDocument.findFile(finalFileName)?.delete()
 
         // The mime type is needed for createFile
-        val mimeType = if (finalFileName.endsWith("epub")) "application/epub+zip" else "application/vnd.comicbook+zip"
+        val mimeType = "application/epub+zip"
 
         val newFile = parentDocument.createFile(mimeType, finalFileName)
         if (newFile == null) {

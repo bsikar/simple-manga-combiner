@@ -45,11 +45,19 @@ private suspend fun packageSeries(
     processorService: ProcessorService
 ) {
     Logger.logInfo("Creating ${cliArgs.format.uppercase()} for ${result.mangaTitle} from ${result.allFoldersForPackaging.size} total chapters...")
-    if (cliArgs.format == "cbz") {
-        processorService.createCbzFromFolders(result.mangaTitle, result.allFoldersForPackaging, result.outputFile, result.sourceUrl, result.failedChapters, cliArgs.maxWidth, cliArgs.jpegQuality)
-    } else {
-        processorService.createEpubFromFolders(result.mangaTitle, result.allFoldersForPackaging, result.outputFile, result.sourceUrl, result.failedChapters, cliArgs.maxWidth, cliArgs.jpegQuality)
-    }
+    // Since we only support EPUB now, the conditional is removed.
+    // The CLI doesn't fetch detailed metadata, so we pass null for it.
+    processorService.createEpubFromFolders(
+        mangaTitle = result.mangaTitle,
+        chapterFolders = result.allFoldersForPackaging,
+        outputFile = result.outputFile,
+        seriesUrl = result.sourceUrl,
+        failedChapters = result.failedChapters,
+        seriesMetadata = null, // CLI does not fetch this detailed metadata
+        maxWidth = cliArgs.maxWidth,
+        jpegQuality = cliArgs.jpegQuality
+    )
+
     if (result.outputFile.exists()) {
         // Always log the full path
         Logger.logInfo("Successfully created: ${result.outputFile.absolutePath}")

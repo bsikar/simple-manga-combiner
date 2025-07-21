@@ -7,6 +7,7 @@ import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.CachedSeries
 import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadResult
+import com.mangacombiner.service.SeriesMetadata
 import com.mangacombiner.service.WebDavFile
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.OperationState
@@ -24,6 +25,7 @@ data class UiState(
     val isFetchingChapters: Boolean = false,
     val isAnalyzingFile: Boolean = false,
     val fetchedChapters: List<Chapter> = emptyList(),
+    val seriesMetadata: SeriesMetadata? = null,
     val localChaptersForSync: Map<String, String> = emptyMap(),
     val failedItemsForSync: Map<String, List<String>> = emptyMap(),
     val sourceFilePath: String? = null,

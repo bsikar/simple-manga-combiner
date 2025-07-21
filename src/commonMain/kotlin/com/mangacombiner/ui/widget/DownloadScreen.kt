@@ -8,7 +8,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.*
@@ -22,8 +21,6 @@ import com.mangacombiner.ui.viewmodel.state.UiState
 
 @Composable
 fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
-    var formatDropdownExpanded by remember { mutableStateOf(false) }
-
     val isIdle = state.operationState == OperationState.IDLE
     val isRunning = state.operationState == OperationState.RUNNING || state.operationState == OperationState.PAUSED
 
@@ -51,7 +48,7 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
 
                     if (state.offlineMode) {
                         Text(
-                            "Offline mode is enabled. Use 'Update Local File' to add or remove chapters from an existing CBZ or EPUB.",
+                            "Offline mode is enabled. Use 'Update Local File' to add or remove chapters from an existing EPUB.",
                             style = MaterialTheme.typography.caption,
                             color = MaterialTheme.colors.primary
                         )
@@ -169,30 +166,6 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                                 range = 1..16,
                                 enabled = isIdle
                             )
-                        }
-
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                onClick = { formatDropdownExpanded = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = isIdle
-                            ) {
-                                Text("Format: ${state.outputFormat.uppercase()}")
-                                Icon(Icons.Default.ArrowDropDown, "Format")
-                            }
-                            DropdownMenu(
-                                expanded = formatDropdownExpanded,
-                                onDismissRequest = { formatDropdownExpanded = false }
-                            ) {
-                                DropdownMenuItem(onClick = {
-                                    onEvent(Event.Download.UpdateFormat("cbz"))
-                                    formatDropdownExpanded = false
-                                }) { Text("CBZ") }
-                                DropdownMenuItem(onClick = {
-                                    onEvent(Event.Download.UpdateFormat("epub"))
-                                    formatDropdownExpanded = false
-                                }) { Text("EPUB") }
-                            }
                         }
                     }
                 }

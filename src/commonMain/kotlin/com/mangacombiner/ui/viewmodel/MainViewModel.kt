@@ -421,7 +421,7 @@ class MainViewModel(
                 val client = createHttpClient(s.proxyUrl)
                 Logger.logInfo("Fetching chapter list for: $url")
                 val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
-                val chapters = scraperService.findChapterUrlsAndTitles(client, url, userAgent)
+                val (seriesMetadata, chapters) = scraperService.fetchSeriesDetails(client, url, userAgent)
                 client.close()
 
                 if (chapters.isNotEmpty()) {
@@ -464,6 +464,8 @@ class MainViewModel(
 
                     _state.update {
                         it.copy(
+                            seriesMetadata = seriesMetadata,
+                            customTitle = seriesMetadata.title,
                             fetchedChapters = allChapters,
                             showChapterDialog = true,
                             chaptersToPreselect = emptySet()
@@ -602,11 +604,14 @@ class MainViewModel(
 
             val tempOutputFile = File(platformProvider.getTmpDir(), finalFileName)
 
-            if (s.outputFormat == "cbz") {
-                downloadService.processorService.createCbzFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, failedChapters)
-            } else {
-                downloadService.processorService.createEpubFromFolders(mangaTitle, folders.distinct(), tempOutputFile, s.seriesUrl, failedChapters)
-            }
+            downloadService.processorService.createEpubFromFolders(
+                mangaTitle,
+                folders.distinct(),
+                tempOutputFile,
+                s.seriesUrl,
+                failedChapters,
+                s.seriesMetadata
+            )
 
             coroutineContext.ensureActive()
 
@@ -739,6 +744,7 @@ class MainViewModel(
             chapters = s.fetchedChapters,
             workers = s.workers,
             userAgents = userAgents,
+            seriesMetadata = s.seriesMetadata
         )
     }
 

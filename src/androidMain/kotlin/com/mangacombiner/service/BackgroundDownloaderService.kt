@@ -207,11 +207,15 @@ class BackgroundDownloaderService : Service(), KoinComponent {
             val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
             val tempOutputFile = File(tempDir, finalFileName)
 
-            if (op.outputFormat == "cbz") {
-                downloadService.processorService.createCbzFromFolders(op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters)
-            } else {
-                downloadService.processorService.createEpubFromFolders(op.customTitle, allChapterFolders, tempOutputFile, op.seriesUrl, downloadResult?.failedChapters)
-            }
+            downloadService.processorService.createEpubFromFolders(
+                mangaTitle = op.customTitle,
+                chapterFolders = allChapterFolders,
+                outputFile = tempOutputFile,
+                seriesUrl = op.seriesUrl,
+                failedChapters = downloadResult?.failedChapters,
+                seriesMetadata = op.seriesMetadata
+            )
+
 
             fileMover.moveToFinalDestination(tempOutputFile, op.outputPath, finalFileName)
             JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Completed", progress = 1f, isFinished = true))

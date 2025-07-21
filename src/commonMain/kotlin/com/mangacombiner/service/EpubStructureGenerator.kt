@@ -1,6 +1,5 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.model.OpfMetadata
 import com.mangacombiner.util.getImageDimensions
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
@@ -27,6 +26,8 @@ internal class EpubStructureGenerator {
         const val MIMETYPE = "application/epub+zip"
         const val DEFAULT_IMAGE_WIDTH = 1200
         const val DEFAULT_IMAGE_HEIGHT = 1920
+        const val COVER_ID = "cover-image"
+        const val COVER_HREF = "images/cover.jpeg"
     }
 
     class EpubMetadata {
@@ -48,6 +49,32 @@ internal class EpubStructureGenerator {
             fileNameInZip = "META-INF/container.xml"
         }
         epubZip.addStream(createContainerXml().byteInputStream(Charsets.UTF_8), containerParams)
+    }
+
+    fun addCoverToEpub(
+        coverImage: File,
+        metadata: EpubMetadata,
+        epubZip: ZipFile
+    ) {
+        val imageDim = getImageDimensions(coverImage.absolutePath)?.let { it.width to it.height }
+            ?: (DEFAULT_IMAGE_WIDTH to DEFAULT_IMAGE_HEIGHT)
+
+        val coverPageId = "cover-page"
+        val coverPageHref = "text/cover.xhtml"
+
+        // Add cover image to zip
+        val coverZipParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$COVER_HREF" }
+        epubZip.addFile(coverImage, coverZipParams)
+        metadata.manifestItems.add("""<item id="$COVER_ID" href="$COVER_HREF" media-type="image/jpeg"/>""")
+
+        // Create and add XHTML page for the cover
+        val xhtmlContent = createXhtmlPage("Cover", 0, "../$COVER_HREF", imageDim.first, imageDim.second)
+        val pageParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/$coverPageHref" }
+        epubZip.addStream(xhtmlContent.byteInputStream(Charsets.UTF_8), pageParams)
+        metadata.manifestItems.add("""<item id="$coverPageId" href="$coverPageHref" media-type="application/xhtml+xml"/>""")
+
+        // Add to spine but mark as non-linear so it doesn't appear in the reading flow twice
+        metadata.spineItems.add("""<itemref idref="$coverPageId" linear="no"/>""")
     }
 
     fun addChapterToEpub(
@@ -92,9 +119,9 @@ internal class EpubStructureGenerator {
         metadata.totalPages += images.size
     }
 
-    fun addEpubMetadataFiles(epubZip: ZipFile, title: String, seriesUrl: String?, metadata: EpubMetadata) {
+    fun addEpubMetadataFiles(epubZip: ZipFile, title: String, seriesUrl: String?, seriesMetadata: SeriesMetadata?, metadata: EpubMetadata) {
         val bookId = UUID.randomUUID().toString()
-        val opfContent = createContentOpf(title, bookId, seriesUrl, metadata.manifestItems, metadata.spineItems)
+        val opfContent = createContentOpf(title, bookId, seriesUrl, seriesMetadata, metadata)
         val opfParams = ZipParameters().apply { fileNameInZip = "$OPF_BASE_PATH/content.opf" }
         epubZip.addStream(opfContent.byteInputStream(Charsets.UTF_8), opfParams)
         val ncxContent = createTocNcx(title, bookId, metadata.navPoints)
@@ -137,26 +164,56 @@ internal class EpubStructureGenerator {
         title: String,
         bookId: String,
         seriesUrl: String?,
-        manifestItems: List<String>,
-        spineItems: List<String>
+        seriesMetadata: SeriesMetadata?,
+        metadata: EpubMetadata
     ): String {
-        val sourceTag = if (seriesUrl != null) "        <dc:source>$seriesUrl</dc:source>" else ""
+        val metadataBuilder = StringBuilder()
+        metadataBuilder.appendLine("""<dc:title>${(seriesMetadata?.title ?: title).escapeXml()}</dc:title>""")
+        metadataBuilder.appendLine("""<dc:creator opf:role="aut">MangaCombiner</dc:creator>""")
+
+        seriesMetadata?.authors?.forEach { author ->
+            metadataBuilder.appendLine("""<dc:creator opf:role="aut">${author.escapeXml()}</dc:creator>""")
+        }
+        seriesMetadata?.artists?.forEach { artist ->
+            metadataBuilder.appendLine("""<dc:creator opf:role="art">${artist.escapeXml()}</dc:creator>""")
+        }
+
+        metadataBuilder.appendLine("""<dc:language>en</dc:language>""")
+        metadataBuilder.appendLine("""<dc:identifier id="BookId" opf:scheme="UUID">$bookId</dc:identifier>""")
+
+        seriesMetadata?.release?.let {
+            metadataBuilder.appendLine("""<dc:date>${it.escapeXml()}</dc:date>""")
+        }
+        seriesMetadata?.genres?.forEach { genre ->
+            metadataBuilder.appendLine("""<dc:subject>${genre.escapeXml()}</dc:subject>""")
+        }
+
+        val descriptionParts = mutableListOf<String>()
+        seriesMetadata?.type?.let { descriptionParts.add("Type: $it") }
+        seriesMetadata?.status?.let { descriptionParts.add("Status: $it") }
+        if (descriptionParts.isNotEmpty()) {
+            metadataBuilder.appendLine("""<dc:description>${descriptionParts.joinToString(" | ").escapeXml()}</dc:description>""")
+        }
+
+        if (seriesUrl != null) {
+            metadataBuilder.appendLine("""<dc:source>${seriesUrl.escapeXml()}</dc:source>""")
+        }
+        if (seriesMetadata?.coverImageUrl != null) {
+            metadataBuilder.appendLine("""<meta name="cover" content="$COVER_ID"/>""")
+        }
+
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-                <dc:title>${title.escapeXml()}</dc:title>
-                <dc:creator opf:role="aut">${OpfMetadata.Defaults.CREATOR}</dc:creator>
-                <dc:language>en</dc:language>
-                <dc:identifier id="BookId" opf:scheme="UUID">$bookId</dc:identifier>
-$sourceTag
+                ${metadataBuilder.toString().trim()}
             </metadata>
             <manifest>
                 <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                ${manifestItems.joinToString("\n                ")}
+                ${metadata.manifestItems.joinToString("\n                ")}
             </manifest>
             <spine toc="ncx">
-                ${spineItems.joinToString("\n                ")}
+                ${metadata.spineItems.joinToString("\n                ")}
             </spine>
         </package>
         """.trimIndent()

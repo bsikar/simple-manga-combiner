@@ -2,7 +2,6 @@ package com.mangacombiner.android
 
 import android.database.Cursor
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.activity.compose.setContent
@@ -14,7 +13,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.core.view.WindowCompat
@@ -42,7 +40,7 @@ class MainActivity : AppCompatActivity() {
     private var currentFolderPickerRequestType: FilePickerRequest.PathType? = null
 
     /**
-     * Launcher for picking individual files with support for EPUB and CBZ formats.
+     * Launcher for picking individual files with support for EPUB formats.
      * Handles the file selection result and processes the selected file URI.
      */
     private val filePickerLauncher =
@@ -77,7 +75,7 @@ class MainActivity : AppCompatActivity() {
             viewModel.filePickerRequest.collectLatest { request ->
                 when (request) {
                     is FilePickerRequest.OpenFile -> filePickerLauncher.launch(
-                        arrayOf("application/epub+zip", "application/vnd.comicbook+zip", "application/x-cbz")
+                        arrayOf("application/epub+zip")
                     )
                     is FilePickerRequest.OpenFolder -> {
                         currentFolderPickerRequestType = request.forPath

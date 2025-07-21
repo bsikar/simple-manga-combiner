@@ -1,5 +1,6 @@
 package com.mangacombiner.model
 
+import com.mangacombiner.service.SeriesMetadata
 import com.mangacombiner.ui.viewmodel.state.Chapter
 import kotlinx.serialization.Serializable
 
@@ -16,4 +17,7 @@ data class QueuedOperation(
     val chapters: List<Chapter>,
     val workers: Int,
     val userAgents: List<String>,
+    // This field will not be serialized by default json, but will be present in memory
+    @kotlinx.serialization.Transient
+    val seriesMetadata: SeriesMetadata? = null
 )
