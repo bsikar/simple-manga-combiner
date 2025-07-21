@@ -334,10 +334,14 @@ fun main(args: Array<String>) {
     val updateExisting by parser.option(ArgType.Boolean, "update-existing", description = "Update existing file with new chapters from the source URL.").default(false)
     val redownloadExisting by parser.option(ArgType.Boolean, "redownload-existing", description = "Alias for --force.").default(false)
     val force by parser.option(ArgType.Boolean, "force", "f", "Force overwrite/redownload of an existing file.").default(false)
-    val optimize by parser.option(ArgType.Boolean, "optimize", description = "Enable image optimizations to reduce final file size (sets --max-image-width 1200, --jpeg-quality 85). This will significantly increase processing time.").default(false)
+    val optimize by parser.option(ArgType.Boolean, "optimize", description = "Enable image optimizations to reduce file size (sets --max-image-width 1200, --jpeg-quality 85).\n\tWARNING: This will significantly increase processing time.").default(false)
     val maxWidth by parser.option(ArgType.Int, "max-image-width", description = "Resize images to this maximum width in pixels.")
     val jpegQuality by parser.option(ArgType.Int, "jpeg-quality", description = "Set JPEG compression quality (1-100).")
-    val format by parser.option(ArgType.String, "format", description = "Output format ('cbz' or 'epub')").default("epub")
+    val format by parser.option(
+        ArgType.Choice(listOf("cbz", "epub"), { it }),
+        "format",
+        description = "Output format for downloaded files."
+    ).default("epub")
     val title by parser.option(ArgType.String, "title", "t", "Custom output file title.")
     val outputPath by parser.option(ArgType.String, "output", "o", "Directory to save the final file.").default("")
     val deleteOriginal by parser.option(ArgType.Boolean, "delete-original", description = "Delete source on success.").default(false)
@@ -346,20 +350,45 @@ fun main(args: Array<String>) {
     val exclude by parser.option(ArgType.String, "exclude", "e", "Chapter URL slug to exclude.").multiple()
     val workers by parser.option(ArgType.Int, "workers", "w", "Number of concurrent image download workers.").default(4)
     val batchWorkers by parser.option(ArgType.Int, "batch-workers", "bw", "Number of concurrent series to process.").default(1)
-    val userAgentName by parser.option(ArgType.String, "user-agent", "ua", "Browser profile to impersonate.").default("Chrome (Windows)")
+    val listUserAgents by parser.option(ArgType.Boolean, "list-user-agents", "list-uas", "List all available user-agent profiles and exit.").default(false)
+    val userAgentName by parser.option(ArgType.String, "user-agent", "ua", "Browser profile to impersonate. Use --list-user-agents for choices.").default("Chrome (Windows)")
     val proxy by parser.option(ArgType.String, "proxy", description = "Proxy URL (e.g., http://host:port)")
     val perWorkerUserAgent by parser.option(ArgType.Boolean, "per-worker-ua", description = "Use a different random user agent for each worker.").default(false)
     val cacheDir by parser.option(ArgType.String, "cache-dir", description = "Specify a custom directory for cache and temporary files.")
-    val sortBy by parser.option(
-        ArgType.Choice(listOf("default", "chapters-asc", "chapters-desc", "alpha-asc", "alpha-desc"), { it }),
-        "sort-by",
-        description = "Sort series before batch downloading (default, chapters-asc, chapters-desc, alpha-asc, alpha-desc)."
-    ).default("default")
+    val listSortOptions by parser.option(ArgType.Boolean, "list-sort-options", description = "List all available sort options and exit.").default(false)
+    val sortBy by parser.option(ArgType.String, "sort-by", description = "Sort series before batch downloading. Use --list-sort-options.").default("default")
 
     try {
         parser.parse(args)
     } catch (e: Exception) {
         println("Error parsing arguments: ${e.message}")
+        return
+    }
+
+    if (listUserAgents) {
+        println("Available user-agent profiles:")
+        val userAgentOptions = listOf("Random") + UserAgent.browsers.keys.toList()
+        userAgentOptions.forEach { println("- $it") }
+        return
+    }
+
+    if (listSortOptions) {
+        println("Available sort options for --sort-by:")
+        val sortOptions = listOf("default", "chapters-asc", "chapters-desc", "alpha-asc", "alpha-desc")
+        sortOptions.forEach { println("- $it") }
+        return
+    }
+
+    val userAgentOptions = listOf("Random") + UserAgent.browsers.keys.toList()
+    if (userAgentName !in userAgentOptions) {
+        println("Error: Invalid user-agent '$userAgentName'.")
+        println("Use --list-user-agents to see all available options.")
+        return
+    }
+
+    val sortOptions = listOf("default", "chapters-asc", "chapters-desc", "alpha-asc", "alpha-desc")
+    if (sortBy !in sortOptions) {
+        println("Error: Invalid sort option '$sortBy'. Use --list-sort-options to see available choices.")
         return
     }
 
