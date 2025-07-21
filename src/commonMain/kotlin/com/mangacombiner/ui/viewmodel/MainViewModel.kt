@@ -23,13 +23,14 @@ internal class JobEditedException : CancellationException("Job was edited and ne
 class MainViewModel(
     internal val downloadService: DownloadService,
     internal val scraperService: ScraperService,
+    internal val webDavService: WebDavService,
     internal val clipboardManager: ClipboardManager,
     internal val platformProvider: PlatformProvider,
     internal val cacheService: CacheService,
     internal val settingsRepository: SettingsRepository,
     internal val queuePersistenceService: QueuePersistenceService,
     internal val fileMover: FileMover,
-    internal val backgroundDownloader: BackgroundDownloader // Changed from private to internal
+    internal val backgroundDownloader: BackgroundDownloader
 ) : PlatformViewModel() {
 
     internal val _state: MutableStateFlow<UiState>
@@ -47,8 +48,6 @@ class MainViewModel(
     internal var searchJob: Job? = null
     internal val queuedOperationContext = ConcurrentHashMap<String, QueuedOperation>()
 
-    // Tracks jobs the ViewModel has requested the service to start.
-    // This prevents sending duplicate start commands.
     internal val activeServiceJobs = ConcurrentHashMap.newKeySet<String>()
 
     init {
@@ -95,13 +94,11 @@ class MainViewModel(
         val loadedOperations = queuePersistenceService.loadQueue() ?: return
 
         val restoredJobs = loadedOperations.mapNotNull { op ->
-            // The service might have been working on this job and saving its own progress.
-            // Let's check for a more up-to-date metadata file for this specific operation.
             val seriesSlug = op.seriesUrl.toSlug()
             val seriesDir = File(platformProvider.getTmpDir(), "manga-dl-$seriesSlug")
             val latestOp = queuePersistenceService.loadOperationMetadata(seriesDir.absolutePath) ?: op
 
-            queuedOperationContext[latestOp.jobId] = latestOp // Restore the most up-to-date context
+            queuedOperationContext[latestOp.jobId] = latestOp
 
             val selectedChapters = latestOp.chapters.filter { it.selectedSource != null }
             if (selectedChapters.isEmpty()) {
@@ -109,7 +106,6 @@ class MainViewModel(
                 return@mapNotNull null
             }
 
-            // Correctly calculate progress based on what's been downloaded.
             val downloadedCount = selectedChapters.count { it.availableSources.contains(ChapterSource.CACHE) }
             val totalCount = selectedChapters.size
             val progress = if (totalCount > 0) downloadedCount.toFloat() / totalCount else 0f
@@ -123,7 +119,7 @@ class MainViewModel(
                 status = status,
                 totalChapters = totalCount,
                 downloadedChapters = downloadedCount,
-                isIndividuallyPaused = status != "Completed" // Mark as individually paused unless it's already done
+                isIndividuallyPaused = status != "Completed"
             )
         }
 
@@ -305,6 +301,7 @@ class MainViewModel(
         Logger.logDebug { "Received event: ${event::class.simpleName}" }
         when (event) {
             is Event.Search -> handleSearchEvent(event)
+            is Event.WebDav -> handleWebDavEvent(event)
             is Event.Download -> handleDownloadEvent(event)
             is Event.Settings -> handleSettingsEvent(event)
             is Event.Cache -> handleCacheEvent(event)
@@ -715,7 +712,6 @@ class MainViewModel(
                 failedItemsForSync = emptyMap(),
                 outputFileExists = false,
                 completionMessage = "${op.customTitle} added to queue.",
-                // Clear the confirmation state
                 showAddDuplicateDialog = false,
                 jobContextToAdd = null
             )

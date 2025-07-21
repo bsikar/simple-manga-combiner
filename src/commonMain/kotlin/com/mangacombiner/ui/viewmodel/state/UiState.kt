@@ -7,6 +7,7 @@ import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.CachedSeries
 import com.mangacombiner.service.DownloadOptions
 import com.mangacombiner.service.DownloadResult
+import com.mangacombiner.service.WebDavFile
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.OperationState
 
@@ -63,6 +64,18 @@ data class UiState(
     val jobContextToAdd: QueuedOperation? = null,
     val showNetworkErrorDialog: Boolean = false,
     val networkErrorMessage: String? = null,
+
+    // WebDAV State
+    val webDavUrl: String = "",
+    val webDavUser: String = "",
+    val webDavPass: String = "",
+    val isConnectingToWebDav: Boolean = false,
+    val isDownloadingFromWebDav: Boolean = false,
+    val webDavDownloadProgress: Float = 0f,
+    val webDavStatus: String = "",
+    val webDavFiles: List<WebDavFile> = emptyList(),
+    val webDavSelectedFiles: Set<String> = emptySet(),
+    val webDavError: String? = null,
 
     // Persisted Settings (Defaults point to AppSettings.Defaults)
     val theme: AppTheme = AppSettings.Defaults.THEME,

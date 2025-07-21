@@ -5,10 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -69,6 +66,15 @@ fun MainScreen(viewModel: MainViewModel) {
                             alwaysShowLabel = false
                         )
                     }
+                    PlatformTooltip("WebDAV") {
+                        NavigationRailItem(
+                            selected = state.currentScreen == Screen.WEB_DAV,
+                            onClick = { viewModel.onEvent(Event.Navigate(Screen.WEB_DAV)) },
+                            icon = { Icon(Icons.Default.CloudDownload, contentDescription = "WebDAV") },
+                            label = if (showNavLabels) { { Text("WebDAV") } } else null,
+                            alwaysShowLabel = false
+                        )
+                    }
                     PlatformTooltip("Queue") {
                         NavigationRailItem(
                             selected = state.currentScreen == Screen.DOWNLOAD_QUEUE,
@@ -107,6 +113,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     when (state.currentScreen) {
                         Screen.SEARCH -> SearchScreen(state, viewModel::onEvent)
                         Screen.DOWNLOAD -> DownloadScreen(state, viewModel::onEvent)
+                        Screen.WEB_DAV -> WebDavScreen(state, viewModel::onEvent)
                         Screen.DOWNLOAD_QUEUE -> DownloadQueueScreen(state, viewModel::onEvent)
                         Screen.LOGS -> LogScreen(state, logs, viewModel::onEvent)
                         Screen.SETTINGS -> SettingsScreen(state, viewModel::onEvent)

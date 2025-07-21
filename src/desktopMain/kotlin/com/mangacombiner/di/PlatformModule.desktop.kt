@@ -24,6 +24,6 @@ actual fun platformModule(): Module = module {
 
     // ViewModel for Desktop
     factory {
-        MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get())
+        MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
     }
 }

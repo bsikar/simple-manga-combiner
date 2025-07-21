@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 enum class Screen {
     DOWNLOAD,
     SEARCH,
+    WEB_DAV,
     DOWNLOAD_QUEUE,
     LOGS,
     SETTINGS,

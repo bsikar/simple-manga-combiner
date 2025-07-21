@@ -137,4 +137,13 @@ sealed interface Event {
         object CopyToClipboard : Log
         object Clear : Log
     }
+
+    sealed interface WebDav : Event {
+        data class UpdateUrl(val url: String) : WebDav
+        data class UpdateUser(val user: String) : WebDav
+        data class UpdatePass(val pass: String) : WebDav
+        data class ToggleFileSelection(val filePath: String, val isSelected: Boolean) : WebDav
+        object Connect : WebDav
+        object DownloadSelected : WebDav
+    }
 }
