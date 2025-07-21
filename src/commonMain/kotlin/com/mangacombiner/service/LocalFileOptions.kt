@@ -5,9 +5,9 @@ import java.io.File
 /**
  * Defines options for processing a single local file.
  *
- * @property inputFile The source file (CBZ or EPUB) to process.
+ * @property inputFile The source EPUB file to process.
  * @property customTitle An optional title to override the one inferred from the filename.
- * @property outputFormat The desired output format ("cbz" or "epub").
+ * @property outputFormat The desired output format ("epub").
  * @property forceOverwrite If true, overwrite the destination file if it exists.
  * @property deleteOriginal If true, delete the source file upon successful conversion.
  * @property useStreamingConversion A flag to enable memory-saving streaming modes.

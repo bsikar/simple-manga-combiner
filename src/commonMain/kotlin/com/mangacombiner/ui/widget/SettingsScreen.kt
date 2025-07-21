@@ -108,7 +108,7 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     label = { Text("Offline Mode") }
                 )
                 Text(
-                    "Enable to modify local files, such as removing chapters from a CBZ or EPUB, without needing an internet connection.",
+                    "Enable to modify local files, such as removing chapters from an EPUB, without needing an internet connection.",
                     style = MaterialTheme.typography.caption,
                     modifier = Modifier.padding(start = 16.dp)
                 )

@@ -110,10 +110,6 @@ fun JobEditDialog(
                         onDismissRequest = { formatDropdownExpanded = false }
                     ) {
                         DropdownMenuItem(onClick = {
-                            format = "cbz"
-                            formatDropdownExpanded = false
-                        }) { Text("CBZ") }
-                        DropdownMenuItem(onClick = {
                             format = "epub"
                             formatDropdownExpanded = false
                         }) { Text("EPUB") }

@@ -146,16 +146,15 @@ internal class EpubStructureGenerator {
                 <title>${title.escapeXml()} - Page $pageIndex</title>
                 <meta name="viewport" content="width=$w, height=$h"/>
                 <style type="text/css">
-                    body, html { padding: 0; margin: 0; }
-                    svg { padding: 0; margin: 0; }
+                    body { margin: 0; padding: 0; }
+                    div { text-align: center; }
+                    img { max-width: 100%; max-height: 100vh; }
                 </style>
             </head>
             <body>
-                <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink"
-                     width="100%" height="100%" viewBox="0 0 $w $h">
-                    <title>${title.escapeXml()} - Page $pageIndex</title>
-                    <image width="$w" height="$h" xlink:href="$imageHref"/>
-                </svg>
+                <div>
+                    <img src="$imageHref" alt="${title.escapeXml()} - Page $pageIndex"/>
+                </div>
             </body>
         </html>
     """.trimIndent()
@@ -168,69 +167,70 @@ internal class EpubStructureGenerator {
         metadata: EpubMetadata
     ): String {
         val metadataBuilder = StringBuilder()
-        metadataBuilder.appendLine("""<dc:title>${(seriesMetadata?.title ?: title).escapeXml()}</dc:title>""")
-        metadataBuilder.appendLine("""<dc:creator opf:role="aut">MangaCombiner</dc:creator>""")
+        metadataBuilder.appendLine("""    <dc:title>${(seriesMetadata?.title ?: title).escapeXml()}</dc:title>""")
+        metadataBuilder.appendLine("""    <dc:creator opf:role="aut">MangaCombiner</dc:creator>""")
 
         seriesMetadata?.authors?.forEach { author ->
-            metadataBuilder.appendLine("""<dc:creator opf:role="aut">${author.escapeXml()}</dc:creator>""")
+            metadataBuilder.appendLine("""    <dc:creator opf:role="aut">${author.escapeXml()}</dc:creator>""")
         }
         seriesMetadata?.artists?.forEach { artist ->
-            metadataBuilder.appendLine("""<dc:creator opf:role="art">${artist.escapeXml()}</dc:creator>""")
+            metadataBuilder.appendLine("""    <dc:creator opf:role="art">${artist.escapeXml()}</dc:creator>""")
         }
 
-        metadataBuilder.appendLine("""<dc:language>en</dc:language>""")
-        metadataBuilder.appendLine("""<dc:identifier id="BookId" opf:scheme="UUID">$bookId</dc:identifier>""")
+        metadataBuilder.appendLine("""    <dc:language>en</dc:language>""")
+        metadataBuilder.appendLine("""    <dc:identifier id="BookId" opf:scheme="UUID">$bookId</dc:identifier>""")
 
         seriesMetadata?.release?.let {
-            metadataBuilder.appendLine("""<dc:date>${it.escapeXml()}</dc:date>""")
+            metadataBuilder.appendLine("""    <dc:date>${it.escapeXml()}</dc:date>""")
         }
         seriesMetadata?.genres?.forEach { genre ->
-            metadataBuilder.appendLine("""<dc:subject>${genre.escapeXml()}</dc:subject>""")
+            metadataBuilder.appendLine("""    <dc:subject>${genre.escapeXml()}</dc:subject>""")
         }
 
         val descriptionParts = mutableListOf<String>()
         seriesMetadata?.type?.let { descriptionParts.add("Type: $it") }
         seriesMetadata?.status?.let { descriptionParts.add("Status: $it") }
         if (descriptionParts.isNotEmpty()) {
-            metadataBuilder.appendLine("""<dc:description>${descriptionParts.joinToString(" | ").escapeXml()}</dc:description>""")
+            metadataBuilder.appendLine("""    <dc:description>${descriptionParts.joinToString(" | ").escapeXml()}</dc:description>""")
         }
 
         if (seriesUrl != null) {
-            metadataBuilder.appendLine("""<dc:source>${seriesUrl.escapeXml()}</dc:source>""")
+            metadataBuilder.appendLine("""    <dc:source>${seriesUrl.escapeXml()}</dc:source>""")
         }
         if (seriesMetadata?.coverImageUrl != null) {
-            metadataBuilder.appendLine("""<meta name="cover" content="$COVER_ID"/>""")
+            metadataBuilder.appendLine("""    <meta name="cover" content="$COVER_ID"/>""")
         }
 
-        return """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
-            <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-                ${metadataBuilder.toString().trim()}
-            </metadata>
-            <manifest>
-                <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-                ${metadata.manifestItems.joinToString("\n                ")}
-            </manifest>
-            <spine toc="ncx">
-                ${metadata.spineItems.joinToString("\n                ")}
-            </spine>
-        </package>
-        """.trimIndent()
+        // Using a manually formatted string to avoid any issues with trimIndent() or leading newlines.
+        return """<?xml version="1.0" encoding="UTF-8"?>
+<package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
+    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+${metadataBuilder.toString().trim()}
+    </metadata>
+    <manifest>
+        <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+        ${metadata.manifestItems.joinToString("\n        ")}
+    </manifest>
+    <spine toc="ncx">
+        ${metadata.spineItems.joinToString("\n        ")}
+    </spine>
+</package>"""
     }
 
-    private fun createTocNcx(title: String, bookId: String, navPoints: List<String>): String = """
-        <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
-        <ncx version="2005-1" xmlns="http://www.daisy.org/z3986/2005/ncx/">
-            <head>
-                <meta name="dtb:uid" content="$bookId"/>
-            </head>
-            <docTitle><text>${title.escapeXml()}</text></docTitle>
-            <navMap>
-                ${navPoints.joinToString("\n        ")}
-            </navMap>
-        </ncx>
-    """.trimIndent()
+    private fun createTocNcx(title: String, bookId: String, navPoints: List<String>): String =
+        """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
+<ncx version="2005-1" xmlns="http://www.daisy.org/z3986/2005/ncx/">
+    <head>
+        <meta name="dtb:uid" content="$bookId"/>
+    </head>
+    <docTitle>
+        <text>${title.escapeXml()}</text>
+    </docTitle>
+    <navMap>
+        ${navPoints.joinToString("\n        ")}
+    </navMap>
+</ncx>"""
 
     private fun createNavPoint(playOrder: Int, title: String, contentSrc: String): String = """
         <navPoint id="navPoint-$playOrder" playOrder="$playOrder">
