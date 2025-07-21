@@ -318,50 +318,329 @@ private fun sortSeries(series: List<SearchResult>, sortBy: String): List<SearchR
     }
 }
 
+// Custom help printer function
+fun printCustomHelp() {
+    val helpText = """
+manga-combiner-cli v${AppVersion.NAME}
+
+USAGE:
+  manga-combiner [OPTIONS] --source <URL|FILE|QUERY>...
+
+EXAMPLES:
+  # Download a single series
+  manga-combiner --source https://example.com/manga/one-piece
+  
+  # Search for manga and download all results
+  manga-combiner --source "attack on titan" --search --download-all
+  
+  # Batch download from a genre page
+  manga-combiner --source https://example.com/genre/action --scrape
+  
+  # Convert local CBZ to EPUB
+  manga-combiner --source manga.cbz --format epub
+  
+  # Use a preset for optimized small files
+  manga-combiner --source https://example.com/manga/series --preset small-size
+
+INPUT OPTIONS:
+  -s, --source <URL|FILE|QUERY>    Source URL, local file, or search query (can be used multiple times)
+
+DISCOVERY & SEARCH:
+  --search                         Search for manga by name and display results
+  --scrape                         Batch download all series from a list/genre page
+  --download-all                   Download all search results (use with --search)
+
+OUTPUT OPTIONS:
+  --format <cbz|epub>              Output format (default: epub)
+  -t, --title <NAME>               Custom title for output file
+  -o, --output <DIR>               Output directory (default: Downloads)
+
+DOWNLOAD BEHAVIOR:
+  -f, --force                      Force overwrite existing files
+  --redownload-existing            Alias for --force
+  --skip-existing                  Skip if output file exists (good for batch)
+  --update-existing                Update with new chapters only (experimental)
+  -e, --exclude <SLUG>             Exclude chapters by slug (can be used multiple times)
+  --delete-original                Delete source after conversion (local files only)
+
+CACHE MANAGEMENT:
+  --ignore-cache                   Force re-download all chapters
+  --clean-cache                    Delete temp files after successful download
+  --refresh-cache                  Force refresh scraped series list (with --scrape)
+  --delete-cache                   Delete cached downloads and exit
+  --keep <PATTERN>                 Keep matching series when deleting cache
+  --remove <PATTERN>               Remove matching series when deleting cache
+  --cache-dir <DIR>                Custom cache directory
+
+IMAGE OPTIMIZATION:
+  --optimize                       Enable optimization (slower but smaller files)
+  --max-image-width <PIXELS>       Resize images to max width
+  --jpeg-quality <1-100>           JPEG compression quality
+  --preset <NAME>                  Use preset: fast, quality, small-size
+
+PERFORMANCE:
+  -w, --workers <N>                Concurrent image downloads per series (default: 4)
+  -bw, --batch-workers <N>         Concurrent series downloads (default: 1)
+
+NETWORK:
+  -ua, --user-agent <NAME>         Browser to impersonate (see --list-user-agents)
+  --per-worker-ua                  Random user agent per worker
+  --proxy <URL>                    HTTP proxy (e.g., http://localhost:8080)
+
+SORTING:
+  --sort-by <METHOD>               Sort series for batch downloads (see --list-sort-options)
+
+UTILITY:
+  --dry-run                        Preview actions without downloading
+  --debug                          Enable verbose logging
+  --list-user-agents               Show available user agents
+  --list-sort-options              Show available sort methods
+  -v, --version                    Show version information
+  --help                           Show this help message
+    """.trimIndent()
+
+    println(helpText)
+}
+
+// Function to apply preset configurations
+fun applyPreset(preset: String, args: CliArguments): CliArguments {
+    return when (preset.lowercase()) {
+        "fast" -> args.copy(
+            workers = 8,
+            batchWorkers = 3,
+            optimize = false
+        )
+        "quality" -> args.copy(
+            workers = 4,
+            batchWorkers = 1,
+            optimize = false,
+            maxWidth = null,
+            jpegQuality = null
+        )
+        "small-size" -> args.copy(
+            workers = 2,
+            batchWorkers = 1,
+            optimize = true,
+            maxWidth = 1000,
+            jpegQuality = 75
+        )
+        else -> args
+    }
+}
+
 fun main(args: Array<String>) {
+    // Check for help flag first
+    if (args.contains("--help") || args.contains("-h")) {
+        printCustomHelp()
+        return
+    }
+
+    // Check for version flag
+    if (args.contains("--version") || args.contains("-v")) {
+        println("manga-combiner-cli v${AppVersion.NAME}")
+        return
+    }
+
     val parser = ArgParser("manga-combiner-cli v${AppVersion.NAME}", useDefaultHelpShortName = false)
-    val source by parser.option(ArgType.String, "source", "s", "Source URL, local file, or search query.").multiple()
-    val search by parser.option(ArgType.Boolean, "search", description = "Search for a series and print results.").default(false)
-    val scrape by parser.option(ArgType.Boolean, "scrape", description = "Scrape and download all series from the provided source URL (e.g., a list/genre page).").default(false)
-    val refreshCache by parser.option(ArgType.Boolean, "refresh-cache", description = "Force a new scrape, overwriting the existing cache. Use with --scrape.").default(false)
-    val downloadAll by parser.option(ArgType.Boolean, "download-all", description = "Download all results from a search. Must be used with --search.").default(false)
-    val ignoreCache by parser.option(ArgType.Boolean, "ignore-cache", description = "Force re-download of all chapters, ignoring existing cache.").default(false)
-    val cleanCache by parser.option(ArgType.Boolean, "clean-cache", description = "Delete a series' temporary folders after its download succeeds.").default(false)
-    val deleteCache by parser.option(ArgType.Boolean, "delete-cache", description = "Delete cached downloads and exit.").default(false)
-    val keep by parser.option(ArgType.String, "keep", description = "Pattern to keep when deleting cache (e.g., --keep 'One Piece'). Can be used multiple times.").multiple()
-    val remove by parser.option(ArgType.String, "remove", description = "Pattern to remove when deleting cache (e.g., --remove 'Jujutsu'). Can be used multiple times.").multiple()
-    val skipExisting by parser.option(ArgType.Boolean, "skip-existing", description = "Skip download if the output file already exists.").default(false)
-    val updateExisting by parser.option(ArgType.Boolean, "update-existing", description = "Update existing file with new chapters from the source URL.").default(false)
-    val redownloadExisting by parser.option(ArgType.Boolean, "redownload-existing", description = "Alias for --force.").default(false)
-    val force by parser.option(ArgType.Boolean, "force", "f", "Force overwrite/redownload of an existing file.").default(false)
-    val optimize by parser.option(ArgType.Boolean, "optimize", description = "Enable image optimizations to reduce file size (sets --max-image-width 1200, --jpeg-quality 85).\n\tWARNING: This will significantly increase processing time.").default(false)
-    val maxWidth by parser.option(ArgType.Int, "max-image-width", description = "Resize images to this maximum width in pixels.")
-    val jpegQuality by parser.option(ArgType.Int, "jpeg-quality", description = "Set JPEG compression quality (1-100).")
+
+    // ===== INPUT/SOURCE OPTIONS =====
+    val source by parser.option(
+        ArgType.String, "source", "s",
+        "Source URL, local file, or search query. Can be specified multiple times."
+    ).multiple()
+
+    // ===== SEARCH AND DISCOVERY =====
+    val search by parser.option(
+        ArgType.Boolean, "search",
+        description = "Search for manga series by name and display results."
+    ).default(false)
+
+    val scrape by parser.option(
+        ArgType.Boolean, "scrape",
+        description = "Scrape and batch download all series from a list/genre page URL."
+    ).default(false)
+
+    val downloadAll by parser.option(
+        ArgType.Boolean, "download-all",
+        description = "Automatically download all results from a search. Must be used with --search."
+    ).default(false)
+
+    // ===== OUTPUT OPTIONS =====
     val format by parser.option(
         ArgType.Choice(listOf("cbz", "epub"), { it }),
         "format",
-        description = "Output format for downloaded files."
+        description = "Output format for downloaded manga (default: epub)."
     ).default("epub")
-    val title by parser.option(ArgType.String, "title", "t", "Custom output file title.")
-    val outputPath by parser.option(ArgType.String, "output", "o", "Directory to save the final file.").default("")
-    val deleteOriginal by parser.option(ArgType.Boolean, "delete-original", description = "Delete source on success.").default(false)
-    val debug by parser.option(ArgType.Boolean, "debug", description = "Enable debug logging.").default(false)
-    val dryRun by parser.option(ArgType.Boolean, "dry-run", description = "Simulate operations without creating final files.").default(false)
-    val exclude by parser.option(ArgType.String, "exclude", "e", "Chapter URL slug to exclude.").multiple()
-    val workers by parser.option(ArgType.Int, "workers", "w", "Number of concurrent image download workers.").default(4)
-    val batchWorkers by parser.option(ArgType.Int, "batch-workers", "bw", "Number of concurrent series to process.").default(1)
-    val listUserAgents by parser.option(ArgType.Boolean, "list-user-agents", "list-uas", "List all available user-agent profiles and exit.").default(false)
-    val userAgentName by parser.option(ArgType.String, "user-agent", "ua", "Browser profile to impersonate. Use --list-user-agents for choices.").default("Chrome (Windows)")
-    val proxy by parser.option(ArgType.String, "proxy", description = "Proxy URL (e.g., http://host:port)")
-    val perWorkerUserAgent by parser.option(ArgType.Boolean, "per-worker-ua", description = "Use a different random user agent for each worker.").default(false)
-    val cacheDir by parser.option(ArgType.String, "cache-dir", description = "Specify a custom directory for cache and temporary files.")
-    val listSortOptions by parser.option(ArgType.Boolean, "list-sort-options", description = "List all available sort options and exit.").default(false)
-    val sortBy by parser.option(ArgType.String, "sort-by", description = "Sort series before batch downloading. Use --list-sort-options.").default("default")
+
+    val title by parser.option(
+        ArgType.String, "title", "t",
+        "Custom title for the output file (defaults to series name)."
+    )
+
+    val outputPath by parser.option(
+        ArgType.String, "output", "o",
+        "Directory to save downloaded files (defaults to Downloads folder)."
+    ).default("")
+
+    // ===== DOWNLOAD BEHAVIOR =====
+    val force by parser.option(
+        ArgType.Boolean, "force", "f",
+        "Force overwrite existing files without prompting."
+    ).default(false)
+
+    val redownloadExisting by parser.option(
+        ArgType.Boolean, "redownload-existing",
+        description = "Alias for --force. Force redownload even if file exists."
+    ).default(false)
+
+    val skipExisting by parser.option(
+        ArgType.Boolean, "skip-existing",
+        description = "Skip series if output file already exists (useful for batch downloads)."
+    ).default(false)
+
+    val updateExisting by parser.option(
+        ArgType.Boolean, "update-existing",
+        description = "Update existing files with new chapters only (experimental)."
+    ).default(false)
+
+    val exclude by parser.option(
+        ArgType.String, "exclude", "e",
+        "Exclude chapters by URL slug (e.g., 'chapter-4.5'). Can be used multiple times."
+    ).multiple()
+
+    val deleteOriginal by parser.option(
+        ArgType.Boolean, "delete-original",
+        description = "Delete source file after successful conversion (local files only)."
+    ).default(false)
+
+    // ===== CACHE MANAGEMENT =====
+    val ignoreCache by parser.option(
+        ArgType.Boolean, "ignore-cache",
+        description = "Force re-download all chapters, ignoring cached files."
+    ).default(false)
+
+    val cleanCache by parser.option(
+        ArgType.Boolean, "clean-cache",
+        description = "Delete temporary files after successful download to save disk space."
+    ).default(false)
+
+    val refreshCache by parser.option(
+        ArgType.Boolean, "refresh-cache",
+        description = "Force refresh of scraped series list. Use with --scrape."
+    ).default(false)
+
+    val deleteCache by parser.option(
+        ArgType.Boolean, "delete-cache",
+        description = "Delete cached downloads and exit. Use with --keep or --remove for selective deletion."
+    ).default(false)
+
+    val keep by parser.option(
+        ArgType.String, "keep",
+        description = "Pattern to keep when deleting cache (e.g., 'One Piece'). Can be used multiple times."
+    ).multiple()
+
+    val remove by parser.option(
+        ArgType.String, "remove",
+        description = "Pattern to remove when deleting cache (e.g., 'Naruto'). Can be used multiple times."
+    ).multiple()
+
+    val cacheDir by parser.option(
+        ArgType.String, "cache-dir",
+        description = "Custom directory for cache and temporary files."
+    )
+
+    // ===== IMAGE PROCESSING =====
+    val optimize by parser.option(
+        ArgType.Boolean, "optimize",
+        description = "Enable image optimization (reduces file size but increases processing time).\n" +
+                "\tSets: --max-image-width 1200 --jpeg-quality 85"
+    ).default(false)
+
+    val maxWidth by parser.option(
+        ArgType.Int, "max-image-width",
+        description = "Resize images wider than this value (in pixels)."
+    )
+
+    val jpegQuality by parser.option(
+        ArgType.Int, "jpeg-quality",
+        description = "JPEG compression quality (1-100, higher = better quality/larger size)."
+    )
+
+    val preset by parser.option(
+        ArgType.String, "preset",
+        description = "Use preset configuration: fast, quality, small-size"
+    )
+
+    // ===== PERFORMANCE/CONCURRENCY =====
+    val workers by parser.option(
+        ArgType.Int, "workers", "w",
+        "Number of concurrent image download workers per series (default: 4)."
+    ).default(4)
+
+    val batchWorkers by parser.option(
+        ArgType.Int, "batch-workers", "bw",
+        "Number of series to download concurrently (default: 1)."
+    ).default(1)
+
+    // ===== NETWORK CONFIGURATION =====
+    val userAgentName by parser.option(
+        ArgType.String, "user-agent", "ua",
+        "Browser profile to impersonate. Use --list-user-agents to see available options."
+    ).default("Chrome (Windows)")
+
+    val perWorkerUserAgent by parser.option(
+        ArgType.Boolean, "per-worker-ua",
+        description = "Use a different random user agent for each download worker."
+    ).default(false)
+
+    val proxy by parser.option(
+        ArgType.String, "proxy",
+        description = "HTTP proxy URL (e.g., http://localhost:8080)"
+    )
+
+    // ===== SORTING AND FILTERING =====
+    val sortBy by parser.option(
+        ArgType.String, "sort-by",
+        description = "Sort order for batch downloads. Use --list-sort-options to see choices."
+    ).default("default")
+
+    // ===== UTILITY/INFORMATION =====
+    val listUserAgents by parser.option(
+        ArgType.Boolean, "list-user-agents", "list-uas",
+        "List all available user-agent profiles and exit."
+    ).default(false)
+
+    val listSortOptions by parser.option(
+        ArgType.Boolean, "list-sort-options",
+        description = "List all available sort options and exit."
+    ).default(false)
+
+    val dryRun by parser.option(
+        ArgType.Boolean, "dry-run",
+        description = "Preview what would be downloaded without actually downloading."
+    ).default(false)
+
+    val version by parser.option(
+        ArgType.Boolean, "version", "v",
+        description = "Show version information and exit."
+    ).default(false)
+
+    // ===== DEBUGGING =====
+    val debug by parser.option(
+        ArgType.Boolean, "debug",
+        description = "Enable verbose debug logging."
+    ).default(false)
 
     try {
         parser.parse(args)
     } catch (e: Exception) {
-        println("Error parsing arguments: ${e.message}")
+        println("Error: ${e.message}")
+        println("\nTry 'manga-combiner --help' for more information.")
+        return
+    }
+
+    if (version) {
+        println("manga-combiner-cli v${AppVersion.NAME}")
         return
     }
 
@@ -379,6 +658,37 @@ fun main(args: Array<String>) {
         return
     }
 
+    // Validation
+    if (source.isEmpty() && !deleteCache) {
+        println("Error: At least one --source must be provided.")
+        println("\nTry 'manga-combiner --help' for usage examples.")
+        return
+    }
+
+    if (scrape && search) {
+        println("Error: --scrape and --search are mutually exclusive.")
+        println("\nTry 'manga-combiner --help' for usage examples.")
+        return
+    }
+
+    if (downloadAll && !search) {
+        println("Error: --download-all requires --search")
+        println("\nTry 'manga-combiner --help' for usage examples.")
+        return
+    }
+
+    if (listOf(force || redownloadExisting, skipExisting, updateExisting).count { it } > 1) {
+        println("Error: --force/--redownload-existing, --skip-existing, and --update-existing are mutually exclusive.")
+        println("\nTry 'manga-combiner --help' for more information.")
+        return
+    }
+
+    if (keep.isNotEmpty() && remove.isNotEmpty()) {
+        println("Error: --keep and --remove are mutually exclusive.")
+        println("\nTry 'manga-combiner --help' for more information.")
+        return
+    }
+
     val userAgentOptions = listOf("Random") + UserAgent.browsers.keys.toList()
     if (userAgentName !in userAgentOptions) {
         println("Error: Invalid user-agent '$userAgentName'.")
@@ -388,7 +698,16 @@ fun main(args: Array<String>) {
 
     val sortOptions = listOf("default", "chapters-asc", "chapters-desc", "alpha-asc", "alpha-desc")
     if (sortBy !in sortOptions) {
-        println("Error: Invalid sort option '$sortBy'. Use --list-sort-options to see available choices.")
+        println("Error: Invalid sort option '$sortBy'.")
+        println("Use --list-sort-options to see available choices.")
+        return
+    }
+
+    val currentPreset = preset // Read the delegated property into a local variable
+    val presetOptions = listOf("fast", "quality", "small-size")
+    if (currentPreset != null && currentPreset.lowercase() !in presetOptions) {
+        println("Error: Invalid preset '$currentPreset'.")
+        println("Available presets: ${presetOptions.joinToString(", ")}")
         return
     }
 
@@ -396,7 +715,20 @@ fun main(args: Array<String>) {
     val finalJpegQuality = jpegQuality ?: if (optimize) 85 else null
     val finalForce = force || redownloadExisting
 
-    val cliArgs = CliArguments(source, search, scrape, refreshCache, downloadAll, cleanCache, deleteCache, ignoreCache, keep, remove, skipExisting, updateExisting, format, title, outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers, userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize, finalMaxWidth, finalJpegQuality, sortBy, cacheDir)
+    var cliArgs = CliArguments(
+        source, search, scrape, refreshCache, downloadAll, cleanCache, deleteCache,
+        ignoreCache, keep, remove, skipExisting, updateExisting, format, title,
+        outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers,
+        userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize,
+        finalMaxWidth, finalJpegQuality, sortBy, cacheDir
+    )
+
+    // Apply preset if specified
+    if (currentPreset != null) {
+        cliArgs = applyPreset(currentPreset, cliArgs)
+        Logger.logInfo("Applied preset: $currentPreset")
+    }
+
     Logger.isDebugEnabled = cliArgs.debug
 
     // Custom Koin setup for CLI to inject the custom cache directory
@@ -420,19 +752,6 @@ fun main(args: Array<String>) {
     val cacheService: CacheService = get(CacheService::class.java)
     val scrapeCacheService: ScrapeCacheService = get(ScrapeCacheService::class.java)
 
-    if (cliArgs.scrape && cliArgs.search) {
-        println("Error: --scrape and --search are mutually exclusive.")
-        return
-    }
-    if (listOf(cliArgs.force, cliArgs.skipExisting, cliArgs.updateExisting).count { it } > 1) {
-        println("Error: --force/--redownload-existing, --skip-existing, and --update-existing are mutually exclusive.")
-        return
-    }
-    if (cliArgs.keep.isNotEmpty() && cliArgs.remove.isNotEmpty()) {
-        println("Error: --keep and --remove are mutually exclusive.")
-        return
-    }
-
     if (cliArgs.deleteCache) {
         val allSeries = cacheService.getCacheContents()
         val seriesToDelete = when {
@@ -455,11 +774,6 @@ fun main(args: Array<String>) {
         }
         val pathsToDelete = seriesToDelete.map { it.path }
         cacheService.deleteCacheItems(pathsToDelete)
-        return
-    }
-
-    if (cliArgs.source.isEmpty()) {
-        println("Error: At least one --source must be provided.")
         return
     }
 
