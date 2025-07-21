@@ -13,6 +13,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -68,7 +69,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Set up edge-to-edge display for modern Android versions
+        // Enable edge-to-edge display using the modern approach
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         // Set up file picker request handling
@@ -113,7 +114,7 @@ class MainActivity : AppCompatActivity() {
                     val isLightTheme = MaterialTheme.colors.isLight
 
                     SideEffect {
-                        configureStatusBar(surfaceColor.toArgb(), isLightTheme)
+                        configureStatusBar(surfaceColor, isLightTheme)
                     }
 
                     MainScreen(viewModel)
@@ -123,29 +124,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Configures the status bar appearance using the modern WindowInsetsController API
-     * for Android API 30+ and falls back to legacy methods for older versions.
+     * Configures the status bar appearance using the modern approach that avoids all deprecated APIs.
+     * Uses WindowInsetsController for consistent behavior across Android versions.
      */
-    private fun configureStatusBar(surfaceColor: Int, isLightTheme: Boolean) {
+    private fun configureStatusBar(surfaceColor: Color, isLightTheme: Boolean) {
         val window = this.window
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
 
-        // Use modern API for Android 11+ (API 30+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Set status bar color using modern approach
-            window.statusBarColor = surfaceColor
-            insetsController.isAppearanceLightStatusBars = isLightTheme
-        } else {
-            // Fallback for older Android versions (API 23-29)
-            @Suppress("DEPRECATION")
-            window.statusBarColor = surfaceColor
+        // Configure status bar appearance without using deprecated APIs
+        insetsController.isAppearanceLightStatusBars = isLightTheme
 
-            // Configure light/dark status bar icons
-            insetsController.isAppearanceLightStatusBars = isLightTheme
-        }
+        // Configure system bars behavior for better UX
+        insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
 
-        // Ensure proper status bar behavior
-        insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        Logger.logDebug { "Configured status bar for ${if (isLightTheme) "light" else "dark"} theme" }
     }
 
     /**
@@ -203,7 +195,7 @@ class MainActivity : AppCompatActivity() {
             result = uri.path
             val cut = result?.lastIndexOf('/')
             if (cut != -1 && cut != null) {
-                result = result?.substring(cut + 1)
+                result = result.substring(cut + 1)
             }
         }
 

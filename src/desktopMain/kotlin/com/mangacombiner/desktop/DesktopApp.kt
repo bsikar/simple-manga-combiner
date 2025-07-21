@@ -4,6 +4,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -11,7 +14,6 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -27,8 +29,10 @@ import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.widget.AboutDialog
+import com.mangacombiner.util.Logger
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
+import org.jetbrains.skia.Image
 import java.awt.Desktop
 import java.awt.FileDialog
 import java.awt.Frame
@@ -37,6 +41,11 @@ import java.io.File
 import java.util.Locale
 import javax.imageio.ImageIO
 
+/**
+ * Main entry point for the desktop application.
+ * Handles Koin dependency injection, platform-specific configurations,
+ * and provides file picker integration for desktop platforms.
+ */
 fun main() {
     startKoin {
         modules(appModule, platformModule())
@@ -53,23 +62,46 @@ fun main() {
         Desktop.getDesktop().setAboutHandler {
             viewModel.onEvent(Event.ToggleAboutDialog(true))
         }
+        Logger.logDebug { "Configured macOS-specific settings" }
     }
 
     application {
         val state by viewModel.state.collectAsState()
         val windowState = rememberWindowState(size = DpSize(1280.dp, 800.dp))
 
-        // Set the default icon
-        val windowIcon = painterResource("icon_desktop.png")
+        // Load the application icon using the modern approach
+        val windowIcon = remember {
+            try {
+                val resourceStream = this::class.java.classLoader.getResourceAsStream("icon_desktop.png")
+                if (resourceStream != null) {
+                    val bytes = resourceStream.readBytes()
+                    BitmapPainter(Image.makeFromEncoded(bytes).toComposeImageBitmap())
+                } else {
+                    Logger.logError("Could not find icon_desktop.png resource")
+                    null
+                }
+            } catch (e: Exception) {
+                Logger.logError("Failed to load window icon", e)
+                null
+            }
+        }
 
-        // This effect sets the app icon in the macOS Dock or Windows Taskbar
-        LaunchedEffect(Unit) { // Run only once
+        // Set the taskbar/dock icon (platform-specific)
+        LaunchedEffect(Unit) {
             if (Taskbar.isTaskbarSupported()) {
                 try {
-                    Taskbar.getTaskbar().iconImage = ImageIO.read(this::class.java.classLoader.getResourceAsStream("icon_desktop.png"))
+                    val iconStream = this::class.java.classLoader.getResourceAsStream("icon_desktop.png")
+                    if (iconStream != null) {
+                        Taskbar.getTaskbar().iconImage = ImageIO.read(iconStream)
+                        Logger.logDebug { "Successfully set taskbar icon" }
+                    } else {
+                        Logger.logError("Could not find icon_desktop.png for taskbar")
+                    }
                 } catch (e: Exception) {
-                    System.err.println("Failed to set taskbar icon: ${e.message}")
+                    Logger.logError("Failed to set taskbar icon", e)
                 }
+            } else {
+                Logger.logDebug { "Taskbar icon setting not supported on this platform" }
             }
         }
 
@@ -77,12 +109,12 @@ fun main() {
             onCloseRequest = ::exitApplication,
             title = "Manga Combiner",
             state = windowState,
-            icon = windowIcon, // This sets the icon for the window's title bar
-            onKeyEvent = {
-                if (it.type == KeyEventType.KeyDown) {
-                    val isModifierPressed = if (isMac) it.isMetaPressed else it.isCtrlPressed
+            icon = windowIcon, // Use the loaded icon or null if loading failed
+            onKeyEvent = { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    val isModifierPressed = if (isMac) keyEvent.isMetaPressed else keyEvent.isCtrlPressed
                     if (isModifierPressed) {
-                        when (it.key) {
+                        when (keyEvent.key) {
                             Key.Equals, Key.Plus -> {
                                 viewModel.onEvent(Event.Settings.ZoomIn)
                                 true
@@ -101,7 +133,7 @@ fun main() {
                 } else false
             }
         ) {
-            // Add a LaunchedEffect to handle file picker dialogs from the ViewModel
+            // Handle file picker dialogs from the ViewModel
             LaunchedEffect(Unit) {
                 viewModel.filePickerRequest.collect { request ->
                     when (request) {
@@ -109,11 +141,17 @@ fun main() {
                             val path = showFilePickerAwt("Select EPUB or CBZ File") { _, name ->
                                 name.endsWith(".cbz", true) || name.endsWith(".epub", true)
                             }
-                            path?.let { viewModel.onFileSelected(it) }
+                            path?.let {
+                                viewModel.onFileSelected(it)
+                                Logger.logDebug { "User selected file: $it" }
+                            }
                         }
                         is FilePickerRequest.OpenFolder -> {
                             val path = showFolderPickerAwt("Select Folder")
-                            path?.let { viewModel.onFolderSelected(it, request.forPath) }
+                            path?.let {
+                                viewModel.onFolderSelected(it, request.forPath)
+                                Logger.logDebug { "User selected folder: $it" }
+                            }
                         }
                     }
                 }
@@ -130,6 +168,7 @@ fun main() {
                 }
             }
 
+            // Calculate scaling factors for UI elements
             val density = LocalDensity.current
             val fontMultiplier = when (state.fontSizePreset) {
                 "XX-Small" -> 0.5f
@@ -140,6 +179,7 @@ fun main() {
                 "XX-Large" -> 1.45f
                 else -> 1.0f // Medium
             }
+
             val newDensity = Density(
                 density.density * state.zoomFactor,
                 density.fontScale * state.zoomFactor * fontMultiplier
@@ -151,6 +191,7 @@ fun main() {
                 }
             }
 
+            // Show about dialog when requested
             if (state.showAboutDialog) {
                 AboutDialog(
                     onDismissRequest = { viewModel.onEvent(Event.ToggleAboutDialog(false)) }
@@ -160,23 +201,52 @@ fun main() {
     }
 }
 
+/**
+ * Shows a native file picker dialog using AWT FileDialog.
+ * Provides cross-platform file selection with optional filtering.
+ */
 private fun showFilePickerAwt(title: String, filter: ((File, String) -> Boolean)? = null): String? {
-    val dialog = FileDialog(null as Frame?, title, FileDialog.LOAD).apply {
-        if (filter != null) {
-            setFilenameFilter(filter)
+    return try {
+        val dialog = FileDialog(null as Frame?, title, FileDialog.LOAD).apply {
+            if (filter != null) {
+                setFilenameFilter(filter)
+            }
+            isVisible = true
         }
-        isVisible = true
-    }
-    return if (dialog.directory != null && dialog.file != null) {
-        File(dialog.directory, dialog.file).absolutePath
-    } else {
+
+        if (dialog.directory != null && dialog.file != null) {
+            File(dialog.directory, dialog.file).absolutePath
+        } else {
+            null
+        }
+    } catch (e: Exception) {
+        Logger.logError("Failed to show file picker dialog", e)
         null
     }
 }
 
+/**
+ * Shows a native folder picker dialog using AWT FileDialog.
+ * On macOS, uses the fileDialogForDirectories system property for folder selection.
+ */
 private fun showFolderPickerAwt(title: String): String? {
-    System.setProperty("apple.awt.fileDialogForDirectories", "true")
-    val path = showFilePickerAwt(title)
-    System.setProperty("apple.awt.fileDialogForDirectories", "false")
-    return path
+    return try {
+        // Enable directory selection mode on macOS
+        val originalValue = System.getProperty("apple.awt.fileDialogForDirectories")
+        System.setProperty("apple.awt.fileDialogForDirectories", "true")
+
+        val path = showFilePickerAwt(title)
+
+        // Restore original property value
+        if (originalValue != null) {
+            System.setProperty("apple.awt.fileDialogForDirectories", originalValue)
+        } else {
+            System.clearProperty("apple.awt.fileDialogForDirectories")
+        }
+
+        path
+    } catch (e: Exception) {
+        Logger.logError("Failed to show folder picker dialog", e)
+        null
+    }
 }
