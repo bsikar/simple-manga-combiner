@@ -248,7 +248,7 @@ class WebDavService {
 
     /**
      * Converts a WebDAV response entry to a WebDavFile object with proper path handling.
-     * Handles URL decoding and relative path computation for cross-platform compatibility.
+     * Handles URL decoding, relative path computation, and multiple propstat entries.
      */
     private fun WebDavResponse.toWebDavFile(baseUrl: String): WebDavFile? {
         val decodedHref = try {
@@ -279,9 +279,19 @@ class WebDavService {
             return null
         }
 
+        // Get the successful propstat (status 200) or first available
+        val propstat = successfulPropstat ?: return null
+
         val fileName = pathSegment.trimEnd('/').substringAfterLast('/')
         val isDirectory = propstat.prop.resourceType.collection != null
-        val fileSize = propstat.prop.contentLength ?: 0L
+        val fileSize = propstat.prop.contentLength // Now non-nullable, defaults to 0L
+
+        // Log status information for debugging
+        propstat.status?.let { status ->
+            if (!status.contains("200")) {
+                Logger.logDebug { "WebDAV resource '$fileName' has non-success status: $status" }
+            }
+        }
 
         return WebDavFile(
             name = fileName,
