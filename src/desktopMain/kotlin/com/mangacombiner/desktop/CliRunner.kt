@@ -15,6 +15,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import org.jsoup.Jsoup
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
@@ -354,11 +355,11 @@ private suspend fun processLocalFile(
 
 /**
  * Handles metadata update for a single EPUB file.
- * Requires both an EPUB file and a source URL for metadata extraction.
+ * Can work with just an EPUB file (extracts source URL from metadata) or with both EPUB and source URL.
  */
 private suspend fun processMetadataUpdate(
     epubPath: String,
-    sourceUrl: String,
+    sourceUrlOverride: String?,
     cliArgs: CliArguments,
     scraperService: ScraperService,
     processorService: ProcessorService
@@ -370,12 +371,112 @@ private suspend fun processMetadataUpdate(
         return
     }
 
-    if (!sourceUrl.startsWith("http", ignoreCase = true)) {
-        Logger.logError("Source URL must be a valid HTTP/HTTPS URL for metadata updates: $sourceUrl")
-        return
+    // Determine the source URL to use
+    val sourceUrl = sourceUrlOverride ?: run {
+        Logger.logInfo("No source URL provided, attempting to extract from EPUB metadata...")
+        val extractedUrl = extractSourceUrlFromEpub(epubFile)
+        if (extractedUrl == null) {
+            Logger.logError("Could not extract source URL from EPUB metadata.")
+            Logger.logError("Please provide a source URL: manga-combiner --source \"$epubPath\" --source \"https://example.com/series\" --update-metadata")
+            return
+        } else {
+            Logger.logInfo("Found source URL in EPUB metadata: $extractedUrl")
+            extractedUrl
+        }
     }
 
     updateEpubMetadata(epubFile, sourceUrl, cliArgs, scraperService, processorService)
+}
+
+/**
+ * Extracts the source URL from existing EPUB metadata.
+ * Returns null if no source URL is found in the metadata.
+ */
+private fun extractSourceUrlFromEpub(epubFile: File): String? {
+    return try {
+        Logger.logDebug { "Extracting source URL from EPUB: ${epubFile.name}" }
+
+        val tempDir = File.createTempFile("epub-source-extract-", "-temp").apply {
+            delete()
+            mkdirs()
+        }
+
+        try {
+            // Extract EPUB to temporary directory
+            ZipInputStream(FileInputStream(epubFile)).use { zipIn ->
+                var entry = zipIn.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && (entry.name.endsWith(".opf") || entry.name.contains("container.xml"))) {
+                        val filePath = File(tempDir, entry.name)
+                        filePath.parentFile?.mkdirs()
+                        FileOutputStream(filePath).use { output ->
+                            zipIn.copyTo(output)
+                        }
+                    }
+                    zipIn.closeEntry()
+                    entry = zipIn.nextEntry
+                }
+            }
+
+            // Find and parse the OPF file
+            val opfFile = findEpubOpfFileInTemp(tempDir)
+            if (opfFile != null && opfFile.exists()) {
+                val opfContent = opfFile.readText()
+                val document = org.jsoup.Jsoup.parse(opfContent, "", org.jsoup.parser.Parser.xmlParser())
+
+                // Look for source URL in various metadata locations
+                val sourceUrl = document.selectFirst("metadata source, metadata dc\\:source")?.text()?.trim()
+                    ?: document.selectFirst("metadata identifier[scheme=URI], metadata dc\\:identifier[scheme=URI]")?.text()?.trim()
+                    ?: document.selectFirst("metadata description, metadata dc\\:description")?.text()
+                        ?.lines()?.find { it.trim().startsWith("Source:") }
+                        ?.substringAfter("Source:")?.trim()
+
+                if (!sourceUrl.isNullOrBlank() && sourceUrl.startsWith("http", ignoreCase = true)) {
+                    Logger.logDebug { "Successfully extracted source URL: $sourceUrl" }
+                    return sourceUrl
+                }
+            }
+
+            Logger.logDebug { "No source URL found in EPUB metadata" }
+            null
+
+        } finally {
+            tempDir.deleteRecursively()
+        }
+
+    } catch (e: Exception) {
+        Logger.logError("Error extracting source URL from EPUB: ${e.message}", e)
+        null
+    }
+}
+
+/**
+ * Helper function to find OPF file in temporary extraction directory.
+ */
+private fun findEpubOpfFileInTemp(tempDir: File): File? {
+    // Check container.xml first
+    val containerFile = File(tempDir, "META-INF/container.xml")
+    if (containerFile.exists()) {
+        try {
+            val containerContent = containerFile.readText()
+            val containerDoc = org.jsoup.Jsoup.parse(containerContent, "", org.jsoup.parser.Parser.xmlParser())
+            val rootfileElement = containerDoc.selectFirst("rootfile")
+            val fullPath = rootfileElement?.attr("full-path")
+            if (!fullPath.isNullOrBlank()) {
+                val opfFile = File(tempDir, fullPath)
+                if (opfFile.exists()) {
+                    return opfFile
+                }
+            }
+        } catch (e: Exception) {
+            Logger.logDebug { "Could not parse container.xml: ${e.message}" }
+        }
+    }
+
+    // Fall back to finding .opf files
+    return tempDir.walkTopDown()
+        .filter { it.isFile && it.extension == "opf" }
+        .firstOrNull()
 }
 
 // Data class to hold parsed CLI arguments
@@ -572,11 +673,14 @@ UTILITY:
   --help                          Show this help message
 
 METADATA UPDATE USAGE:
-  # Update metadata for a single EPUB file
+  # Simple update (uses source URL from EPUB metadata)
+  manga-combiner --source my-series.epub --update-metadata
+  
+  # Override source URL (uses provided URL instead of EPUB metadata)
   manga-combiner --source my-series.epub --source https://example.com/manga/series --update-metadata
   
-  # The first --source should be the EPUB file path
-  # The second --source should be the URL to scrape metadata from
+  # The EPUB file should be created by manga-combiner (contains source URL in metadata)
+  # If no source URL found in EPUB, you'll need to provide it manually
   # This will update the EPUB with cover image, title, authors, genres, etc.
     """.trimIndent()
 
@@ -866,11 +970,11 @@ fun main(args: Array<String>) {
 
     // NEW: Validation for metadata update
     if (updateMetadata) {
-        if (source.size < 2) {
-            println("Error: --update-metadata requires exactly two sources:")
-            println("  First source: path to EPUB file")
-            println("  Second source: URL to scrape metadata from")
-            println("\nExample: manga-combiner --source my-manga.epub --source https://example.com/manga/series --update-metadata")
+        if (source.isEmpty()) {
+            println("Error: --update-metadata requires at least one source (EPUB file path)")
+            println("Usage:")
+            println("  manga-combiner --source my-manga.epub --update-metadata")
+            println("  manga-combiner --source my-manga.epub --source https://example.com/series --update-metadata")
             println("\nTry 'manga-combiner --help' for more information.")
             return
         }
@@ -886,8 +990,16 @@ fun main(args: Array<String>) {
             return
         }
 
-        if (!source[1].startsWith("http", ignoreCase = true)) {
+        // If second source provided, validate it's a URL
+        if (source.size > 1 && !source[1].startsWith("http", ignoreCase = true)) {
             println("Error: Second source must be a valid HTTP/HTTPS URL: ${source[1]}")
+            return
+        }
+
+        // Limit to maximum 2 sources for metadata update
+        if (source.size > 2) {
+            println("Error: --update-metadata accepts maximum 2 sources (EPUB file and optional source URL)")
+            println("Provided ${source.size} sources: ${source.joinToString(", ")}")
             return
         }
     }
@@ -996,9 +1108,10 @@ fun main(args: Array<String>) {
         // Handle metadata update operation
         if (cliArgs.updateMetadata) {
             Logger.logInfo("--- Starting metadata update operation ---")
+            val sourceUrlOverride = if (cliArgs.source.size > 1) cliArgs.source[1] else null
             processMetadataUpdate(
                 epubPath = cliArgs.source[0],
-                sourceUrl = cliArgs.source[1],
+                sourceUrlOverride = sourceUrlOverride,
                 cliArgs = cliArgs,
                 scraperService = scraperService,
                 processorService = processorService
