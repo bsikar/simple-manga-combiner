@@ -146,8 +146,13 @@ sealed interface Event {
         data class ToggleIncludeHidden(val include: Boolean) : WebDav
         data class ToggleFileSelection(val fileHref: String, val isSelected: Boolean) : WebDav
         data class NavigateTo(val file: WebDavFile) : WebDav
+        data class UpdateFilterQuery(val query: String) : WebDav
+        data class SetSort(val sortState: CacheSortState) : WebDav
         object NavigateBack : WebDav
         object Connect : WebDav
         object DownloadSelected : WebDav
+        object CancelDownload : WebDav
+        object SelectAll : WebDav
+        object DeselectAll : WebDav
     }
 }

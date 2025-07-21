@@ -73,10 +73,14 @@ data class UiState(
     val isDownloadingFromWebDav: Boolean = false,
     val webDavDownloadProgress: Float = 0f,
     val webDavStatus: String = "",
+    val webDavFileCache: Map<String, WebDavFile> = emptyMap(),
     val webDavFiles: List<WebDavFile> = emptyList(),
     val webDavSelectedFiles: Set<String> = emptySet(),
     val webDavError: String? = null,
     val webDavIncludeHidden: Boolean = false,
+    val webDavSortState: CacheSortState = CacheSortState(SortCriteria.NAME, SortDirection.ASC),
+    val webDavFilterQuery: String = "",
+    val webDavFolderSizes: Map<String, Long?> = emptyMap(),
 
     // Persisted Settings (Defaults point to AppSettings.Defaults)
     val theme: AppTheme = AppSettings.Defaults.THEME,

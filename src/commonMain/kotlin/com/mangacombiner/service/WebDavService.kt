@@ -83,6 +83,66 @@ class WebDavService {
         }
     }
 
+    suspend fun scanDirectoryRecursively(
+        fullUrl: String,
+        user: String?,
+        pass: String?,
+        includeHidden: Boolean
+    ): Result<List<WebDavFile>> = withContext(Dispatchers.IO) {
+        try {
+            val allFiles = mutableListOf<WebDavFile>()
+            traverseAndCollectFiles(fullUrl, user, pass, allFiles, mutableSetOf(), 0, includeHidden)
+            Result.success(allFiles.filter { !it.isDirectory })
+        } catch (e: Exception) {
+            Logger.logError("Failed to recursively scan directory: $fullUrl", e)
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun traverseAndCollectFiles(
+        directoryUrl: String,
+        user: String?,
+        pass: String?,
+        allFiles: MutableList<WebDavFile>,
+        visitedUrls: MutableSet<String>,
+        depth: Int,
+        includeHidden: Boolean,
+        maxDepth: Int = 20
+    ) {
+        if (depth > maxDepth || !visitedUrls.add(directoryUrl)) return
+
+        val client = createHttpClient(null)
+        try {
+            val response = client.request(directoryUrl) {
+                method = HttpMethod("PROPFIND")
+                header("Depth", "1")
+                getAuthHeader(user, pass)?.let { header(HttpHeaders.Authorization, it) }
+                header(HttpHeaders.UserAgent, "MangaCombiner-WebDAV/1.0")
+                setBody("""<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:prop><D:displayname/><D:getcontentlength/><D:resourcetype/></D:prop></D:propfind>""")
+            }
+            if (!response.status.isSuccess()) return
+
+            val multiStatus = xml.decodeFromString(WebDavMultiStatus.serializer(), response.body<String>())
+            val serverUri = URI(directoryUrl)
+            val serverRoot = "${serverUri.scheme}://${serverUri.authority}"
+
+            val itemsInDir = multiStatus.responses
+                .mapNotNull { it.toWebDavFile(directoryUrl) }
+                .filter { includeHidden || !it.name.startsWith('.') }
+
+            allFiles.addAll(itemsInDir)
+
+            val subdirectories = itemsInDir.filter { it.isDirectory }
+            for (subdir in subdirectories) {
+                val subdirUrl = serverRoot + subdir.href
+                traverseAndCollectFiles(subdirUrl, user, pass, allFiles, visitedUrls, depth + 1, includeHidden, maxDepth)
+            }
+        } finally {
+            client.close()
+        }
+    }
+
+
     suspend fun downloadFile(
         fullUrl: String,
         user: String?,
