@@ -1,5 +1,6 @@
 package com.mangacombiner.ui.viewmodel
 
+import com.mangacombiner.service.WebDavFile
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.state.CacheSortState
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
@@ -142,7 +143,10 @@ sealed interface Event {
         data class UpdateUrl(val url: String) : WebDav
         data class UpdateUser(val user: String) : WebDav
         data class UpdatePass(val pass: String) : WebDav
-        data class ToggleFileSelection(val filePath: String, val isSelected: Boolean) : WebDav
+        data class ToggleIncludeHidden(val include: Boolean) : WebDav
+        data class ToggleFileSelection(val fileHref: String, val isSelected: Boolean) : WebDav
+        data class NavigateTo(val file: WebDavFile) : WebDav
+        object NavigateBack : WebDav
         object Connect : WebDav
         object DownloadSelected : WebDav
     }

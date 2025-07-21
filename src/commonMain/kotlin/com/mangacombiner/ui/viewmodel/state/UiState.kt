@@ -76,6 +76,7 @@ data class UiState(
     val webDavFiles: List<WebDavFile> = emptyList(),
     val webDavSelectedFiles: Set<String> = emptySet(),
     val webDavError: String? = null,
+    val webDavIncludeHidden: Boolean = false,
 
     // Persisted Settings (Defaults point to AppSettings.Defaults)
     val theme: AppTheme = AppSettings.Defaults.THEME,
