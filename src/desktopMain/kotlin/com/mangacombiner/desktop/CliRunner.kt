@@ -21,6 +21,9 @@ import org.koin.dsl.module
 import org.koin.java.KoinJavaComponent.get
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.util.zip.*
+import java.io.*
+import java.net.URI
 import kotlin.random.Random
 
 /**
@@ -169,6 +172,137 @@ private suspend fun downloadSeriesToCache(
 }
 
 /**
+ * Updates the metadata of an existing EPUB file with information scraped from a source URL.
+ * This includes cover image, title, authors, and other series metadata.
+ *
+ * @param epubFile The existing EPUB file to update
+ * @param sourceUrl The URL to scrape metadata from
+ * @param cliArgs CLI arguments containing proxy and user agent settings
+ * @param scraperService Service for scraping series metadata
+ * @param processorService Service for EPUB processing and metadata updates
+ */
+private suspend fun updateEpubMetadata(
+    epubFile: File,
+    sourceUrl: String,
+    cliArgs: CliArguments,
+    scraperService: ScraperService,
+    processorService: ProcessorService
+) {
+    Logger.logInfo("--- Updating metadata for: ${epubFile.name} ---")
+
+    if (!epubFile.exists()) {
+        Logger.logError("EPUB file does not exist: ${epubFile.absolutePath}")
+        return
+    }
+
+    if (!epubFile.name.endsWith(".epub", ignoreCase = true)) {
+        Logger.logError("File is not an EPUB: ${epubFile.name}")
+        return
+    }
+
+    if (cliArgs.dryRun) {
+        Logger.logInfo("DRY RUN: Would update metadata for ${epubFile.name} using source: $sourceUrl")
+        return
+    }
+
+    val client = createHttpClient(cliArgs.proxy)
+    try {
+        // Get user agent for scraping
+        val userAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
+        Logger.logInfo("Scraping metadata from source: $sourceUrl")
+
+        // Use the existing fetchSeriesDetails method to get both metadata and chapters
+        val (seriesMetadata, _) = scraperService.fetchSeriesDetails(client, sourceUrl, userAgent)
+
+        Logger.logInfo("Successfully scraped metadata for: ${seriesMetadata.title}")
+        Logger.logInfo("Found ${seriesMetadata.authors?.size ?: 0} author(s), ${seriesMetadata.artists?.size ?: 0} artist(s), ${seriesMetadata.genres?.size ?: 0} genre(s)")
+
+        // Create backup of original file
+        val backupFile = File(epubFile.parent, "${epubFile.nameWithoutExtension}.backup.epub")
+        if (!backupFile.exists()) {
+            Logger.logInfo("Creating backup: ${backupFile.name}")
+            epubFile.copyTo(backupFile, overwrite = false)
+        }
+
+        // Update the EPUB metadata
+        val success = processorService.updateEpubMetadata(
+            epubFile = epubFile,
+            seriesMetadata = seriesMetadata,
+            sourceUrl = sourceUrl
+        )
+
+        if (success) {
+            Logger.logInfo("Successfully updated metadata for: ${epubFile.name}")
+            Logger.logInfo("Updated title: ${seriesMetadata.title}")
+
+            // Log updated metadata details
+            seriesMetadata.authors?.let { authors ->
+                if (authors.isNotEmpty()) {
+                    Logger.logInfo("Updated authors: ${authors.joinToString(", ")}")
+                }
+            }
+
+            seriesMetadata.artists?.let { artists ->
+                if (artists.isNotEmpty()) {
+                    Logger.logInfo("Updated artists: ${artists.joinToString(", ")}")
+                }
+            }
+
+            seriesMetadata.genres?.let { genres ->
+                if (genres.isNotEmpty()) {
+                    Logger.logInfo("Updated genres: ${genres.joinToString(", ")}")
+                }
+            }
+
+            seriesMetadata.coverImageUrl?.let { coverUrl ->
+                Logger.logInfo("Updated cover image from: $coverUrl")
+            }
+
+            // Log additional metadata if available
+            seriesMetadata.status?.let { status ->
+                Logger.logInfo("Series status: $status")
+            }
+
+            seriesMetadata.type?.let { type ->
+                Logger.logInfo("Series type: $type")
+            }
+
+            seriesMetadata.release?.let { release ->
+                Logger.logInfo("Release year: $release")
+            }
+
+        } else {
+            Logger.logError("Failed to update metadata for: ${epubFile.name}")
+
+            // Restore from backup if update failed
+            if (backupFile.exists()) {
+                Logger.logInfo("Restoring from backup due to update failure...")
+                backupFile.copyTo(epubFile, overwrite = true)
+                backupFile.delete()
+            }
+        }
+
+    } catch (e: Exception) {
+        Logger.logError("Error updating metadata for ${epubFile.name}: ${e.message}", e)
+
+        // Restore from backup on exception
+        val backupFile = File(epubFile.parent, "${epubFile.nameWithoutExtension}.backup.epub")
+        if (backupFile.exists()) {
+            Logger.logInfo("Restoring from backup due to error...")
+            try {
+                backupFile.copyTo(epubFile, overwrite = true)
+                backupFile.delete()
+                Logger.logInfo("Successfully restored from backup")
+            } catch (restoreException: Exception) {
+                Logger.logError("Failed to restore from backup: ${restoreException.message}")
+            }
+        }
+    } finally {
+        client.close()
+    }
+}
+
+/**
  * Handles processing of a single local file.
  */
 private suspend fun processLocalFile(
@@ -218,6 +352,32 @@ private suspend fun processLocalFile(
     }
 }
 
+/**
+ * Handles metadata update for a single EPUB file.
+ * Requires both an EPUB file and a source URL for metadata extraction.
+ */
+private suspend fun processMetadataUpdate(
+    epubPath: String,
+    sourceUrl: String,
+    cliArgs: CliArguments,
+    scraperService: ScraperService,
+    processorService: ProcessorService
+) {
+    val epubFile = File(epubPath)
+
+    if (!epubFile.exists()) {
+        Logger.logError("EPUB file not found: $epubPath")
+        return
+    }
+
+    if (!sourceUrl.startsWith("http", ignoreCase = true)) {
+        Logger.logError("Source URL must be a valid HTTP/HTTPS URL for metadata updates: $sourceUrl")
+        return
+    }
+
+    updateEpubMetadata(epubFile, sourceUrl, cliArgs, scraperService, processorService)
+}
+
 // Data class to hold parsed CLI arguments
 data class CliArguments(
     val source: List<String>,
@@ -232,6 +392,7 @@ data class CliArguments(
     val remove: List<String>,
     val skipExisting: Boolean,
     val update: Boolean,
+    val updateMetadata: Boolean, // New field for metadata updates
     val format: String,
     val title: String?,
     val outputPath: String,
@@ -347,6 +508,9 @@ EXAMPLES:
   # Update a local EPUB file with the latest chapters from its source URL
   manga-combiner --source my-manga.epub --update
 
+  # Update metadata of an existing EPUB file
+  manga-combiner --source my-manga.epub --update-metadata --source https://example.com/manga/series-url
+
   # Use a preset for optimized small files
   manga-combiner --source https://example.com/manga/series --preset small-size
 
@@ -354,57 +518,66 @@ INPUT OPTIONS:
   -s, --source <URL|FILE|QUERY>   Source URL, local EPUB file, or search query (can be used multiple times)
 
 DISCOVERY & SEARCH:
-  --search                      Search for manga by name and display results
-  --scrape                      Batch download all series from a list/genre page
-  --download-all                Download all search results (use with --search)
+  --search                        Search for manga by name and display results
+  --scrape                        Batch download all series from a list/genre page
+  --download-all                  Download all search results (use with --search)
 
 OUTPUT OPTIONS:
-  --format <epub>               Output format (default: epub)
-  -t, --title <NAME>            Custom title for output file
-  -o, --output <DIR>            Output directory (default: Downloads)
+  --format <epub>                 Output format (default: epub)
+  -t, --title <NAME>              Custom title for output file
+  -o, --output <DIR>              Output directory (default: Downloads)
 
 DOWNLOAD BEHAVIOR:
-  -f, --force                   Force overwrite existing files
-  --redownload-existing         Alias for --force
-  --skip-existing               Skip if output file exists (good for batch)
-  --update                      Update an existing EPUB with new chapters
-  -e, --exclude <SLUG>          Exclude chapters by slug (e.g., 'chapter-4.5'). Can be used multiple times.
-  --delete-original             Delete source file after successful conversion (local files only)
+  -f, --force                     Force overwrite existing files
+  --redownload-existing           Alias for --force
+  --skip-existing                 Skip if output file exists (good for batch)
+  --update                        Update an existing EPUB with new chapters
+  --update-metadata               Update metadata of existing EPUB using scraped series data
+  -e, --exclude <SLUG>            Exclude chapters by slug (e.g., 'chapter-4.5'). Can be used multiple times.
+  --delete-original               Delete source file after successful conversion (local files only)
 
 CACHE MANAGEMENT:
-  --ignore-cache                Force re-download all chapters
-  --clean-cache                 Delete temp files after successful download to save disk space
-  --refresh-cache               Force refresh scraped series list (with --scrape)
-  --delete-cache                Delete cached downloads and exit. Use with --keep or --remove for selective deletion.
-  --keep <PATTERN>              Keep matching series when deleting cache
-  --remove <PATTERN>            Remove matching series when deleting cache
-  --cache-dir <DIR>             Custom cache directory
+  --ignore-cache                  Force re-download all chapters
+  --clean-cache                   Delete temp files after successful download to save disk space
+  --refresh-cache                 Force refresh scraped series list (with --scrape)
+  --delete-cache                  Delete cached downloads and exit. Use with --keep or --remove for selective deletion.
+  --keep <PATTERN>                Keep matching series when deleting cache
+  --remove <PATTERN>              Remove matching series when deleting cache
+  --cache-dir <DIR>               Custom cache directory
 
 IMAGE OPTIMIZATION:
-  --optimize                    Enable image optimization (slower but smaller files)
-  --max-image-width <PIXELS>    Resize images to max width
-  --jpeg-quality <1-100>        JPEG compression quality
-  --preset <NAME>               Use preset: fast, quality, small-size
+  --optimize                      Enable image optimization (slower but smaller files)
+  --max-image-width <PIXELS>      Resize images to max width
+  --jpeg-quality <1-100>          JPEG compression quality
+  --preset <NAME>                 Use preset: fast, quality, small-size
 
 PERFORMANCE:
-  -w, --workers <N>             Concurrent image downloads per series (default: 4)
-  -bw, --batch-workers <N>      Concurrent series downloads (default: 1)
+  -w, --workers <N>               Concurrent image downloads per series (default: 4)
+  -bw, --batch-workers <N>        Concurrent series downloads (default: 1)
 
 NETWORK:
-  -ua, --user-agent <NAME>      Browser to impersonate (see --list-user-agents)
-  --per-worker-ua               Random user agent per worker
-  --proxy <URL>                 HTTP proxy (e.g., http://localhost:8080)
+  -ua, --user-agent <NAME>        Browser to impersonate (see --list-user-agents)
+  --per-worker-ua                 Random user agent per worker
+  --proxy <URL>                   HTTP proxy (e.g., http://localhost:8080)
 
 SORTING:
-  --sort-by <METHOD>            Sort order for batch downloads (see --list-sort-options)
+  --sort-by <METHOD>              Sort order for batch downloads (see --list-sort-options)
 
 UTILITY:
-  --dry-run                     Preview actions without downloading
-  --debug                       Enable verbose logging
-  --list-user-agents            Show available user agents
-  --list-sort-options           Show available sort methods
-  -v, --version                 Show version information and exit
-  --help                        Show this help message
+  --dry-run                       Preview actions without downloading
+  --debug                         Enable verbose logging
+  --list-user-agents              Show available user agents
+  --list-sort-options             Show available sort methods
+  -v, --version                   Show version information and exit
+  --help                          Show this help message
+
+METADATA UPDATE USAGE:
+  # Update metadata for a single EPUB file
+  manga-combiner --source my-series.epub --source https://example.com/manga/series --update-metadata
+  
+  # The first --source should be the EPUB file path
+  # The second --source should be the URL to scrape metadata from
+  # This will update the EPUB with cover image, title, authors, genres, etc.
     """.trimIndent()
 
     println(helpText)
@@ -509,6 +682,12 @@ fun main(args: Array<String>) {
     val update by parser.option(
         ArgType.Boolean, "update",
         description = "Update an existing EPUB with new chapters."
+    ).default(false)
+
+    // NEW: Metadata update flag
+    val updateMetadata by parser.option(
+        ArgType.Boolean, "update-metadata",
+        description = "Update metadata of existing EPUB using scraped series data. Requires EPUB file path and source URL."
     ).default(false)
 
     val exclude by parser.option(
@@ -685,8 +864,36 @@ fun main(args: Array<String>) {
         return
     }
 
-    if (listOf(force || redownloadExisting, skipExisting, update).count { it } > 1) {
-        println("Error: --force/--redownload-existing, --skip-existing, and --update are mutually exclusive.")
+    // NEW: Validation for metadata update
+    if (updateMetadata) {
+        if (source.size < 2) {
+            println("Error: --update-metadata requires exactly two sources:")
+            println("  First source: path to EPUB file")
+            println("  Second source: URL to scrape metadata from")
+            println("\nExample: manga-combiner --source my-manga.epub --source https://example.com/manga/series --update-metadata")
+            println("\nTry 'manga-combiner --help' for more information.")
+            return
+        }
+
+        val epubFile = File(source[0])
+        if (!epubFile.exists()) {
+            println("Error: EPUB file does not exist: ${source[0]}")
+            return
+        }
+
+        if (!epubFile.name.endsWith(".epub", ignoreCase = true)) {
+            println("Error: First source must be an EPUB file: ${source[0]}")
+            return
+        }
+
+        if (!source[1].startsWith("http", ignoreCase = true)) {
+            println("Error: Second source must be a valid HTTP/HTTPS URL: ${source[1]}")
+            return
+        }
+    }
+
+    if (listOf(force || redownloadExisting, skipExisting, update, updateMetadata).count { it } > 1) {
+        println("Error: --force/--redownload-existing, --skip-existing, --update, and --update-metadata are mutually exclusive.")
         println("\nTry 'manga-combiner --help' for more information.")
         return
     }
@@ -725,7 +932,7 @@ fun main(args: Array<String>) {
 
     var cliArgs = CliArguments(
         source, search, scrape, refreshCache, downloadAll, cleanCache, deleteCache,
-        ignoreCache, keep, remove, skipExisting, update, format, title,
+        ignoreCache, keep, remove, skipExisting, update, updateMetadata, format, title,
         outputPath, finalForce, deleteOriginal, debug, dryRun, exclude, workers,
         userAgentName, proxy, perWorkerUserAgent, batchWorkers, optimize,
         finalMaxWidth, finalJpegQuality, sortBy, cacheDir
@@ -786,6 +993,20 @@ fun main(args: Array<String>) {
     }
 
     runBlocking {
+        // Handle metadata update operation
+        if (cliArgs.updateMetadata) {
+            Logger.logInfo("--- Starting metadata update operation ---")
+            processMetadataUpdate(
+                epubPath = cliArgs.source[0],
+                sourceUrl = cliArgs.source[1],
+                cliArgs = cliArgs,
+                scraperService = scraperService,
+                processorService = processorService
+            )
+            Logger.logInfo("--- Metadata update operation complete ---")
+            return@runBlocking
+        }
+
         if (cliArgs.scrape) {
             val userAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
             val client = createHttpClient(cliArgs.proxy)
