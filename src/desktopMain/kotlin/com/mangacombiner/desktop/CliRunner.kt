@@ -607,26 +607,26 @@ fun printCustomHelp() {
 manga-combiner-cli v${AppVersion.NAME}
 
 USAGE:
-  manga-combiner [OPTIONS] --source <URL|FILE|QUERY>...
+  manga-combiner-cli [OPTIONS] --source <URL|FILE|QUERY>...
 
 EXAMPLES:
   # Download a single series
-  manga-combiner --source https://example.com/manga/one-piece
+  manga-combiner-cli --source https://example.com/manga/one-piece
 
   # Search for manga and download all results
-  manga-combiner --source "attack on titan" --search --download-all
+  manga-combiner-cli --source "attack on titan" --search --download-all
 
   # Batch download from a genre page
-  manga-combiner --source https://example.com/genre/action --scrape
+  manga-combiner-cli --source https://example.com/genre/action --scrape
   
   # Update a local EPUB file with the latest chapters from its source URL
-  manga-combiner --source my-manga.epub --update
+  manga-combiner-cli --source my-manga.epub --update
 
   # Update metadata of an existing EPUB file
-  manga-combiner --source my-manga.epub --update-metadata --source https://example.com/manga/series-url
+  manga-combiner-cli --source my-manga.epub --update-metadata --source https://example.com/manga/series-url
 
   # Use a preset for optimized small files
-  manga-combiner --source https://example.com/manga/series --preset small-size
+  manga-combiner-cli --source https://example.com/manga/series --preset small-size
 
 INPUT OPTIONS:
   -s, --source <URL|FILE|QUERY>   Source URL, local EPUB file, or search query (can be used multiple times)
@@ -687,10 +687,10 @@ UTILITY:
 
 METADATA UPDATE USAGE:
   # Simple update (uses source URL from EPUB metadata)
-  manga-combiner --source my-series.epub --update-metadata
+  manga-combiner-cli --source my-series.epub --update-metadata
   
   # Override source URL (uses provided URL instead of EPUB metadata)
-  manga-combiner --source my-series.epub --source https://example.com/manga/series --update-metadata
+  manga-combiner-cli --source my-series.epub --source https://example.com/manga/series --update-metadata
   
   # The EPUB file should be created by manga-combiner (contains source URL in metadata)
   # If no source URL found in EPUB, you'll need to provide it manually
