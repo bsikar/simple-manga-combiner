@@ -21,6 +21,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.io.path.nameWithoutExtension
 import kotlin.random.Random
+import com.mangacombiner.util.ProxyTestUtility
 
 internal class JobEditedException : CancellationException("Job was edited and needs to be restarted.")
 

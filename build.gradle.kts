@@ -46,7 +46,7 @@ kotlin {
                 api(compose.materialIconsExtended)
 
                 api(libs.koin.core)
-                api("io.insert-koin:koin-compose:1.1.2")
+                api(libs.koin.compose)
 
                 api(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.core)
@@ -68,10 +68,10 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 implementation(libs.androidx.compose.bom)
-                implementation("androidx.activity:activity-compose")
+                implementation(libs.androidx.activity.compose)
                 implementation(libs.google.material)
                 api(libs.koin.android)
-                implementation(libs.ktor.client.cio)
+                implementation(libs.ktor.client.java)
                 implementation(libs.androidx.documentfile)
                 implementation(libs.ktor.io.jvm)
             }
@@ -80,12 +80,12 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 api(libs.koin.jvm)
-                implementation(libs.ktor.client.cio)
+                implementation(libs.ktor.client.java)
                 implementation(libs.ktor.io.jvm)
                 implementation(libs.ktor.client.content.negotiation)
                 implementation(libs.ktor.serialization.kotlinx.json.jvm)
                 implementation(libs.imageio.webp)
-                implementation("org.slf4j:slf4j-simple:2.0.13")
+                implementation(libs.slf4j.simple)
                 implementation(libs.kotlinx.coroutines.swing)
             }
         }
@@ -153,7 +153,7 @@ compose.desktop {
 
 tasks.register<ShadowJar>("cliJar") {
     group = "build"
-    description = "Assembles the CLI fat JAR with all dependencies included for cross-platform execution"
+    description = "Assembles the CLI fat JAR with all dependencies included for cross-platform execution (uses Java HTTP client for SOCKS5 support)"
 
     archiveBaseName.set("manga-combiner-cli")
     archiveClassifier.set("")
@@ -179,7 +179,7 @@ tasks.register<ShadowJar>("cliJar") {
 
     minimize {
         exclude(dependency("org.slf4j:slf4j-simple"))
-        exclude(dependency("io.ktor:ktor-client-cio"))
+        exclude(dependency("io.ktor:ktor-client-java"))
     }
 }
 
