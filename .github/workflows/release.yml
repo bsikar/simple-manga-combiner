@@ -1,4 +1,3 @@
-
 name: Build and Release Packages
 on:
   push:
@@ -436,12 +435,18 @@ jobs:
           echo "=========================================="
           
           echo "=== Android APK Files ==="
-          if ls **/build/outputs/apk/release/*-release.apk 1> /dev/null 2>&1; then
-            APK_COUNT=$(ls **/build/outputs/apk/release/*-release.apk 2>/dev/null | wc -l)
-            echo "✅ Total SIGNED APK files found: $APK_COUNT"
-            ls -lh **/build/outputs/apk/release/*-release.apk 2>/dev/null || true
+          if ls **/build/outputs/apk/release/*.apk 1> /dev/null 2>&1; then
+            APK_COUNT=$(ls **/build/outputs/apk/release/*.apk 2>/dev/null | wc -l)
+            echo "✅ Total APK files found: $APK_COUNT"
+            ls -lh **/build/outputs/apk/release/*.apk 2>/dev/null || true
           else
-            echo "❌ No SIGNED APK files found!"
+            echo "❌ No APK files found!"
+            echo "Checking for APK files in any location:"
+            if ls **/*.apk 1> /dev/null 2>&1; then
+              ls -lh **/*.apk 2>/dev/null || true
+            else
+              echo "No APK files found anywhere"
+            fi
           fi
           echo ""
           
@@ -452,19 +457,42 @@ jobs:
             ls -lh **/build/outputs/bundle/release/*.aab 2>/dev/null || true
           else
             echo "❌ No AAB files found!"
+            echo "Checking for AAB files in any location:"
+            if ls **/*.aab 1> /dev/null 2>&1; then
+              ls -lh **/*.aab 2>/dev/null || true
+            else
+              echo "No AAB files found anywhere"
+            fi
           fi
           echo ""
           
+          echo "=== Android Build Output Structure ==="
+          if [ -d "composeApp/build/outputs" ]; then
+            echo "✅ Found composeApp build outputs:"
+            ls -la composeApp/build/outputs/ || true
+            echo ""
+            echo "APK directory:"
+            ls -la composeApp/build/outputs/apk/ 2>/dev/null || echo "No APK directory"
+            echo ""
+            echo "Bundle directory:"
+            ls -la composeApp/build/outputs/bundle/ 2>/dev/null || echo "No bundle directory"
+          else
+            echo "❌ No composeApp/build/outputs directory found"
+            echo "Looking for any build/outputs directories:"
+            ls -la */build/outputs/ 2>/dev/null || echo "No build/outputs directories found"
+          fi
+          
+          echo ""
           echo "=========================================="
           echo "✅ Android artifact verification completed successfully"
 
-      - name: Upload Signed Android APK
+      - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Android-${{ github.ref_name }}
-          # We only want the signed APK for users, not the AAB or unsigned APK.
-          # The assembleRelease task produces a signed APK if signing is configured.
-          path: "**/build/outputs/apk/release/*-release.apk"
+          path: |
+            **/build/outputs/bundle/release/*.aab
+            **/build/outputs/apk/release/*.apk
           retention-days: 30
           if-no-files-found: error
 
@@ -495,14 +523,108 @@ jobs:
           if [ -d "artifacts" ]; then
             echo "✅ Artifacts directory exists"
             ls -la artifacts/ || true
+            echo ""
+            echo "Artifact subdirectories:"
+            ls -la artifacts/*/ 2>/dev/null || echo "No subdirectories found"
           else
             echo "❌ ERROR: No artifacts directory found!"
             exit 1
           fi
           echo ""
           
-          echo "=== Summary of all downloaded files ==="
-          find artifacts -type f -print0 | xargs -0 ls -lh | sort
+          echo "=== Artifact Summary by Type ==="
+          
+          echo "--- JAR files ---"
+          if ls artifacts/**/*.jar 1> /dev/null 2>&1; then
+            JAR_COUNT=$(ls artifacts/**/*.jar 2>/dev/null | wc -l)
+            echo "✅ Found $JAR_COUNT JAR file(s):"
+            ls -lh artifacts/**/*.jar 2>/dev/null | sort || true
+          else
+            echo "❌ No JAR files found"
+          fi
+          echo ""
+          
+          echo "--- DEB files ---"
+          if ls artifacts/**/*.deb 1> /dev/null 2>&1; then
+            DEB_COUNT=$(ls artifacts/**/*.deb 2>/dev/null | wc -l)
+            echo "✅ Found $DEB_COUNT DEB file(s):"
+            ls -lh artifacts/**/*.deb 2>/dev/null | sort || true
+          else
+            echo "❌ No DEB files found"
+          fi
+          echo ""
+          
+          echo "--- MSI files ---"
+          if ls artifacts/**/*.msi 1> /dev/null 2>&1; then
+            MSI_COUNT=$(ls artifacts/**/*.msi 2>/dev/null | wc -l)
+            echo "✅ Found $MSI_COUNT MSI file(s):"
+            ls -lh artifacts/**/*.msi 2>/dev/null | sort || true
+          else
+            echo "❌ No MSI files found"
+          fi
+          echo ""
+          
+          echo "--- ZIP files ---"
+          if ls artifacts/**/*.zip 1> /dev/null 2>&1; then
+            ZIP_COUNT=$(ls artifacts/**/*.zip 2>/dev/null | wc -l)
+            echo "✅ Found $ZIP_COUNT ZIP file(s):"
+            ls -lh artifacts/**/*.zip 2>/dev/null | sort || true
+          else
+            echo "❌ No ZIP files found"
+          fi
+          echo ""
+          
+          echo "--- DMG files ---"
+          if ls artifacts/**/*.dmg 1> /dev/null 2>&1; then
+            DMG_COUNT=$(ls artifacts/**/*.dmg 2>/dev/null | wc -l)
+            echo "✅ Found $DMG_COUNT DMG file(s):"
+            ls -lh artifacts/**/*.dmg 2>/dev/null | sort || true
+          else
+            echo "❌ No DMG files found"
+          fi
+          echo ""
+          
+          echo "--- APK files ---"
+          if ls artifacts/**/*.apk 1> /dev/null 2>&1; then
+            APK_COUNT=$(ls artifacts/**/*.apk 2>/dev/null | wc -l)
+            echo "✅ Found $APK_COUNT APK file(s):"
+            ls -lh artifacts/**/*.apk 2>/dev/null | sort || true
+          else
+            echo "❌ No APK files found"
+          fi
+          echo ""
+          
+          echo "--- AAB files ---"
+          if ls artifacts/**/*.aab 1> /dev/null 2>&1; then
+            AAB_COUNT=$(ls artifacts/**/*.aab 2>/dev/null | wc -l)
+            echo "✅ Found $AAB_COUNT AAB file(s):"
+            ls -lh artifacts/**/*.aab 2>/dev/null | sort || true
+          else
+            echo "❌ No AAB files found"
+          fi
+          echo ""
+          
+          echo "=== File Count Summary ==="
+          JAR_TOTAL=$(ls artifacts/**/*.jar 2>/dev/null | wc -l)
+          DEB_TOTAL=$(ls artifacts/**/*.deb 2>/dev/null | wc -l)
+          MSI_TOTAL=$(ls artifacts/**/*.msi 2>/dev/null | wc -l)
+          ZIP_TOTAL=$(ls artifacts/**/*.zip 2>/dev/null | wc -l)
+          DMG_TOTAL=$(ls artifacts/**/*.dmg 2>/dev/null | wc -l)
+          APK_TOTAL=$(ls artifacts/**/*.apk 2>/dev/null | wc -l)
+          AAB_TOTAL=$(ls artifacts/**/*.aab 2>/dev/null | wc -l)
+          
+          echo "📊 Total file counts:"
+          echo "  JAR files: $JAR_TOTAL"
+          echo "  DEB files: $DEB_TOTAL"
+          echo "  MSI files: $MSI_TOTAL"
+          echo "  ZIP files: $ZIP_TOTAL"
+          echo "  DMG files: $DMG_TOTAL"
+          echo "  APK files: $APK_TOTAL"
+          echo "  AAB files: $AAB_TOTAL"
+          
+          TOTAL_FILES=$((JAR_TOTAL + DEB_TOTAL + MSI_TOTAL + ZIP_TOTAL + DMG_TOTAL + APK_TOTAL + AAB_TOTAL))
+          echo "  📦 Total artifacts: $TOTAL_FILES"
+          
           echo ""
           echo "=========================================="
           echo "✅ Comprehensive artifact analysis completed successfully"
@@ -520,25 +642,81 @@ jobs:
           ## MangaCombiner ${{ github.ref_name }}
           
           ### 📦 Downloads
-
-          See the assets attached below for installers and packages.
-
+          
+          **🖥️ Desktop Applications:**
+          - **Windows**: Download `MangaCombiner-*.msi` (desktop installer with GUI)
+          - **macOS**: Download `MangaCombiner-*.dmg` (desktop installer with GUI)
+          - **Linux (Debian/Ubuntu)**: Download desktop `MangaCombiner-*.deb` package (GUI application)
+          
+          **⚡ Command Line Interface:**
+          - **Cross-platform JAR**: Download `manga-combiner-cli-*.jar` (requires Java 17+)
+          - **Linux System Package**: Download CLI `manga-combiner-cli-*.deb` for system-wide installation
+          - **Windows CLI Installer**: Download CLI `manga-combiner-cli-*.msi` for system-wide installation
+          - **Windows Portable**: Download `manga-combiner-cli-portable-*-windows.zip` (no installation needed)
+          
+          **📱 Android:**
+          - **Play Store Distribution**: Use `manga-combiner-kmp-release.aab` for store uploads
+          - **Direct Installation**: Use `manga-combiner-kmp-release-unsigned.apk` for manual installation
+          
+          ### 🚀 Installation Instructions
+          
+          **CLI - System Installation (Debian/Ubuntu):**
+          ```bash
+          sudo dpkg -i manga-combiner-cli-*.deb
+          sudo apt-get install -f  # Install dependencies if needed
+          manga-combiner-cli --help
+          ```
+          
+          **CLI - System Installation (Windows):**
+          ```cmd
+          # Double-click the CLI MSI installer or run:
+          msiexec /i manga-combiner-cli-*.msi
+          # Then use from anywhere:
+          manga-combiner-cli --help
+          ```
+          
+          **CLI - Portable (Windows):**
+          ```cmd
+          # Extract the portable zip file and run:
+          .\manga-combiner-cli\manga-combiner-cli.exe --help
+          ```
+          
+          **Desktop - System Installation (Debian/Ubuntu):**
+          ```bash
+          sudo dpkg -i MangaCombiner-*.deb
+          sudo apt-get install -f  # Install dependencies if needed
+          # Launch from applications menu or command line
+          ```
+          
+          **CLI - Portable JAR (Any OS with Java):**
+          ```bash
+          java -jar manga-combiner-cli-*.jar --help
+          ```
+          
+          ### 🔧 System Requirements
+          - **Desktop Apps**: Platform-specific (includes bundled Java runtime)
+          - **CLI JAR**: Java 17 or higher (any operating system)
+          - **CLI DEB**: Java 17+ (automatically installed as dependency on Debian/Ubuntu)
+          - **CLI Windows**: No Java required (bundled runtime included)
+          - **Android**: Android 8.0 (API level 26) or higher
+          - **Linux DEB**: Debian 10+ or Ubuntu 18.04+ (tested on Debian 12 bookworm)
+          
           ### 📝 File Descriptions
-
+          
           | File Type | Purpose | Installation |
           |-----------|---------|--------------|
-          | `manga-combiner-cli-*.jar` | Cross-platform CLI | Requires Java 17+ |
-          | `manga-combiner-cli-*.deb` | Linux CLI package | System installation |
-          | `manga-combiner-cli-*.msi` | Windows CLI installer | System installation |
-          | `manga-combiner-cli-portable-*-windows.zip` | Windows portable CLI | Extract and run |
-          | `MangaCombiner-*.dmg` | macOS desktop app | Drag to Applications |
-          | `MangaCombiner-*.msi` | Windows desktop app | Double-click to install |
-          | `MangaCombiner-*.deb` | Linux desktop app | System package |
-          | `manga-combiner-kmp-release.apk` | Android APK | Manual installation |
-
+          | manga-combiner-cli-*.jar | Cross-platform CLI | Requires Java 17+ |
+          | manga-combiner-cli-*.deb | Linux CLI package | System installation |
+          | manga-combiner-cli-*.msi | Windows CLI installer | System installation |
+          | manga-combiner-cli-portable-*-windows.zip | Windows portable CLI | Extract and run |
+          | MangaCombiner-*.dmg | macOS desktop app | Drag to Applications |
+          | MangaCombiner-*.msi | Windows desktop app | Double-click to install |
+          | MangaCombiner-*.deb | Linux desktop app | System package |
+          | manga-combiner-kmp-release.aab | Android app bundle | Play Store upload |
+          | manga-combiner-kmp-release-unsigned.apk | Android APK | Manual installation |
           EOF_MARKER
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release with Enhanced File Collection
         uses: softprops/action-gh-release@v2
         with:
           files: |
