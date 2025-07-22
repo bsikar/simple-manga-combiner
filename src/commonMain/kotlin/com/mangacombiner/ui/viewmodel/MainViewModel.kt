@@ -2,11 +2,14 @@ package com.mangacombiner.ui.viewmodel
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.model.DownloadJob
+import com.mangacombiner.model.ProxyType
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.service.*
 import com.mangacombiner.ui.viewmodel.handler.*
 import com.mangacombiner.ui.viewmodel.state.*
 import com.mangacombiner.util.*
+import io.ktor.client.request.*
+import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.File
@@ -73,6 +76,11 @@ class MainViewModel(
                 userAgentName = savedSettings.userAgentName,
                 perWorkerUserAgent = savedSettings.perWorkerUserAgent,
                 proxyUrl = savedSettings.proxyUrl,
+                proxyType = savedSettings.proxyType,
+                proxyHost = savedSettings.proxyHost,
+                proxyPort = savedSettings.proxyPort,
+                proxyUser = savedSettings.proxyUser,
+                proxyPass = savedSettings.proxyPass,
                 debugLog = savedSettings.debugLog,
                 logAutoscrollEnabled = savedSettings.logAutoscrollEnabled,
                 settingsLocationDescription = platformProvider.getSettingsLocationDescription(),
@@ -418,7 +426,7 @@ class MainViewModel(
                 val failedChapterTitles = s.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
                 val preselectedNames = s.chaptersToPreselect
 
-                val client = createHttpClient(s.proxyUrl)
+                val client = createHttpClient(buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass))
                 Logger.logInfo("Fetching chapter list for: $url")
                 val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
                 val (seriesMetadata, chapters) = scraperService.fetchSeriesDetails(client, url, userAgent)
@@ -479,7 +487,7 @@ class MainViewModel(
                 _state.update {
                     it.copy(
                         showNetworkErrorDialog = true,
-                        networkErrorMessage = "Chapter fetching failed. Please check your network connection."
+                        networkErrorMessage = "Chapter fetching failed. Please check your network connection and proxy settings."
                     )
                 }
             } catch (e: Exception) {
@@ -695,6 +703,59 @@ class MainViewModel(
             },
             onChapterCompleted = {}
         )
+    }
+
+    // --- Proxy Logic ---
+    internal fun buildProxyUrl(type: ProxyType, host: String, port: String, user: String, pass: String): String? {
+        if (type == ProxyType.NONE || host.isBlank() || port.isBlank()) {
+            return null
+        }
+        val scheme = when (type) {
+            ProxyType.HTTP -> "http"
+            ProxyType.SOCKS5 -> "socks5"
+            ProxyType.NONE -> return null
+        }
+        val auth = if (user.isNotBlank()) {
+            if (pass.isNotBlank()) {
+                "${user.trim()}:${pass.trim()}@"
+            } else {
+                "${user.trim()}@"
+            }
+        } else ""
+        return "$scheme://$auth${host.trim()}:${port.trim()}"
+    }
+
+    internal fun verifyProxyConnection() {
+        viewModelScope.launch {
+            _state.update { it.copy(proxyStatus = ProxyStatus.VERIFYING, proxyVerificationMessage = null) }
+            val s = state.value
+            val url = buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass)
+            if (url == null) {
+                _state.update { it.copy(proxyStatus = ProxyStatus.UNVERIFIED, proxyVerificationMessage = "No proxy configured.") }
+                return@launch
+            }
+
+            val client = createHttpClient(url)
+            try {
+                Logger.logInfo("Verifying proxy connection to $url...")
+                // A lightweight request that should return a 204 No Content
+                val response = client.get("http://clients3.google.com/generate_204")
+                if (response.status.isSuccess()) {
+                    _state.update { it.copy(proxyStatus = ProxyStatus.CONNECTED, proxyVerificationMessage = "Connection successful!") }
+                    Logger.logInfo("Proxy connection successful.")
+                } else {
+                    val message = "Failed: Server responded with ${response.status}"
+                    _state.update { it.copy(proxyStatus = ProxyStatus.FAILED, proxyVerificationMessage = message) }
+                    Logger.logError(message)
+                }
+            } catch (e: Exception) {
+                val message = "Failed: ${e.message?.take(100) ?: "Unknown error"}"
+                _state.update { it.copy(proxyStatus = ProxyStatus.FAILED, proxyVerificationMessage = message) }
+                Logger.logError("Proxy verification failed.", e)
+            } finally {
+                client.close()
+            }
+        }
     }
 
     // --- Queue Logic ---

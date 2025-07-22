@@ -7,14 +7,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mangacombiner.model.ProxyType
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.Event
+import com.mangacombiner.ui.viewmodel.state.ProxyStatus
 import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.AppVersion
@@ -117,6 +124,114 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
 
         Card(elevation = 4.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Proxy Settings", style = MaterialTheme.typography.h6)
+
+                var proxyTypeDropdownExpanded by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Proxy Type:", style = MaterialTheme.typography.body1)
+                    Box(modifier = Modifier.tooltipHoverFix()) {
+                        OutlinedButton(onClick = { proxyTypeDropdownExpanded = true }) {
+                            Text(state.proxyType.name)
+                            Icon(Icons.Default.ArrowDropDown, "Proxy Type")
+                        }
+                        DropdownMenu(
+                            expanded = proxyTypeDropdownExpanded,
+                            onDismissRequest = { proxyTypeDropdownExpanded = false }
+                        ) {
+                            ProxyType.entries.forEach { type ->
+                                DropdownMenuItem(onClick = {
+                                    onEvent(Event.Settings.UpdateProxyType(type))
+                                    proxyTypeDropdownExpanded = false
+                                }) { Text(type.name) }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = state.proxyHost,
+                        onValueChange = { onEvent(Event.Settings.UpdateProxyHost(it)) },
+                        label = { Text("Proxy Host") },
+                        modifier = Modifier.weight(1f),
+                        enabled = state.proxyType != ProxyType.NONE,
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = state.proxyPort,
+                        onValueChange = { onEvent(Event.Settings.UpdateProxyPort(it.filter(Char::isDigit))) },
+                        label = { Text("Port") },
+                        modifier = Modifier.width(100.dp),
+                        enabled = state.proxyType != ProxyType.NONE,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = state.proxyUser,
+                        onValueChange = { onEvent(Event.Settings.UpdateProxyUser(it)) },
+                        label = { Text("Username (Optional)") },
+                        modifier = Modifier.weight(1f),
+                        enabled = state.proxyType != ProxyType.NONE,
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = state.proxyPass,
+                        onValueChange = { onEvent(Event.Settings.UpdateProxyPass(it)) },
+                        label = { Text("Password (Optional)") },
+                        modifier = Modifier.weight(1f),
+                        enabled = state.proxyType != ProxyType.NONE,
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { onEvent(Event.Settings.VerifyProxy) },
+                        enabled = state.proxyType != ProxyType.NONE && state.proxyHost.isNotBlank() && state.proxyPort.isNotBlank() && state.proxyStatus != ProxyStatus.VERIFYING
+                    ) {
+                        if (state.proxyStatus == ProxyStatus.VERIFYING) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Verify Connection")
+                    }
+                    when (state.proxyStatus) {
+                        ProxyStatus.CONNECTED -> Icon(Icons.Default.CheckCircle, "Connected", tint = Color(0xFF4CAF50))
+                        ProxyStatus.FAILED -> Icon(Icons.Default.Error, "Failed", tint = MaterialTheme.colors.error)
+                        else -> {}
+                    }
+                    state.proxyVerificationMessage?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.caption,
+                            color = if (state.proxyStatus == ProxyStatus.FAILED) MaterialTheme.colors.error else LocalContentColor.current
+                        )
+                    }
+                }
+            }
+        }
+
+        Card(elevation = 4.dp) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Output Settings", style = MaterialTheme.typography.h6)
 
                 Row(
@@ -164,21 +279,6 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                         }
                     }
                 }
-            }
-        }
-
-        Card(elevation = 4.dp) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Network Settings", style = MaterialTheme.typography.h6)
-                SubmitTextField(
-                    value = state.proxyUrl,
-                    onValueChange = { onEvent(Event.Settings.UpdateProxyUrl(it)) },
-                    label = { Text("Proxy URL (Optional)") },
-                    placeholder = { Text("http(s)://[user:pass@]host:port") },
-                    onSubmit = { /* Do nothing, just dismiss keyboard on Android */ },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                )
             }
         }
 

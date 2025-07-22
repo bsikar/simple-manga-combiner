@@ -4,6 +4,10 @@ import com.mangacombiner.ui.theme.AppTheme
 
 internal expect fun getDefaultPlatformTheme(): AppTheme
 
+enum class ProxyType {
+    NONE, HTTP, SOCKS5
+}
+
 data class AppSettings(
     val theme: AppTheme = Defaults.THEME,
     val defaultOutputLocation: String = Defaults.DEFAULT_OUTPUT_LOCATION,
@@ -14,6 +18,11 @@ data class AppSettings(
     val userAgentName: String = Defaults.USER_AGENT_NAME,
     val perWorkerUserAgent: Boolean = Defaults.PER_WORKER_USER_AGENT,
     val proxyUrl: String = Defaults.PROXY_URL,
+    val proxyType: ProxyType = Defaults.PROXY_TYPE,
+    val proxyHost: String = Defaults.PROXY_HOST,
+    val proxyPort: String = Defaults.PROXY_PORT,
+    val proxyUser: String = Defaults.PROXY_USER,
+    val proxyPass: String = Defaults.PROXY_PASS,
     val debugLog: Boolean = Defaults.DEBUG_LOG,
     val logAutoscrollEnabled: Boolean = Defaults.LOG_AUTOSCROLL_ENABLED,
     val zoomFactor: Float = Defaults.ZOOM_FACTOR,
@@ -34,6 +43,11 @@ data class AppSettings(
         const val USER_AGENT_NAME = "Chrome (Windows)"
         const val PER_WORKER_USER_AGENT = false
         const val PROXY_URL = ""
+        val PROXY_TYPE = ProxyType.NONE
+        const val PROXY_HOST = ""
+        const val PROXY_PORT = ""
+        const val PROXY_USER = ""
+        const val PROXY_PASS = ""
         const val DEBUG_LOG = false
         const val LOG_AUTOSCROLL_ENABLED = true
         const val ZOOM_FACTOR = 1.0f

@@ -2,6 +2,8 @@ package com.mangacombiner.ui.viewmodel.state
 
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.DownloadJob
+import com.mangacombiner.model.IpInfo
+import com.mangacombiner.model.ProxyType
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.CachedSeries
@@ -84,6 +86,11 @@ data class UiState(
     val webDavFilterQuery: String = "",
     val webDavFolderSizes: Map<String, Long?> = emptyMap(),
 
+    // IP Check State
+    val isCheckingIp: Boolean = false,
+    val ipInfoResult: IpInfo? = null,
+    val ipCheckError: String? = null,
+
     // Persisted Settings (Defaults point to AppSettings.Defaults)
     val theme: AppTheme = AppSettings.Defaults.THEME,
     val defaultOutputLocation: String = AppSettings.Defaults.DEFAULT_OUTPUT_LOCATION,
@@ -94,6 +101,13 @@ data class UiState(
     val userAgentName: String = AppSettings.Defaults.USER_AGENT_NAME,
     val perWorkerUserAgent: Boolean = AppSettings.Defaults.PER_WORKER_USER_AGENT,
     val proxyUrl: String = AppSettings.Defaults.PROXY_URL,
+    val proxyType: ProxyType = AppSettings.Defaults.PROXY_TYPE,
+    val proxyHost: String = AppSettings.Defaults.PROXY_HOST,
+    val proxyPort: String = AppSettings.Defaults.PROXY_PORT,
+    val proxyUser: String = AppSettings.Defaults.PROXY_USER,
+    val proxyPass: String = AppSettings.Defaults.PROXY_PASS,
+    val proxyStatus: ProxyStatus = ProxyStatus.UNVERIFIED,
+    val proxyVerificationMessage: String? = null,
     val debugLog: Boolean = AppSettings.Defaults.DEBUG_LOG,
     val logAutoscrollEnabled: Boolean = AppSettings.Defaults.LOG_AUTOSCROLL_ENABLED,
     val zoomFactor: Float = AppSettings.Defaults.ZOOM_FACTOR,
@@ -111,6 +125,11 @@ internal fun UiState.toAppSettings() = AppSettings(
     userAgentName = this.userAgentName,
     perWorkerUserAgent = this.perWorkerUserAgent,
     proxyUrl = this.proxyUrl,
+    proxyType = this.proxyType,
+    proxyHost = this.proxyHost,
+    proxyPort = this.proxyPort,
+    proxyUser = this.proxyUser,
+    proxyPass = this.proxyPass,
     debugLog = this.debugLog,
     logAutoscrollEnabled = this.logAutoscrollEnabled,
     zoomFactor = this.zoomFactor,

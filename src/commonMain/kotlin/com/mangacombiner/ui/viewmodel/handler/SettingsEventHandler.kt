@@ -1,9 +1,11 @@
 package com.mangacombiner.ui.viewmodel.handler
 
 import com.mangacombiner.model.AppSettings
+import com.mangacombiner.model.ProxyType
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
+import com.mangacombiner.ui.viewmodel.state.ProxyStatus
 import com.mangacombiner.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update

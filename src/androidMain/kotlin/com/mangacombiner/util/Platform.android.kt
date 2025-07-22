@@ -10,7 +10,9 @@ import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
+import java.net.Authenticator
 import java.net.InetSocketAddress
+import java.net.PasswordAuthentication
 import java.net.Proxy
 import java.net.URI
 
@@ -18,17 +20,52 @@ actual fun createHttpClient(proxyUrl: String?): HttpClient = HttpClient(CIO) {
     engine {
         if (!proxyUrl.isNullOrBlank()) {
             try {
-                val proxyJavaUrl = URI(proxyUrl).toURL()
-                if (proxyJavaUrl.protocol.startsWith("http")) {
-                    val socketAddress = InetSocketAddress(proxyJavaUrl.host, proxyJavaUrl.port)
-                    proxy = Proxy(Proxy.Type.HTTP, socketAddress)
-                    Logger.logInfo("Using proxy: $proxyUrl")
+                val uri = URI(proxyUrl)
+                val proxyType = when (uri.scheme?.lowercase()) {
+                    "http", "https" -> Proxy.Type.HTTP
+                    "socks", "socks5" -> Proxy.Type.SOCKS
+                    else -> null
+                }
+
+                if (proxyType != null) {
+                    val port = if (uri.port == -1) {
+                        when (uri.scheme?.lowercase()) {
+                            "http" -> 80
+                            "https" -> 443
+                            "socks", "socks5" -> 1080 // Default SOCKS port
+                            else -> 8080 // Generic default
+                        }
+                    } else {
+                        uri.port
+                    }
+                    val socketAddress = InetSocketAddress(uri.host, port)
+                    proxy = Proxy(proxyType, socketAddress)
+                    Logger.logInfo("Using ${proxyType.name} proxy: ${uri.host}:$port")
+
+                    // Clear previous authenticator
+                    Authenticator.setDefault(null)
+
+                    uri.userInfo?.split(":", limit = 2)?.let { userInfo ->
+                        val username = userInfo.getOrNull(0)
+                        val password = userInfo.getOrNull(1)
+                        if (!username.isNullOrBlank()) {
+                            Authenticator.setDefault(object : Authenticator() {
+                                override fun getPasswordAuthentication(): PasswordAuthentication {
+                                    return PasswordAuthentication(username, password?.toCharArray() ?: "".toCharArray())
+                                }
+                            })
+                            Logger.logInfo("Proxy authentication enabled for user: '$username'")
+                        }
+                    }
                 } else {
-                    Logger.logError("Unsupported proxy protocol: ${proxyJavaUrl.protocol}. Only http/s is supported.", null)
+                    Logger.logError("Unsupported proxy protocol in URL: $proxyUrl", null)
                 }
             } catch (e: Exception) {
                 Logger.logError("Invalid proxy URL format: $proxyUrl", e)
             }
+        } else {
+            // Ensure no proxy is used if URL is blank and clear any default authenticator
+            Authenticator.setDefault(null)
         }
     }
     install(HttpTimeout) {

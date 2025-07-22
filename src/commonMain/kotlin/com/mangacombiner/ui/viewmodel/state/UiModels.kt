@@ -16,6 +16,10 @@ enum class ChapterSource {
     LOCAL, CACHE, WEB
 }
 
+enum class ProxyStatus {
+    UNVERIFIED, VERIFYING, CONNECTED, FAILED
+}
+
 @Serializable
 data class Chapter(
     val url: String,

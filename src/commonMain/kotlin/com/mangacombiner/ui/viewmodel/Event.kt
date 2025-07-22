@@ -1,5 +1,6 @@
 package com.mangacombiner.ui.viewmodel
 
+import com.mangacombiner.model.ProxyType
 import com.mangacombiner.service.WebDavFile
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.state.CacheSortState
@@ -21,8 +22,15 @@ sealed interface Event {
         data class UpdateBatchWorkers(val count: Int) : Settings
         data class UpdateUserAgent(val name: String) : Settings
         data class UpdateProxyUrl(val url: String) : Settings
+        data class UpdateProxyType(val type: ProxyType) : Settings
+        data class UpdateProxyHost(val host: String) : Settings
+        data class UpdateProxyPort(val port: String) : Settings
+        data class UpdateProxyUser(val user: String) : Settings
+        data class UpdateProxyPass(val pass: String) : Settings
         data class TogglePerWorkerUserAgent(val isEnabled: Boolean) : Settings
         data class ToggleOfflineMode(val isEnabled: Boolean) : Settings
+        object VerifyProxy : Settings
+        object CheckIpAddress : Settings
         object PickCustomDefaultPath : Settings
         object OpenSettingsLocation : Settings
         object OpenCacheLocation : Settings

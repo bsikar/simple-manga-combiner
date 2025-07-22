@@ -3,6 +3,7 @@ package com.mangacombiner.data
 import android.content.Context
 import androidx.core.content.edit
 import com.mangacombiner.model.AppSettings
+import com.mangacombiner.model.ProxyType
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.util.Logger
 
@@ -19,6 +20,11 @@ actual class SettingsRepository(private val context: Context) {
         private const val USER_AGENT_NAME = "user_agent_name"
         private const val PER_WORKER_USER_AGENT = "per_worker_user_agent"
         private const val PROXY_URL = "proxy_url"
+        private const val PROXY_TYPE = "proxy_type"
+        private const val PROXY_HOST = "proxy_host"
+        private const val PROXY_PORT = "proxy_port"
+        private const val PROXY_USER = "proxy_user"
+        private const val PROXY_PASS = "proxy_pass"
         private const val DEBUG_LOG = "debug_log"
         private const val LOG_AUTOSCROLL = "log_autoscroll"
         private const val ZOOM_FACTOR = "zoom_factor"
@@ -38,6 +44,11 @@ actual class SettingsRepository(private val context: Context) {
             putString(USER_AGENT_NAME, settings.userAgentName)
             putBoolean(PER_WORKER_USER_AGENT, settings.perWorkerUserAgent)
             putString(PROXY_URL, settings.proxyUrl)
+            putString(PROXY_TYPE, settings.proxyType.name)
+            putString(PROXY_HOST, settings.proxyHost)
+            putString(PROXY_PORT, settings.proxyPort)
+            putString(PROXY_USER, settings.proxyUser)
+            putString(PROXY_PASS, settings.proxyPass)
             putBoolean(DEBUG_LOG, settings.debugLog)
             putBoolean(LOG_AUTOSCROLL, settings.logAutoscrollEnabled)
             putFloat(ZOOM_FACTOR, settings.zoomFactor)
@@ -50,6 +61,7 @@ actual class SettingsRepository(private val context: Context) {
         Logger.logDebug { "Loading settings from Android SharedPreferences." }
         val defaultSettings = AppSettings()
         val savedThemeName = prefs.getString(THEME, defaultSettings.theme.name)
+        val savedProxyTypeName = prefs.getString(PROXY_TYPE, defaultSettings.proxyType.name)
 
         return AppSettings(
             theme = AppTheme.entries.find { it.name == savedThemeName } ?: defaultSettings.theme,
@@ -61,6 +73,11 @@ actual class SettingsRepository(private val context: Context) {
             userAgentName = prefs.getString(USER_AGENT_NAME, defaultSettings.userAgentName) ?: defaultSettings.userAgentName,
             perWorkerUserAgent = prefs.getBoolean(PER_WORKER_USER_AGENT, defaultSettings.perWorkerUserAgent),
             proxyUrl = prefs.getString(PROXY_URL, defaultSettings.proxyUrl) ?: defaultSettings.proxyUrl,
+            proxyType = ProxyType.entries.find { it.name == savedProxyTypeName } ?: defaultSettings.proxyType,
+            proxyHost = prefs.getString(PROXY_HOST, defaultSettings.proxyHost) ?: defaultSettings.proxyHost,
+            proxyPort = prefs.getString(PROXY_PORT, defaultSettings.proxyPort) ?: defaultSettings.proxyPort,
+            proxyUser = prefs.getString(PROXY_USER, defaultSettings.proxyUser) ?: defaultSettings.proxyUser,
+            proxyPass = prefs.getString(PROXY_PASS, defaultSettings.proxyPass) ?: defaultSettings.proxyPass,
             debugLog = prefs.getBoolean(DEBUG_LOG, defaultSettings.debugLog),
             logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, defaultSettings.logAutoscrollEnabled),
             zoomFactor = prefs.getFloat(ZOOM_FACTOR, defaultSettings.zoomFactor),
