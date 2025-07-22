@@ -12,6 +12,8 @@ import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import java.io.*
 import java.util.zip.*
+import net.lingala.zip4j.ZipFile
+import net.lingala.zip4j.exception.ZipException
 
 /**
  * Extension function to update EPUB metadata with scraped series information.
@@ -70,30 +72,14 @@ suspend fun ProcessorService.updateEpubMetadata(
 
 private fun extractEpubToTemp(epubFile: File, extractDir: File): Boolean {
     return try {
-        ZipInputStream(FileInputStream(epubFile)).use { zipIn ->
-            var entry = zipIn.nextEntry
-            while (entry != null) {
-                val filePath = File(extractDir, entry.name)
-
-                if (!entry.isDirectory) {
-                    filePath.parentFile?.mkdirs()
-                    FileOutputStream(filePath).use { output ->
-                        zipIn.copyTo(output)
-                    }
-                } else {
-                    filePath.mkdirs()
-                }
-
-                zipIn.closeEntry()
-                entry = zipIn.nextEntry
-            }
-        }
-
+        ZipFile(epubFile).extractAll(extractDir.absolutePath)
         Logger.logDebug { "Successfully extracted EPUB to: ${extractDir.absolutePath}" }
         true
-
-    } catch (e: Exception) {
+    } catch (e: ZipException) {
         Logger.logError("Failed to extract EPUB: ${e.message}", e)
+        false
+    } catch (e: Exception) {
+        Logger.logError("An unexpected error occurred during EPUB extraction: ${e.message}", e)
         false
     }
 }
