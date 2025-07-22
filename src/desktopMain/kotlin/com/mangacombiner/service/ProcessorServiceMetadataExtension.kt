@@ -47,7 +47,7 @@ suspend fun ProcessorService.updateEpubMetadata(
             seriesMetadata.coverImageUrl?.let { coverUrl ->
                 Logger.logInfo("Downloading and adding cover image...")
                 if (!updateEpubCoverImage(tempDir, coverUrl)) {
-                    Logger.logInfo("Failed to update cover image, but continuing with other metadata")
+                    Logger.logWarn("Failed to update cover image, but continuing with other metadata")
                 }
             }
 
@@ -57,7 +57,7 @@ suspend fun ProcessorService.updateEpubMetadata(
                 return@withContext false
             }
 
-            Logger.logInfo("Successfully updated metadata for: ${epubFile.name}")
+            // Return true without logging duplicate success message - let the caller handle final success logging
             true
 
         } finally {
@@ -217,7 +217,7 @@ private suspend fun updateEpubCoverImage(tempDir: File, coverUrl: String): Boole
             }
 
             if (response.status != HttpStatusCode.OK) {
-                Logger.logError("Failed to download cover image: ${response.status}")
+                Logger.logWarn("Failed to download cover image: ${response.status}")
                 return false
             }
 
@@ -241,10 +241,20 @@ private suspend fun updateEpubCoverImage(tempDir: File, coverUrl: String): Boole
             val coverFile = File(imagesDir, "cover.$imageExtension")
             coverFile.writeBytes(imageBytes)
 
-            val relativePath = coverFile.relativeTo(tempDir).path.replace("\\", "/")
+            // Calculate the correct relative path for OPF reference
+            // If the cover is at tempDir/OEBPS/images/cover.webp,
+            // the OPF reference should be images/cover.webp (relative to OEBPS directory)
+            val oebpsDir = File(tempDir, "OEBPS")
+            val relativePath = if (coverFile.startsWith(oebpsDir)) {
+                coverFile.relativeTo(oebpsDir).path.replace("\\", "/")
+            } else {
+                // Fallback for edge cases
+                "images/cover.$imageExtension"
+            }
+
             updateEpubCoverReference(tempDir, relativePath)
 
-            Logger.logDebug { "Successfully updated cover image: ${coverFile.name}" }
+            Logger.logDebug { "Successfully updated cover image: ${coverFile.name} with OPF path: $relativePath" }
             true
 
         } finally {
