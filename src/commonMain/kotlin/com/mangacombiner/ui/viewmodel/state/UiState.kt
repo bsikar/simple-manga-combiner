@@ -15,7 +15,6 @@ import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.OperationState
 
 data class UiState(
-    // Transient UI State (Defaults live here)
     val currentScreen: Screen = Screen.SEARCH,
     val seriesUrl: String = "",
     val customTitle: String = "",
@@ -69,7 +68,6 @@ data class UiState(
     val showNetworkErrorDialog: Boolean = false,
     val networkErrorMessage: String? = null,
 
-    // WebDAV State
     val webDavUrl: String = "",
     val webDavUser: String = "",
     val webDavPass: String = "",
@@ -86,12 +84,10 @@ data class UiState(
     val webDavFilterQuery: String = "",
     val webDavFolderSizes: Map<String, Long?> = emptyMap(),
 
-    // IP Check State
     val isCheckingIp: Boolean = false,
     val ipInfoResult: IpInfo? = null,
     val ipCheckError: String? = null,
 
-    // Persisted Settings (Defaults point to AppSettings.Defaults)
     val theme: AppTheme = AppSettings.Defaults.THEME,
     val defaultOutputLocation: String = AppSettings.Defaults.DEFAULT_OUTPUT_LOCATION,
     val customDefaultOutputPath: String = AppSettings.Defaults.CUSTOM_DEFAULT_OUTPUT_PATH,

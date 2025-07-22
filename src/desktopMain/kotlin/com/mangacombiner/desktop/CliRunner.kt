@@ -2,11 +2,15 @@ package com.mangacombiner.desktop
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.di.appModule
+import com.mangacombiner.model.IpInfo
 import com.mangacombiner.model.ScrapedSeries
 import com.mangacombiner.model.ScrapedSeriesCache
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.*
 import com.mangacombiner.util.*
+import io.ktor.client.call.*
+import io.ktor.client.request.*
+import io.ktor.http.*
 import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
@@ -24,9 +28,6 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
-/**
- * Data class to pass results from the download phase to the packaging phase.
- */
 private data class DownloadResultForPackaging(
     val mangaTitle: String,
     val downloadDir: File,
@@ -37,9 +38,6 @@ private data class DownloadResultForPackaging(
     val allFoldersForPackaging: List<File>
 )
 
-/**
- * PHASE 2: Takes a completed download and packages it into the final file format.
- */
 private suspend fun packageSeries(
     result: DownloadResultForPackaging,
     cliArgs: CliArguments,
@@ -52,7 +50,7 @@ private suspend fun packageSeries(
         outputFile = result.outputFile,
         seriesUrl = result.sourceUrl,
         failedChapters = result.failedChapters,
-        seriesMetadata = null, // CLI does not fetch this detailed metadata
+        seriesMetadata = null,
         maxWidth = cliArgs.maxWidth,
         jpegQuality = cliArgs.jpegQuality
     )
@@ -67,10 +65,6 @@ private suspend fun packageSeries(
     }
 }
 
-/**
- * PHASE 1: Downloads all chapters for a single series to the cache.
- * Returns a data object for the packaging phase, or null on failure.
- */
 private suspend fun downloadSeriesToCache(
     source: String,
     cliArgs: CliArguments,
@@ -327,6 +321,7 @@ data class CliArguments(
     val proxyPort: Int?,
     val proxyUser: String?,
     val proxyPass: String?,
+    val checkIp: Boolean,
     val perWorkerUserAgent: Boolean,
     val batchWorkers: Int,
     val optimize: Boolean,
@@ -403,7 +398,7 @@ private fun sortSeries(series: List<SearchResult>, sortBy: String): List<SearchR
         "chapters-desc" -> series.sortedByDescending { it.chapterCount ?: 0 }
         "alpha-asc" -> series.sortedBy { it.title }
         "alpha-desc" -> series.sortedByDescending { it.title }
-        else -> series // "default"
+        else -> series
     }
 }
 
@@ -481,6 +476,7 @@ PERFORMANCE:
   -bw, --batch-workers <N>         Concurrent series downloads (default: 1)
 
 UTILITY:
+  --check-ip                       Check public IP address through the configured proxy and exit.
   --dry-run                        Preview actions without downloading
   --debug                          Enable verbose logging
   --list-user-agents               Show available user agents
@@ -501,7 +497,6 @@ fun applyPreset(preset: String, args: CliArguments): CliArguments {
 }
 
 private fun buildProxyUrlFromCliArgs(cliArgs: CliArguments): String? {
-    // Prioritize new granular flags
     if (cliArgs.proxyType != null && cliArgs.proxyHost != null && cliArgs.proxyPort != null) {
         val scheme = cliArgs.proxyType.lowercase()
         val auth = cliArgs.proxyUser?.let { user ->
@@ -509,7 +504,6 @@ private fun buildProxyUrlFromCliArgs(cliArgs: CliArguments): String? {
         } ?: ""
         return "$scheme://$auth${cliArgs.proxyHost.trim()}:${cliArgs.proxyPort}"
     }
-    // Fallback to the single proxy string
     return cliArgs.proxy
 }
 
@@ -563,6 +557,7 @@ fun main(args: Array<String>) {
     val proxyPort by parser.option(ArgType.Int, "proxy-port")
     val proxyUser by parser.option(ArgType.String, "proxy-user")
     val proxyPass by parser.option(ArgType.String, "proxy-pass")
+    val checkIp by parser.option(ArgType.Boolean, "check-ip").default(false)
 
     try {
         parser.parse(args)
@@ -582,8 +577,8 @@ fun main(args: Array<String>) {
         listOf("default", "chapters-asc", "chapters-desc", "alpha-asc", "alpha-desc").forEach { println("- $it") }; return
     }
 
-    if (source.isEmpty() && !deleteCache) {
-        println("Error: At least one --source must be provided.\nTry 'manga-combiner-cli --help' for usage examples."); return
+    if (source.isEmpty() && !deleteCache && !checkIp) {
+        println("Error: At least one --source must be provided, or use a standalone command like --delete-cache or --check-ip.\nTry 'manga-combiner-cli --help' for usage examples."); return
     }
     if (scrape && search) {
         println("Error: --scrape and --search are mutually exclusive.\nTry 'manga-combiner-cli --help' for usage examples."); return
@@ -603,7 +598,7 @@ fun main(args: Array<String>) {
         ignoreCache, keep, remove, skipExisting, update, updateMetadata, format, title,
         outputPath, force || redownloadExisting, deleteOriginal, debug, dryRun, exclude, workers,
         userAgentName, proxy, proxyType, proxyHost, proxyPort, proxyUser, proxyPass,
-        perWorkerUserAgent, batchWorkers, optimize,
+        checkIp, perWorkerUserAgent, batchWorkers, optimize,
         maxWidth ?: if (optimize) 1200 else null,
         jpegQuality ?: if (optimize) 85 else null,
         sortBy, cacheDir
@@ -648,6 +643,32 @@ fun main(args: Array<String>) {
     }
 
     runBlocking {
+        if (cliArgs.checkIp) {
+            val finalProxyUrl = buildProxyUrlFromCliArgs(cliArgs)
+            Logger.logInfo("Checking public IP address...")
+            if (finalProxyUrl != null) Logger.logInfo("Using proxy: $finalProxyUrl")
+
+            val client = createHttpClient(finalProxyUrl)
+            try {
+                val response = client.get("https://ipinfo.io/json")
+                if (response.status.isSuccess()) {
+                    val ipInfo = response.body<IpInfo>()
+                    println("Success!")
+                    println("  Public IP: ${ipInfo.ip ?: "N/A"}")
+                    println("  Hostname:  ${ipInfo.hostname ?: "N/A"}")
+                    println("  Location:  ${listOfNotNull(ipInfo.city, ipInfo.region, ipInfo.country).joinToString(", ")}")
+                    println("  ISP:       ${ipInfo.org ?: "N/A"}")
+                } else {
+                    Logger.logError("Failed: Server responded with status ${response.status}")
+                }
+            } catch (e: Exception) {
+                Logger.logError("IP Check failed.", e)
+            } finally {
+                client.close()
+            }
+            return@runBlocking
+        }
+
         if (cliArgs.updateMetadata) {
             val sourceUrlOverride = if (cliArgs.source.size > 1) cliArgs.source[1] else null
             processMetadataUpdate(cliArgs.source[0], sourceUrlOverride, cliArgs, scraperService, processorService)

@@ -2,12 +2,14 @@ package com.mangacombiner.ui.viewmodel
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.model.DownloadJob
+import com.mangacombiner.model.IpInfo
 import com.mangacombiner.model.ProxyType
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.service.*
 import com.mangacombiner.ui.viewmodel.handler.*
 import com.mangacombiner.ui.viewmodel.state.*
 import com.mangacombiner.util.*
+import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.coroutines.*
@@ -158,13 +160,11 @@ class MainViewModel(
                 updateOverallProgress()
             }
         }
-        // Listen for status updates from the background downloader service
         viewModelScope.launch {
             backgroundDownloader.jobStatusFlow.collect { update ->
                 handleJobStatusUpdate(update)
             }
         }
-        // Reactive Queue Processor
         viewModelScope.launch(Dispatchers.IO) {
             Logger.logDebug { "Queue processor listener started." }
             state.map { Triple(it.batchWorkers, it.downloadQueue, it.isQueueGloballyPaused) }
@@ -172,7 +172,6 @@ class MainViewModel(
                 .collect { (batchWorkers, queue, isQueuePaused) ->
 
                     if (isQueuePaused) {
-                        // If queue is globally paused, stop all active service jobs.
                         if (activeServiceJobs.isNotEmpty()) {
                             Logger.logDebug { "Queue globally paused. Stopping all active jobs." }
                             backgroundDownloader.stopAllJobs()
@@ -192,13 +191,11 @@ class MainViewModel(
                                 !job.status.startsWith("Error")
                     }
 
-                    // The concurrent limit only applies to non-packaging jobs
                     val desiredDownloadingJobIds = otherRunnableJobs
                         .take(batchWorkers)
                         .map { it.id }
                         .toSet()
 
-                    // All packaging jobs are desired to continue running
                     val desiredPackagingJobIds = packagingJobs
                         .map { it.id }
                         .toSet()
@@ -212,7 +209,6 @@ class MainViewModel(
                         return@collect
                     }
 
-                    // --- Perform side effects (stopping/starting jobs) ---
                     jobsToStop.forEach { jobId ->
                         Logger.logDebug { "Throttling job due to lower priority: $jobId" }
                         backgroundDownloader.stopJob(jobId)
@@ -224,26 +220,24 @@ class MainViewModel(
                         startJob(jobId)
                     }
 
-                    // --- Atomically update the UI state ---
                     _state.update { currentState ->
                         val newQueue = currentState.downloadQueue.map { job ->
                             when (job.id) {
-                                in jobsToStop -> job.copy(status = "Paused") // Throttled jobs are now Paused
+                                in jobsToStop -> job.copy(status = "Paused")
                                 in jobsToStart -> {
                                     if (queuedOperationContext.containsKey(job.id)) {
-                                        job.copy(status = "Waiting...") // Started jobs are now Waiting
+                                        job.copy(status = "Waiting...")
                                     } else {
                                         job.copy(status = "Error: Context not found")
                                     }
                                 }
-                                else -> job // No change
+                                else -> job
                             }
                         }
                         currentState.copy(downloadQueue = newQueue)
                     }
                 }
         }
-        // Reactive Queue Persistence
         viewModelScope.launch {
             state
                 .map { uiState -> uiState.downloadQueue.mapNotNull { job -> queuedOperationContext[job.id] } }
@@ -262,7 +256,6 @@ class MainViewModel(
 
     private fun handleJobStatusUpdate(update: JobStatusUpdate) {
         _state.update { state ->
-            // If job finished, remove it from our active jobs tracking set.
             if (update.isFinished) {
                 activeServiceJobs.remove(update.jobId)
             }
@@ -272,9 +265,7 @@ class MainViewModel(
                     return@map job
                 }
 
-                // If the service reports cancellation, check if it was due to a pause action.
                 if (update.status == "Cancelled") {
-                    // If the UI already thinks the job is paused (due to throttling or user action), then keep it as "Paused".
                     if (state.isQueueGloballyPaused || job.isIndividuallyPaused || job.status == "Paused") {
                         return@map job.copy(status = "Paused")
                     }
@@ -288,10 +279,8 @@ class MainViewModel(
                     newDownloadedChapters = job.totalChapters
                     newProgress = 1f
                 } else if (update.downloadedChapters != null && update.downloadedChapters > 0) {
-                    // This is a chapter completion update. Update both counter and progress.
                     newProgress = if (job.totalChapters > 0) newDownloadedChapters.toFloat() / job.totalChapters else 0f
                 } else if (update.progress != null) {
-                    // This is a sub-step progress update for an in-flight chapter. Only update progress.
                     newProgress = if (job.totalChapters > 0) (job.downloadedChapters + update.progress) / job.totalChapters else 0f
                 }
 
@@ -451,7 +440,7 @@ class MainViewModel(
                             url = chapUrl,
                             title = title,
                             availableSources = sources,
-                            selectedSource = null, // Set later
+                            selectedSource = null,
                             localSlug = originalLocalSlug,
                             isRetry = isRetry,
                             isBroken = isBroken
@@ -705,7 +694,6 @@ class MainViewModel(
         )
     }
 
-    // --- Proxy Logic ---
     internal fun buildProxyUrl(type: ProxyType, host: String, port: String, user: String, pass: String): String? {
         if (type == ProxyType.NONE || host.isBlank() || port.isBlank()) {
             return null
@@ -727,7 +715,7 @@ class MainViewModel(
 
     internal fun verifyProxyConnection() {
         viewModelScope.launch {
-            _state.update { it.copy(proxyStatus = ProxyStatus.VERIFYING, proxyVerificationMessage = null) }
+            _state.update { it.copy(proxyStatus = ProxyStatus.VERIFYING, proxyVerificationMessage = null, ipInfoResult = null, ipCheckError = null) }
             val s = state.value
             val url = buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass)
             if (url == null) {
@@ -738,7 +726,6 @@ class MainViewModel(
             val client = createHttpClient(url)
             try {
                 Logger.logInfo("Verifying proxy connection to $url...")
-                // A lightweight request that should return a 204 No Content
                 val response = client.get("http://clients3.google.com/generate_204")
                 if (response.status.isSuccess()) {
                     _state.update { it.copy(proxyStatus = ProxyStatus.CONNECTED, proxyVerificationMessage = "Connection successful!") }
@@ -758,7 +745,39 @@ class MainViewModel(
         }
     }
 
-    // --- Queue Logic ---
+    internal fun checkIpAddress() {
+        viewModelScope.launch {
+            _state.update { it.copy(isCheckingIp = true, ipInfoResult = null, ipCheckError = null) }
+            val s = state.value
+            val url = buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass)
+
+            Logger.logInfo("Checking public IP address...")
+            if (url != null) {
+                Logger.logInfo("Using proxy: $url")
+            }
+
+            val client = createHttpClient(url)
+            try {
+                val response = client.get("https://ipinfo.io/json")
+                if (response.status.isSuccess()) {
+                    val ipInfo = response.body<IpInfo>()
+                    _state.update { it.copy(ipInfoResult = ipInfo) }
+                    Logger.logInfo("IP Check Success: ${ipInfo.ip} (${ipInfo.city}, ${ipInfo.country})")
+                } else {
+                    val errorMsg = "Failed: Server responded with ${response.status}"
+                    _state.update { it.copy(ipCheckError = errorMsg) }
+                    Logger.logError(errorMsg)
+                }
+            } catch (e: Exception) {
+                val errorMsg = "Failed: ${e.message?.take(100) ?: "Unknown error"}"
+                _state.update { it.copy(ipCheckError = errorMsg) }
+                Logger.logError("IP Check failed.", e)
+            } finally {
+                client.close()
+                _state.update { it.copy(isCheckingIp = false) }
+            }
+        }
+    }
 
     internal fun getJobContext(jobId: String): QueuedOperation? = queuedOperationContext[jobId]
 

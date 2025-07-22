@@ -31,7 +31,10 @@ class ProcessorService(
         const val FAILURES_FILE = "failures.json"
     }
 
-    private val jsonSerializer = Json { prettyPrint = true }
+    private val jsonSerializer = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+    }
 
     private suspend fun processImage(
         inputFile: File,
@@ -112,7 +115,6 @@ class ProcessorService(
         var coverImageFile: File? = null
 
         try {
-            // Download cover image if available
             if (seriesMetadata?.coverImageUrl != null) {
                 val client = createHttpClient(null)
                 try {
@@ -151,7 +153,6 @@ class ProcessorService(
                             processImage(img, tempFile, maxWidth, jpegQuality)
                         }
 
-                        // Always store images without re-compressing
                         val imageZipParams = ZipParameters().apply {
                             compressionMethod = CompressionMethod.STORE
                         }
@@ -161,7 +162,6 @@ class ProcessorService(
 
                 if (!failedChapters.isNullOrEmpty()) {
                     val failuresJson = jsonSerializer.encodeToString(failedChapters)
-                    // Text files are compressed by default
                     val failuresParams = ZipParameters().apply { fileNameInZip = "OEBPS/$FAILURES_FILE" }
                     epubZip.addStream(failuresJson.byteInputStream(), failuresParams)
                     metadata.manifestItems.add("""<item id="failures" href="$FAILURES_FILE" media-type="application/json"/>""")

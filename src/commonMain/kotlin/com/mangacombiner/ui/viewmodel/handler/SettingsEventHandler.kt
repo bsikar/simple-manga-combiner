@@ -38,6 +38,42 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         Event.Settings.RequestRestoreDefaults -> _state.update { it.copy(showRestoreDefaultsDialog = true) }
         Event.Settings.ConfirmRestoreDefaults -> onConfirmRestoreDefaults()
         Event.Settings.CancelRestoreDefaults -> _state.update { it.copy(showRestoreDefaultsDialog = false) }
+
+        is Event.Settings.UpdateProxyType -> {
+            _state.update { it.copy(proxyType = event.type) }
+            onUpdateProxySetting()
+        }
+        is Event.Settings.UpdateProxyHost -> {
+            _state.update { it.copy(proxyHost = event.host) }
+            onUpdateProxySetting()
+        }
+        is Event.Settings.UpdateProxyPort -> {
+            _state.update { it.copy(proxyPort = event.port) }
+            onUpdateProxySetting()
+        }
+        is Event.Settings.UpdateProxyUser -> {
+            _state.update { it.copy(proxyUser = event.user) }
+            onUpdateProxySetting()
+        }
+        is Event.Settings.UpdateProxyPass -> {
+            _state.update { it.copy(proxyPass = event.pass) }
+            onUpdateProxySetting()
+        }
+        is Event.Settings.VerifyProxy -> verifyProxyConnection()
+        is Event.Settings.CheckIpAddress -> checkIpAddress()
+    }
+}
+
+private fun MainViewModel.onUpdateProxySetting() {
+    _state.update {
+        val newUrl = buildProxyUrl(it.proxyType, it.proxyHost, it.proxyPort, it.proxyUser, it.proxyPass) ?: ""
+        it.copy(
+            proxyUrl = newUrl,
+            proxyStatus = ProxyStatus.UNVERIFIED,
+            proxyVerificationMessage = null,
+            ipInfoResult = null,
+            ipCheckError = null
+        )
     }
 }
 
@@ -71,6 +107,11 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
             userAgentName = defaultSettings.userAgentName,
             perWorkerUserAgent = defaultSettings.perWorkerUserAgent,
             proxyUrl = defaultSettings.proxyUrl,
+            proxyType = defaultSettings.proxyType,
+            proxyHost = defaultSettings.proxyHost,
+            proxyPort = defaultSettings.proxyPort,
+            proxyUser = defaultSettings.proxyUser,
+            proxyPass = defaultSettings.proxyPass,
             debugLog = defaultSettings.debugLog,
             logAutoscrollEnabled = defaultSettings.logAutoscrollEnabled,
             zoomFactor = defaultSettings.zoomFactor,

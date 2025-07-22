@@ -1,5 +1,6 @@
 package com.mangacombiner.ui.widget
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -13,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -212,7 +214,17 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(8.dp))
                         }
-                        Text("Verify Connection")
+                        Text("Verify")
+                    }
+                    Button(
+                        onClick = { onEvent(Event.Settings.CheckIpAddress) },
+                        enabled = state.proxyStatus != ProxyStatus.VERIFYING && !state.isCheckingIp
+                    ) {
+                        if (state.isCheckingIp) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Check IP")
                     }
                     when (state.proxyStatus) {
                         ProxyStatus.CONNECTED -> Icon(Icons.Default.CheckCircle, "Connected", tint = Color(0xFF4CAF50))
@@ -225,6 +237,24 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                             style = MaterialTheme.typography.caption,
                             color = if (state.proxyStatus == ProxyStatus.FAILED) MaterialTheme.colors.error else LocalContentColor.current
                         )
+                    }
+                }
+                AnimatedVisibility(visible = state.isCheckingIp || state.ipInfoResult != null || state.ipCheckError != null) {
+                    Column(
+                        modifier = Modifier.padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (state.isCheckingIp) {
+                            Text("Checking IP address...", style = MaterialTheme.typography.caption)
+                        }
+                        state.ipInfoResult?.let { info ->
+                            Text("Public IP: ${info.ip ?: "N/A"}", fontWeight = FontWeight.Bold)
+                            Text("Location: ${listOfNotNull(info.city, info.region, info.country).joinToString(", ")}", style = MaterialTheme.typography.body2)
+                            Text("ISP: ${info.org ?: "N/A"}", style = MaterialTheme.typography.caption)
+                        }
+                        state.ipCheckError?.let { error ->
+                            Text(error, color = MaterialTheme.colors.error, style = MaterialTheme.typography.caption)
+                        }
                     }
                 }
             }
