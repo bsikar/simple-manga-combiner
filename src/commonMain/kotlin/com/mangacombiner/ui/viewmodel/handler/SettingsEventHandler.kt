@@ -129,6 +129,7 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
 
 /**
  * Enhanced proxy verification that tests both basic connectivity and kill switch behavior.
+ * This extension function provides comprehensive proxy testing using ProxyTestUtility.
  */
 internal fun MainViewModel.verifyProxyConnection() {
     viewModelScope.launch {
@@ -216,6 +217,10 @@ internal fun MainViewModel.verifyProxyConnection() {
     }
 }
 
+/**
+ * Enhanced IP address checking with proxy awareness and detailed logging.
+ * This extension function provides better feedback about proxy functionality.
+ */
 internal fun MainViewModel.checkIpAddress() {
     viewModelScope.launch {
         _state.update { it.copy(isCheckingIp = true, ipInfoResult = null, ipCheckError = null) }

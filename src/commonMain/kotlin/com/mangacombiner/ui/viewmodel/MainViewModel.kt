@@ -2,16 +2,12 @@ package com.mangacombiner.ui.viewmodel
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.model.DownloadJob
-import com.mangacombiner.model.IpInfo
 import com.mangacombiner.model.ProxyType
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.service.*
 import com.mangacombiner.ui.viewmodel.handler.*
 import com.mangacombiner.ui.viewmodel.state.*
 import com.mangacombiner.util.*
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.File
@@ -21,7 +17,6 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.io.path.nameWithoutExtension
 import kotlin.random.Random
-import com.mangacombiner.util.ProxyTestUtility
 
 internal class JobEditedException : CancellationException("Job was edited and needs to be restarted.")
 
@@ -712,72 +707,6 @@ class MainViewModel(
             }
         } else ""
         return "$scheme://$auth${host.trim()}:${port.trim()}"
-    }
-
-    internal fun verifyProxyConnection() {
-        viewModelScope.launch {
-            _state.update { it.copy(proxyStatus = ProxyStatus.VERIFYING, proxyVerificationMessage = null, ipInfoResult = null, ipCheckError = null) }
-            val s = state.value
-            val url = buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass)
-            if (url == null) {
-                _state.update { it.copy(proxyStatus = ProxyStatus.UNVERIFIED, proxyVerificationMessage = "No proxy configured.") }
-                return@launch
-            }
-
-            val client = createHttpClient(url)
-            try {
-                Logger.logInfo("Verifying proxy connection to $url...")
-                val response = client.get("http://clients3.google.com/generate_204")
-                if (response.status.isSuccess()) {
-                    _state.update { it.copy(proxyStatus = ProxyStatus.CONNECTED, proxyVerificationMessage = "Connection successful!") }
-                    Logger.logInfo("Proxy connection successful.")
-                } else {
-                    val message = "Failed: Server responded with ${response.status}"
-                    _state.update { it.copy(proxyStatus = ProxyStatus.FAILED, proxyVerificationMessage = message) }
-                    Logger.logError(message)
-                }
-            } catch (e: Exception) {
-                val message = "Failed: ${e.message?.take(100) ?: "Unknown error"}"
-                _state.update { it.copy(proxyStatus = ProxyStatus.FAILED, proxyVerificationMessage = message) }
-                Logger.logError("Proxy verification failed.", e)
-            } finally {
-                client.close()
-            }
-        }
-    }
-
-    internal fun checkIpAddress() {
-        viewModelScope.launch {
-            _state.update { it.copy(isCheckingIp = true, ipInfoResult = null, ipCheckError = null) }
-            val s = state.value
-            val url = buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass)
-
-            Logger.logInfo("Checking public IP address...")
-            if (url != null) {
-                Logger.logInfo("Using proxy: $url")
-            }
-
-            val client = createHttpClient(url)
-            try {
-                val response = client.get("https://ipinfo.io/json")
-                if (response.status.isSuccess()) {
-                    val ipInfo = response.body<IpInfo>()
-                    _state.update { it.copy(ipInfoResult = ipInfo) }
-                    Logger.logInfo("IP Check Success: ${ipInfo.ip} (${ipInfo.city}, ${ipInfo.country})")
-                } else {
-                    val errorMsg = "Failed: Server responded with ${response.status}"
-                    _state.update { it.copy(ipCheckError = errorMsg) }
-                    Logger.logError(errorMsg)
-                }
-            } catch (e: Exception) {
-                val errorMsg = "Failed: ${e.message?.take(100) ?: "Unknown error"}"
-                _state.update { it.copy(ipCheckError = errorMsg) }
-                Logger.logError("IP Check failed.", e)
-            } finally {
-                client.close()
-                _state.update { it.copy(isCheckingIp = false) }
-            }
-        }
     }
 
     internal fun getJobContext(jobId: String): QueuedOperation? = queuedOperationContext[jobId]

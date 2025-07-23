@@ -645,26 +645,61 @@ fun main(args: Array<String>) {
     runBlocking {
         if (cliArgs.checkIp) {
             val finalProxyUrl = buildProxyUrlFromCliArgs(cliArgs)
-            Logger.logInfo("Checking public IP address...")
-            if (finalProxyUrl != null) Logger.logInfo("Using proxy: $finalProxyUrl")
 
-            val client = createHttpClient(finalProxyUrl)
-            try {
-                val response = client.get("https://ipinfo.io/json")
-                if (response.status.isSuccess()) {
-                    val ipInfo = response.body<IpInfo>()
-                    println("Success!")
-                    println("  Public IP: ${ipInfo.ip ?: "N/A"}")
-                    println("  Hostname:  ${ipInfo.hostname ?: "N/A"}")
-                    println("  Location:  ${listOfNotNull(ipInfo.city, ipInfo.region, ipInfo.country).joinToString(", ")}")
-                    println("  ISP:       ${ipInfo.org ?: "N/A"}")
+            if (finalProxyUrl != null) {
+                // Use the comprehensive proxy test utility
+                Logger.logInfo("Running comprehensive proxy test...")
+                val testResult = ProxyTestUtility.runComprehensiveProxyTest(finalProxyUrl)
+
+                if (testResult.success) {
+                    println("✅ COMPREHENSIVE PROXY TEST PASSED")
+                    println("📍 Direct Connection:")
+                    println("    IP: ${testResult.directIp}")
+                    println("    Location: ${testResult.directLocation}")
+                    println("📍 Proxy Connection:")
+                    println("    IP: ${testResult.proxyIp}")
+                    println("    Location: ${testResult.proxyLocation}")
+                    println("🔒 Security:")
+                    println("    IP Changed: ${if (testResult.ipChanged) "✅ Yes" else "❌ No"}")
+                    println("    Kill Switch: ${if (testResult.killSwitchWorking) "✅ Active" else "❌ Failed"}")
+
+                    if (!testResult.killSwitchWorking) {
+                        println("\n⚠️  WARNING: Kill switch not working! Traffic may leak through direct connection.")
+                        println("   This is a security risk - your real IP could be exposed if proxy fails.")
+                    }
+
                 } else {
-                    Logger.logError("Failed: Server responded with status ${response.status}")
+                    println("❌ PROXY TEST FAILED")
+                    testResult.error?.let { println("Error: $it") }
+                    println("\nProblems detected:")
+                    if (!testResult.ipChanged) {
+                        println("  - IP address did not change (proxy may not be working)")
+                    }
+                    if (!testResult.killSwitchWorking) {
+                        println("  - Kill switch not working (traffic may leak on proxy failure)")
+                    }
                 }
-            } catch (e: Exception) {
-                Logger.logError("IP Check failed.", e)
-            } finally {
-                client.close()
+
+            } else {
+                // Simple IP check without proxy
+                Logger.logInfo("Checking public IP address without proxy...")
+                val client = createHttpClient(null)
+                try {
+                    val response = client.get("https://ipinfo.io/json")
+                    if (response.status.isSuccess()) {
+                        val ipInfo = response.body<IpInfo>()
+                        println("✅ Direct Connection IP Check:")
+                        println("    IP: ${ipInfo.ip ?: "N/A"}")
+                        println("    Location: ${listOfNotNull(ipInfo.city, ipInfo.region, ipInfo.country).joinToString(", ")}")
+                        println("    ISP: ${ipInfo.org ?: "N/A"}")
+                    } else {
+                        Logger.logError("Failed: Server responded with status ${response.status}")
+                    }
+                } catch (e: Exception) {
+                    Logger.logError("IP Check failed.", e)
+                } finally {
+                    client.close()
+                }
             }
             return@runBlocking
         }

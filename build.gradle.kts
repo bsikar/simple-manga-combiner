@@ -72,6 +72,7 @@ kotlin {
                 implementation(libs.google.material)
                 api(libs.koin.android)
                 implementation(libs.ktor.client.java)
+                implementation(libs.ktor.client.cio)
                 implementation(libs.androidx.documentfile)
                 implementation(libs.ktor.io.jvm)
             }
@@ -81,6 +82,7 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 api(libs.koin.jvm)
                 implementation(libs.ktor.client.java)
+                implementation(libs.ktor.client.cio)
                 implementation(libs.ktor.io.jvm)
                 implementation(libs.ktor.client.content.negotiation)
                 implementation(libs.ktor.serialization.kotlinx.json.jvm)

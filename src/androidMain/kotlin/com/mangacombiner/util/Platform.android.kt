@@ -106,25 +106,45 @@ actual fun createHttpClient(proxyUrl: String?): HttpClient {
                             configuredProxy = Proxy(Proxy.Type.SOCKS, socketAddress)
                             Logger.logInfo("Using SOCKS5 proxy: ${uri.host}:$port")
 
-                            // For SOCKS, system properties work with Java engine
+                            // Clear any existing HTTP proxy settings to avoid conflicts
+                            System.clearProperty("http.proxyHost")
+                            System.clearProperty("http.proxyPort")
+                            System.clearProperty("https.proxyHost")
+                            System.clearProperty("https.proxyPort")
+
+                            // Set SOCKS properties with proper naming
                             System.setProperty("socksProxyHost", uri.host)
                             System.setProperty("socksProxyPort", port.toString())
+                            System.setProperty("socksProxyVersion", "5")
 
                             if (!username.isNullOrBlank()) {
                                 System.setProperty("java.net.socks.username", username)
                                 password?.let { System.setProperty("java.net.socks.password", it) }
 
-                                // Also set up authenticator for additional compatibility
+                                // Set up authenticator with more specific SOCKS handling
                                 Authenticator.setDefault(object : Authenticator() {
-                                    override fun getPasswordAuthentication(): PasswordAuthentication {
-                                        if (requestorType == RequestorType.PROXY) {
-                                            return PasswordAuthentication(username, password?.toCharArray() ?: "".toCharArray())
+                                    override fun getPasswordAuthentication(): PasswordAuthentication? {
+                                        return when {
+                                            requestorType == RequestorType.PROXY -> {
+                                                Logger.logDebug { "Providing SOCKS5 authentication for: $requestingHost:$requestingPort" }
+                                                PasswordAuthentication(username, password?.toCharArray() ?: "".toCharArray())
+                                            }
+                                            requestingProtocol?.equals("SOCKS", ignoreCase = true) == true -> {
+                                                Logger.logDebug { "Providing SOCKS authentication for protocol: $requestingProtocol" }
+                                                PasswordAuthentication(username, password?.toCharArray() ?: "".toCharArray())
+                                            }
+                                            else -> {
+                                                Logger.logDebug { "Auth request not for SOCKS proxy: $requestorType, $requestingProtocol" }
+                                                null
+                                            }
                                         }
-                                        return super.getPasswordAuthentication()
                                     }
                                 })
                                 Logger.logInfo("SOCKS5 proxy authentication enabled for user: '$username'")
                             }
+
+                            // Force the Java HTTP client to use system proxy settings
+                            System.setProperty("java.net.useSystemProxies", "true")
                         }
                         else -> {
                             Logger.logError("Unsupported proxy protocol in URL: $proxyUrl", null)

@@ -1,10 +1,8 @@
 package com.mangacombiner.service
 
 import com.mangacombiner.util.Logger
-import io.ktor.client.*
+import com.mangacombiner.util.createHttpClient
 import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
@@ -202,13 +200,8 @@ private fun updateEpubMetadataElement(document: org.jsoup.nodes.Document, elemen
 
 private suspend fun updateEpubCoverImage(tempDir: File, coverUrl: String): Boolean {
     return try {
-        val client = HttpClient(CIO) {
-            install(HttpTimeout) {
-                requestTimeoutMillis = 30000
-                connectTimeoutMillis = 10000
-                socketTimeoutMillis = 30000
-            }
-        }
+        // Use the app's createHttpClient utility instead of CIO directly
+        val client = createHttpClient(null)
 
         try {
             val response = client.get(coverUrl) {
