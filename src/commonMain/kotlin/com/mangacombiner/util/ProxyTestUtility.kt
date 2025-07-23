@@ -8,8 +8,6 @@ import io.ktor.http.*
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import java.net.ProxySelector
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -21,10 +19,10 @@ object ProxyTestUtility {
 
     /**
      * Comprehensive proxy test that validates:
-     * 1. SOCKS5 connectivity
-     * 2. IP address change verification
-     * 3. Kill switch behavior (no fallback to direct connection)
-     * 4. Authentication (if credentials provided)
+     * 1. SOCKS5 connectivity and authentication.
+     * 2. IP address change verification.
+     * 3. Kill switch behavior (no fallback to direct connection).
+     * 4. Consistency across multiple geo-location endpoints.
      */
     suspend fun runComprehensiveProxyTest(proxyUrl: String): ProxyTestResult = coroutineScope {
         if (!testInProgress.compareAndSet(false, true)) {
@@ -38,14 +36,36 @@ object ProxyTestUtility {
             // Step 1: Test direct connection (baseline)
             Logger.logInfo("Step 1: Testing direct connection (baseline)...")
             val directResult = testDirectConnection()
+            val directIp = directResult.ipInfo?.ip
 
             // Step 2: Test proxy connection
             Logger.logInfo("Step 2: Testing proxy connection...")
-            val proxyResult = testProxyConnection(proxyUrl)
+            val proxyResult = testProxyConnection(proxyUrl, directIp)
+
+            // If the main proxy connection fails, we can't test anything else. Return early with detailed error.
+            if (!proxyResult.success) {
+                val finalResult = ProxyTestResult(
+                    success = false,
+                    directIp = directIp,
+                    proxyIp = null, // It failed
+                    ipChanged = false,
+                    killSwitchWorking = false, // Can't be tested
+                    proxyLocation = null,
+                    directLocation = directResult.ipInfo?.let { "${it.city}, ${it.country}" },
+                    error = proxyResult.error ?: "Proxy connection failed.",
+                    details = listOf(
+                        "Direct IP: ${directIp ?: "Unknown"}",
+                        "Proxy IP: FAILED",
+                        "Error: ${proxyResult.error}"
+                    )
+                )
+                logTestResults(finalResult)
+                return@coroutineScope finalResult
+            }
 
             // Step 3: Test kill switch behavior
             Logger.logInfo("Step 3: Testing kill switch behavior...")
-            val killSwitchResult = testKillSwitchBehavior(proxyUrl)
+            val killSwitchResult = testKillSwitchBehavior(proxyUrl, directIp)
 
             // Step 4: Test multiple endpoints simultaneously
             Logger.logInfo("Step 4: Testing multiple endpoints...")
@@ -54,15 +74,15 @@ object ProxyTestUtility {
             // Combine results
             val overallResult = ProxyTestResult(
                 success = proxyResult.success && killSwitchResult.success,
-                directIp = directResult.ipInfo?.ip,
+                directIp = directIp,
                 proxyIp = proxyResult.ipInfo?.ip,
-                ipChanged = directResult.ipInfo?.ip != proxyResult.ipInfo?.ip,
+                ipChanged = directIp != null && proxyResult.ipInfo?.ip != null && directIp != proxyResult.ipInfo.ip,
                 killSwitchWorking = killSwitchResult.success,
                 proxyLocation = proxyResult.ipInfo?.let { "${it.city}, ${it.country}" },
                 directLocation = directResult.ipInfo?.let { "${it.city}, ${it.country}" },
                 error = proxyResult.error ?: killSwitchResult.error,
                 details = buildList {
-                    add("Direct IP: ${directResult.ipInfo?.ip ?: "Unknown"}")
+                    add("Direct IP: ${directIp ?: "Unknown"}")
                     add("Proxy IP: ${proxyResult.ipInfo?.ip ?: "Failed to get"}")
                     add("Location change: ${directResult.ipInfo?.let { "${it.city}, ${it.country}" }} → ${proxyResult.ipInfo?.let { "${it.city}, ${it.country}" }}")
                     add("Kill switch: ${if (killSwitchResult.success) "✓ Working" else "✗ Failed"}")
@@ -86,6 +106,7 @@ object ProxyTestUtility {
         try {
             val client = createHttpClient(null) // No proxy
             try {
+                Logger.logInfo("Using Ktor HTTP client engine: ${client.engine::class.simpleName}")
                 val response = client.get("https://ipinfo.io/json")
                 if (response.status.isSuccess()) {
                     val ipInfo = response.body<com.mangacombiner.model.IpInfo>()
@@ -103,30 +124,38 @@ object ProxyTestUtility {
         }
     }
 
-    private suspend fun testProxyConnection(proxyUrl: String): SingleTestResult = coroutineScope {
+    private suspend fun testProxyConnection(proxyUrl: String, directIp: String?): SingleTestResult = coroutineScope {
         try {
             val client = createHttpClient(proxyUrl)
             try {
+                Logger.logInfo("Using Ktor HTTP client engine: ${client.engine::class.simpleName}")
                 val response = client.get("https://ipinfo.io/json")
                 if (response.status.isSuccess()) {
                     val ipInfo = response.body<com.mangacombiner.model.IpInfo>()
+                    if (ipInfo.ip == directIp) {
+                        Logger.logError("Proxy connection failed: IP address is the same as direct connection.")
+                        return@coroutineScope SingleTestResult.failed("Proxy is not being used. IP address did not change.", ipInfo = ipInfo, authWorked = true)
+                    }
                     Logger.logInfo("Proxy connection: ${ipInfo.ip} (${ipInfo.city}, ${ipInfo.country})")
-                    SingleTestResult.success(ipInfo)
+                    SingleTestResult.success(ipInfo, authWorked = true)
                 } else {
-                    SingleTestResult.failed("HTTP ${response.status}")
+                    SingleTestResult.failed("HTTP ${response.status}", authWorked = false)
                 }
             } finally {
                 client.close()
             }
         } catch (e: Exception) {
             Logger.logError("Proxy connection test failed", e)
-            SingleTestResult.failed(e.message ?: "Unknown error")
+            if (e.message?.contains("authentication", ignoreCase = true) == true || e.message?.contains("rejected", ignoreCase = true) == true) {
+                return@coroutineScope SingleTestResult.failed("Proxy authentication failed: ${e.message}", authWorked = false)
+            }
+            return@coroutineScope SingleTestResult.failed(e.message ?: "Unknown connection error", authWorked = false)
         }
     }
 
-    private suspend fun testKillSwitchBehavior(proxyUrl: String): SingleTestResult = coroutineScope {
+    private suspend fun testKillSwitchBehavior(proxyUrl: String, directIp: String?): SingleTestResult = coroutineScope {
         try {
-            // Test with an invalid proxy to see if it falls back to direct connection
+            // Test with an invalid proxy port to ensure it doesn't fall back to direct connection
             val invalidProxyUrl = proxyUrl.replace(
                 Regex(":(\\d+)"),
                 ":${(10000..65000).random()}" // Random invalid port
@@ -136,22 +165,27 @@ object ProxyTestUtility {
 
             val client = createHttpClient(invalidProxyUrl)
             try {
-                // This should fail and NOT fall back to direct connection
+                // This request should fail with a connection error and NOT fall back to a direct connection
                 val response = client.get("https://ipinfo.io/json") {
                     timeout {
                         requestTimeoutMillis = 10000 // Short timeout for testing
                     }
                 }
 
-                // If we get here, kill switch FAILED - we shouldn't be able to connect
+                // If we get here, the kill switch has FAILED because a connection was made
                 val ipInfo = response.body<com.mangacombiner.model.IpInfo>()
-                Logger.logError("KILL SWITCH FAILED! Connection succeeded through direct connection: ${ipInfo.ip}")
-                SingleTestResult.failed("Kill switch failed - fell back to direct connection")
+                if (ipInfo.ip == directIp) {
+                    Logger.logError("KILL SWITCH FAILED! Connection succeeded through direct connection: ${ipInfo.ip}")
+                    return@coroutineScope SingleTestResult.failed("Kill switch failed - fell back to direct connection")
+                } else {
+                    Logger.logError("KILL SWITCH FAILED! Connection succeeded through an unexpected IP: ${ipInfo.ip}")
+                    return@coroutineScope SingleTestResult.failed("Kill switch failed - connected to an unexpected IP")
+                }
 
             } catch (e: Exception) {
-                // This is expected - the connection should fail
+                // This is the EXPECTED outcome for a working kill switch. The connection must fail.
                 Logger.logInfo("Kill switch working correctly - connection failed as expected: ${e.message}")
-                SingleTestResult.success(null, "Connection failed as expected (kill switch active)")
+                return@coroutineScope SingleTestResult.success(null, "Connection failed as expected (kill switch active)")
             } finally {
                 client.close()
             }
@@ -237,12 +271,12 @@ object ProxyTestUtility {
             Logger.logInfo("  ✓ Kill switch: ${if (result.killSwitchWorking) "Working" else "Failed"}")
         } else {
             Logger.logError("🔴 PROXY TEST FAILED")
-            Logger.logError("  Error: ${result.error}")
-            if (!result.ipChanged) {
-                Logger.logError("  ⚠️  IP did not change - proxy may not be working")
+            result.error?.let { Logger.logError("   Error: $it") }
+            if (!result.ipChanged && result.proxyIp != null) {
+                Logger.logError("   ⚠️  IP did not change - proxy may not be working")
             }
             if (!result.killSwitchWorking) {
-                Logger.logError("  ⚠️  Kill switch not working - traffic may leak through direct connection")
+                Logger.logError("   ⚠️  Kill switch not working - traffic may leak through direct connection")
             }
         }
 
@@ -272,12 +306,14 @@ object ProxyTestUtility {
         val success: Boolean,
         val ipInfo: com.mangacombiner.model.IpInfo? = null,
         val error: String? = null,
-        val message: String? = null
+        val message: String? = null,
+        val authWorked: Boolean? = null
     ) {
         companion object {
-            fun success(ipInfo: com.mangacombiner.model.IpInfo?, message: String? = null) =
-                SingleTestResult(true, ipInfo, null, message)
-            fun failed(error: String) = SingleTestResult(false, null, error)
+            fun success(ipInfo: com.mangacombiner.model.IpInfo?, message: String? = null, authWorked: Boolean? = null) =
+                SingleTestResult(true, ipInfo, null, message, authWorked)
+            fun failed(error: String, ipInfo: com.mangacombiner.model.IpInfo? = null, authWorked: Boolean? = null) =
+                SingleTestResult(false, ipInfo, error, null, authWorked)
         }
     }
 }

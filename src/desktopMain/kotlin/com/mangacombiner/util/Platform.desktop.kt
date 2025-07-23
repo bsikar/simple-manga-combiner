@@ -20,11 +20,12 @@ import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
 import java.net.URI
-import java.util.Collections
 
 /**
  * Custom ProxySelector that enforces kill switch behavior.
- * If proxy is configured but fails, it prevents fallback to direct connection.
+ * If a proxy is configured, it will ONLY return that proxy. If the connection to that
+ * proxy fails, the `connectFailed` method is called, and because we don't provide
+ * an alternative, the connection fails entirely instead of falling back to a direct connection.
  */
 private class KillSwitchProxySelector(
     private val configuredProxy: Proxy?,
@@ -42,14 +43,21 @@ private class KillSwitchProxySelector(
     }
 
     override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: java.io.IOException?) {
-        // Log proxy connection failures - this is where kill switch activates
+        // Log proxy connection failures - this is where the kill switch activates
         Logger.logError("Proxy connection failed for ${uri}. Kill switch activated - no direct fallback allowed.", ioe)
-        // Don't provide alternative - this enforces the kill switch
+        // By not providing an alternative proxy here, we prevent fallback to a direct connection.
     }
 }
 
+/**
+ * Creates a Ktor HttpClient using the Java engine, with robust, explicit proxy configuration.
+ * This implementation avoids relying on global system properties for the proxy itself,
+ * instead using the standard Java Authenticator and ProxySelector mechanisms, which the
+ * Ktor Java engine is designed to respect. This provides reliable proxy support and a
+ * functional kill switch.
+ */
 actual fun createHttpClient(proxyUrl: String?): HttpClient {
-    // Clear any previous proxy settings to ensure clean state
+    // Reset all proxy-related global state to ensure a clean slate for each client creation.
     System.clearProperty("http.proxyHost")
     System.clearProperty("http.proxyPort")
     System.clearProperty("https.proxyHost")
@@ -59,96 +67,59 @@ actual fun createHttpClient(proxyUrl: String?): HttpClient {
     System.clearProperty("java.net.socks.username")
     System.clearProperty("java.net.socks.password")
     Authenticator.setDefault(null)
+    ProxySelector.setDefault(null)
 
     var configuredProxy: Proxy? = null
 
-    return HttpClient(Java) {
-        engine {
-            if (!proxyUrl.isNullOrBlank()) {
-                try {
-                    val uri = URI(proxyUrl)
-                    val username = uri.userInfo?.split(":", limit = 2)?.getOrNull(0)
-                    val password = uri.userInfo?.split(":", limit = 2)?.getOrNull(1)
-
-                    val port = if (uri.port == -1) {
-                        when (uri.scheme?.lowercase()) {
-                            "http" -> 80
-                            "https" -> 443
-                            "socks", "socks5" -> 1080
-                            else -> 8080
-                        }
-                    } else {
-                        uri.port
-                    }
-
-                    when (uri.scheme?.lowercase()) {
-                        "http", "https" -> {
-                            val socketAddress = InetSocketAddress(uri.host, port)
-                            configuredProxy = Proxy(Proxy.Type.HTTP, socketAddress)
-                            Logger.logInfo("Using HTTP proxy: ${uri.host}:$port")
-
-                            // Set system properties for HTTP proxies (Java engine respects these)
-                            System.setProperty("http.proxyHost", uri.host)
-                            System.setProperty("http.proxyPort", port.toString())
-                            System.setProperty("https.proxyHost", uri.host)
-                            System.setProperty("https.proxyPort", port.toString())
-
-                            if (!username.isNullOrBlank()) {
-                                Authenticator.setDefault(object : Authenticator() {
-                                    override fun getPasswordAuthentication(): PasswordAuthentication {
-                                        if (requestorType == RequestorType.PROXY) {
-                                            return PasswordAuthentication(username, password?.toCharArray() ?: "".toCharArray())
-                                        }
-                                        return super.getPasswordAuthentication()
-                                    }
-                                })
-                                Logger.logInfo("Proxy authentication enabled for user: '$username'")
-                            }
-                        }
-                        "socks", "socks5" -> {
-                            val socketAddress = InetSocketAddress(uri.host, port)
-                            configuredProxy = Proxy(Proxy.Type.SOCKS, socketAddress)
-                            Logger.logInfo("Using SOCKS5 proxy: ${uri.host}:$port")
-
-                            // For SOCKS, system properties work with Java engine
-                            System.setProperty("socksProxyHost", uri.host)
-                            System.setProperty("socksProxyPort", port.toString())
-
-                            if (!username.isNullOrBlank()) {
-                                System.setProperty("java.net.socks.username", username)
-                                password?.let { System.setProperty("java.net.socks.password", it) }
-
-                                // Also set up authenticator for additional compatibility
-                                Authenticator.setDefault(object : Authenticator() {
-                                    override fun getPasswordAuthentication(): PasswordAuthentication {
-                                        if (requestorType == RequestorType.PROXY) {
-                                            return PasswordAuthentication(username, password?.toCharArray() ?: "".toCharArray())
-                                        }
-                                        return super.getPasswordAuthentication()
-                                    }
-                                })
-                                Logger.logInfo("SOCKS5 proxy authentication enabled for user: '$username'")
-                            }
-                        }
-                        else -> {
-                            Logger.logError("Unsupported proxy protocol in URL: $proxyUrl", null)
-                        }
-                    }
-
-                    // Install kill switch proxy selector
-                    if (configuredProxy != null) {
-                        ProxySelector.setDefault(KillSwitchProxySelector(configuredProxy, false))
-                        Logger.logInfo("Kill switch activated: All traffic will use proxy or fail")
-                    }
-
-                } catch (e: Exception) {
-                    Logger.logError("Invalid proxy URL format: $proxyUrl", e)
-                }
-            } else {
-                // No proxy configured - allow direct connections
-                ProxySelector.setDefault(KillSwitchProxySelector(null, true))
+    if (!proxyUrl.isNullOrBlank()) {
+        try {
+            val uri = URI(proxyUrl)
+            val host = uri.host
+            val port = if (uri.port != -1) uri.port else when (uri.scheme?.lowercase()) {
+                "http" -> 80
+                "https" -> 443
+                "socks", "socks5" -> 1080
+                else -> 1080 // Default SOCKS port
             }
+
+            val proxyType = when (uri.scheme?.lowercase()) {
+                "http", "https" -> Proxy.Type.HTTP
+                "socks", "socks5" -> Proxy.Type.SOCKS
+                else -> throw IllegalArgumentException("Unsupported proxy scheme: ${uri.scheme}")
+            }
+
+            configuredProxy = Proxy(proxyType, InetSocketAddress(host, port))
+            Logger.logInfo("Configuring proxy: ${proxyType}://$host:$port")
+
+            val username = uri.userInfo?.split(":", limit = 2)?.getOrNull(0)
+            val password = uri.userInfo?.split(":", limit = 2)?.getOrNull(1)
+
+            if (!username.isNullOrBlank()) {
+                // This Authenticator works for both SOCKS5 and HTTP Basic Auth with the Java engine
+                Authenticator.setDefault(object : Authenticator() {
+                    override fun getPasswordAuthentication(): PasswordAuthentication {
+                        Logger.logDebug { "Authenticator providing credentials for ${getRequestingHost()}:${getRequestingPort()}" }
+                        return PasswordAuthentication(username, password?.toCharArray() ?: "".toCharArray())
+                    }
+                })
+                Logger.logInfo("Proxy authentication enabled for user: '$username'")
+            }
+        } catch (e: Exception) {
+            Logger.logError("Invalid proxy URL format or configuration error: $proxyUrl", e)
+            configuredProxy = null
         }
+    }
+
+    // Install our custom ProxySelector. This is the key to the kill switch.
+    // The Java engine will use this selector to get the proxy for each connection.
+    ProxySelector.setDefault(KillSwitchProxySelector(configuredProxy, allowDirectConnection = configuredProxy == null))
+    if (configuredProxy != null) {
+        Logger.logInfo("Kill switch activated: All traffic will use proxy or fail.")
+    }
+
+    return HttpClient(Java) {
+        // The Java engine automatically uses the default ProxySelector we just set.
+        // No extra engine configuration is needed here for the proxy itself.
 
         install(HttpTimeout) {
             requestTimeoutMillis = 30000L
@@ -159,8 +130,6 @@ actual fun createHttpClient(proxyUrl: String?): HttpClient {
         install(HttpRequestRetry) {
             retryOnServerErrors(maxRetries = 3)
             exponentialDelay()
-
-            // Custom retry logic that respects kill switch
             retryIf { _, httpResponse ->
                 val shouldRetry = httpResponse.status.value >= 500
                 if (!shouldRetry && configuredProxy != null) {

@@ -181,7 +181,6 @@ tasks.register<ShadowJar>("cliJar") {
 
     minimize {
         exclude(dependency("org.slf4j:slf4j-simple"))
-        exclude(dependency("io.ktor:ktor-client-java"))
     }
 }
 
