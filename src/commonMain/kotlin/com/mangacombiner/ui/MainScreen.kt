@@ -1,5 +1,6 @@
 package com.mangacombiner.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
@@ -10,7 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
@@ -41,7 +44,27 @@ fun MainScreen(viewModel: MainViewModel) {
             }
         }
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colors.background).padding(paddingValues)) {
+        Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colors.background).padding(paddingValues)) {
+            AnimatedVisibility(visible = state.isNetworkBlocked) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colors.error,
+                    elevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.SignalWifiOff, "Network Blocked")
+                        Text(
+                            text = "Proxy connection failed. Network access is blocked. Please check your Proxy Settings.",
+                            style = MaterialTheme.typography.body2,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
             Row(modifier = Modifier.fillMaxSize()) {
                 val showNavLabels = state.fontSizePreset !in listOf("Large", "X-Large", "XX-Large")
                 NavigationRail(
@@ -121,126 +144,126 @@ fun MainScreen(viewModel: MainViewModel) {
                     }
                 }
             }
+        }
 
-            val editingJobId = state.editingJobId
-            if (editingJobId != null) {
-                val job = state.downloadQueue.find { it.id == editingJobId }
-                val isEditable = job != null && job.status !in listOf("Completed", "Cancelled") && !job.status.startsWith("Error")
+        val editingJobId = state.editingJobId
+        if (editingJobId != null) {
+            val job = state.downloadQueue.find { it.id == editingJobId }
+            val isEditable = job != null && job.status !in listOf("Completed", "Cancelled") && !job.status.startsWith("Error")
 
-                if (isEditable) {
-                    JobEditDialog(state, viewModel::onEvent)
+            if (isEditable) {
+                JobEditDialog(state, viewModel::onEvent)
+            }
+        }
+        if (state.showChapterDialog) {
+            ChapterSelectionDialog(state, viewModel::onEvent)
+        }
+        if (state.showAboutDialog) {
+            AboutDialog(onDismissRequest = { viewModel.onEvent(Event.ToggleAboutDialog(false)) })
+        }
+        if (state.showBrokenDownloadDialog) {
+            BrokenDownloadDialog(state, viewModel::onEvent)
+        }
+        if (state.showCompletionDialog) {
+            CompletionDialog(state, viewModel::onEvent)
+        }
+        if (state.showNetworkErrorDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.onEvent(Event.Operation.DismissNetworkError) },
+                title = { Text("Network Error") },
+                text = { Text(state.networkErrorMessage ?: "Please check your network connection and try again.") },
+                confirmButton = {
+                    Button(onClick = { viewModel.onEvent(Event.Operation.DismissNetworkError) }) {
+                        Text("OK")
+                    }
                 }
-            }
-            if (state.showChapterDialog) {
-                ChapterSelectionDialog(state, viewModel::onEvent)
-            }
-            if (state.showAboutDialog) {
-                AboutDialog(onDismissRequest = { viewModel.onEvent(Event.ToggleAboutDialog(false)) })
-            }
-            if (state.showBrokenDownloadDialog) {
-                BrokenDownloadDialog(state, viewModel::onEvent)
-            }
-            if (state.showCompletionDialog) {
-                CompletionDialog(state, viewModel::onEvent)
-            }
-            if (state.showNetworkErrorDialog) {
-                AlertDialog(
-                    onDismissRequest = { viewModel.onEvent(Event.Operation.DismissNetworkError) },
-                    title = { Text("Network Error") },
-                    text = { Text(state.networkErrorMessage ?: "Please check your network connection and try again.") },
-                    confirmButton = {
-                        Button(onClick = { viewModel.onEvent(Event.Operation.DismissNetworkError) }) {
-                            Text("OK")
-                        }
+            )
+        }
+        if (state.showAddDuplicateDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.onEvent(Event.Queue.CancelAddDuplicate) },
+                title = { Text("Duplicate Job") },
+                text = { Text("This series is already in the download queue. Do you want to add it again?") },
+                confirmButton = {
+                    Button(onClick = { viewModel.onEvent(Event.Queue.ConfirmAddDuplicate) }) {
+                        Text("Add Anyway")
                     }
-                )
-            }
-            if (state.showAddDuplicateDialog) {
-                AlertDialog(
-                    onDismissRequest = { viewModel.onEvent(Event.Queue.CancelAddDuplicate) },
-                    title = { Text("Duplicate Job") },
-                    text = { Text("This series is already in the download queue. Do you want to add it again?") },
-                    confirmButton = {
-                        Button(onClick = { viewModel.onEvent(Event.Queue.ConfirmAddDuplicate) }) {
-                            Text("Add Anyway")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { viewModel.onEvent(Event.Queue.CancelAddDuplicate) }) {
-                            Text("Cancel")
-                        }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.onEvent(Event.Queue.CancelAddDuplicate) }) {
+                        Text("Cancel")
                     }
-                )
-            }
-            if (state.showCancelDialog) {
-                AlertDialog(
-                    onDismissRequest = { viewModel.onEvent(Event.Operation.AbortCancel) },
-                    title = { Text("Confirm Cancel") },
-                    text = {
-                        Column {
-                            Text("Are you sure you want to cancel the current operation?")
-                            FormControlLabel(
-                                onClick = { viewModel.onEvent(Event.Operation.ToggleDeleteCacheOnCancel(!state.deleteCacheOnCancel)) },
-                                control = { Checkbox(checked = state.deleteCacheOnCancel, onCheckedChange = null) },
-                                label = { Text("Delete temporary files for this job") }
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = { viewModel.onEvent(Event.Operation.ConfirmCancel) },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
-                        ) {
-                            Text("Cancel Operation")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { viewModel.onEvent(Event.Operation.AbortCancel) }) {
-                            Text("Don't Cancel")
-                        }
+                }
+            )
+        }
+        if (state.showCancelDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.onEvent(Event.Operation.AbortCancel) },
+                title = { Text("Confirm Cancel") },
+                text = {
+                    Column {
+                        Text("Are you sure you want to cancel the current operation?")
+                        FormControlLabel(
+                            onClick = { viewModel.onEvent(Event.Operation.ToggleDeleteCacheOnCancel(!state.deleteCacheOnCancel)) },
+                            control = { Checkbox(checked = state.deleteCacheOnCancel, onCheckedChange = null) },
+                            label = { Text("Delete temporary files for this job") }
+                        )
                     }
-                )
-            }
-            if (state.showOverwriteConfirmationDialog) {
-                AlertDialog(
-                    onDismissRequest = { viewModel.onEvent(Event.Operation.CancelOverwrite) },
-                    title = { Text("Confirm Overwrite") },
-                    text = { Text("An existing file will be overwritten with the new chapter selections. This action cannot be undone. Are you sure you want to proceed?") },
-                    confirmButton = {
-                        Button(
-                            onClick = { viewModel.onEvent(Event.Operation.ConfirmOverwrite) },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
-                        ) {
-                            Text("Overwrite")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { viewModel.onEvent(Event.Operation.CancelOverwrite) }) {
-                            Text("Cancel")
-                        }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { viewModel.onEvent(Event.Operation.ConfirmCancel) },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                    ) {
+                        Text("Cancel Operation")
                     }
-                )
-            }
-            if (state.showClearCacheDialog) {
-                AlertDialog(
-                    onDismissRequest = { viewModel.onEvent(Event.Cache.CancelClearAll) },
-                    title = { Text("Confirm Clear All Cache") },
-                    text = { Text("Are you sure you want to delete all temporary application data, including paused or incomplete downloads? This action cannot be undone.") },
-                    confirmButton = {
-                        Button(
-                            onClick = { viewModel.onEvent(Event.Cache.ConfirmClearAll) },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
-                        ) {
-                            Text("Clear Everything")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { viewModel.onEvent(Event.Cache.CancelClearAll) }) {
-                            Text("Cancel")
-                        }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.onEvent(Event.Operation.AbortCancel) }) {
+                        Text("Don't Cancel")
                     }
-                )
-            }
+                }
+            )
+        }
+        if (state.showOverwriteConfirmationDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.onEvent(Event.Operation.CancelOverwrite) },
+                title = { Text("Confirm Overwrite") },
+                text = { Text("An existing file will be overwritten with the new chapter selections. This action cannot be undone. Are you sure you want to proceed?") },
+                confirmButton = {
+                    Button(
+                        onClick = { viewModel.onEvent(Event.Operation.ConfirmOverwrite) },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                    ) {
+                        Text("Overwrite")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.onEvent(Event.Operation.CancelOverwrite) }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+        if (state.showClearCacheDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.onEvent(Event.Cache.CancelClearAll) },
+                title = { Text("Confirm Clear All Cache") },
+                text = { Text("Are you sure you want to delete all temporary application data, including paused or incomplete downloads? This action cannot be undone.") },
+                confirmButton = {
+                    Button(
+                        onClick = { viewModel.onEvent(Event.Cache.ConfirmClearAll) },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                    ) {
+                        Text("Clear Everything")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.onEvent(Event.Cache.CancelClearAll) }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }

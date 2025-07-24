@@ -51,6 +51,14 @@ class MainViewModel(
 
     internal val activeServiceJobs = ConcurrentHashMap.newKeySet<String>()
 
+    private data class QueueProcessorState(
+        val batchWorkers: Int,
+        val queue: List<DownloadJob>,
+        val isPaused: Boolean,
+        val isBlocked: Boolean,
+        val isVerifying: Boolean
+    )
+
     init {
         val savedSettings = settingsRepository.loadSettings()
         Logger.isDebugEnabled = savedSettings.debugLog
@@ -87,11 +95,20 @@ class MainViewModel(
                 cachePath = platformProvider.getTmpDir(),
                 zoomFactor = savedSettings.zoomFactor,
                 fontSizePreset = savedSettings.fontSizePreset,
-                outputPath = initialOutputPath
+                outputPath = initialOutputPath,
+                offlineMode = savedSettings.offlineMode,
+                proxyEnabledOnStartup = savedSettings.proxyEnabledOnStartup
             )
         )
         state = _state.asStateFlow()
         Logger.logDebug { "ViewModel initialized with loaded settings." }
+
+        // Trigger proxy verification on startup if enabled
+        if (savedSettings.proxyEnabledOnStartup && savedSettings.proxyUrl.isNotBlank()) {
+            _state.update { it.copy(isInitialProxyCheckRunning = true) }
+            verifyProxyConnection()
+        }
+
         loadQueueFromCache()
         setupListeners()
     }
@@ -163,13 +180,14 @@ class MainViewModel(
         }
         viewModelScope.launch(Dispatchers.IO) {
             Logger.logDebug { "Queue processor listener started." }
-            state.map { Triple(it.batchWorkers, it.downloadQueue, it.isQueueGloballyPaused) }
+            state.map { QueueProcessorState(it.batchWorkers, it.downloadQueue, it.isQueueGloballyPaused, it.isNetworkBlocked, it.isInitialProxyCheckRunning) }
                 .distinctUntilChanged()
-                .collect { (batchWorkers, queue, isQueuePaused) ->
+                .collect { (batchWorkers, queue, isPaused, isBlocked, isVerifying) ->
 
-                    if (isQueuePaused) {
+                    // If the queue is paused, network is blocked, or initial check is running, stop everything.
+                    if (isPaused || isBlocked || isVerifying) {
                         if (activeServiceJobs.isNotEmpty()) {
-                            Logger.logDebug { "Queue globally paused. Stopping all active jobs." }
+                            Logger.logDebug { "Queue paused, network blocked, or verifying proxy. Stopping all active jobs." }
                             backgroundDownloader.stopAllJobs()
                             activeServiceJobs.clear()
                         }
@@ -697,7 +715,7 @@ class MainViewModel(
         val scheme = when (type) {
             ProxyType.HTTP -> "http"
             ProxyType.SOCKS5 -> "socks5"
-            ProxyType.NONE -> return null
+            else -> return null
         }
         val auth = if (user.isNotBlank()) {
             if (pass.isNotBlank()) {

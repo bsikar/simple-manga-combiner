@@ -40,8 +40,8 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
             val resumableJobs = state.downloadQueue.filter {
                 it.status !in listOf("Completed", "Cancelled") && !it.status.startsWith("Error")
             }
-            val canPause = resumableJobs.any { !it.isIndividuallyPaused && it.status != "Paused" }
-            val canResume = state.isQueueGloballyPaused || (resumableJobs.isNotEmpty() && resumableJobs.all { it.isIndividuallyPaused || it.status == "Paused" })
+            val canPause = resumableJobs.any { !it.isIndividuallyPaused && it.status != "Paused" } && !state.isNetworkBlocked
+            val canResume = (state.isQueueGloballyPaused || (resumableJobs.isNotEmpty() && resumableJobs.all { it.isIndividuallyPaused || it.status == "Paused" })) && !state.isNetworkBlocked
 
             if (canResume) {
                 TextButton(onClick = { onEvent(Event.Queue.ResumeAll) }) {
@@ -172,26 +172,39 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
             Spacer(Modifier.height(16.dp))
         }
 
-        if (state.downloadQueue.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("The download queue is empty.")
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                itemsIndexed(state.downloadQueue, key = { _, item -> item.id }) { index, job ->
-                    DownloadJobItem(
-                        job = job,
-                        index = index,
-                        onEvent = onEvent,
-                        isFirst = index == 0,
-                        isLast = index == state.downloadQueue.lastIndex
-                    )
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (state.isInitialProxyCheckRunning) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(16.dp))
+                    Text("Verifying proxy connection...")
+                }
+            } else if (state.downloadQueue.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("The download queue is empty.")
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(state.downloadQueue, key = { _, item -> item.id }) { index, job ->
+                        DownloadJobItem(
+                            job = job,
+                            index = index,
+                            onEvent = onEvent,
+                            isFirst = index == 0,
+                            isLast = index == state.downloadQueue.lastIndex,
+                            isBlocked = state.isNetworkBlocked
+                        )
+                    }
                 }
             }
         }
@@ -199,13 +212,13 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
 }
 
 @Composable
-private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Unit, isFirst: Boolean, isLast: Boolean) {
+private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Unit, isFirst: Boolean, isLast: Boolean, isBlocked: Boolean) {
     val animatedProgress by animateFloatAsState(
         targetValue = job.progress,
         animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
     )
     val isFinished = job.status == "Completed" || job.status.startsWith("Error", true) || job.status == "Cancelled"
-    val isRunning = !isFinished && (
+    val isRunning = !isFinished && !isBlocked && (
             job.status.startsWith("Downloading", true) ||
                     job.status.startsWith("Starting", true) ||
                     job.status.startsWith("Packaging", true))
@@ -221,11 +234,11 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
             Column {
                 IconButton(
                     onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.UP)) },
-                    enabled = !isFirst
+                    enabled = !isFirst && !isBlocked
                 ) { Icon(Icons.Default.KeyboardArrowUp, "Move Up") }
                 IconButton(
                     onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.DOWN)) },
-                    enabled = !isLast
+                    enabled = !isLast && !isBlocked
                 ) { Icon(Icons.Default.KeyboardArrowDown, "Move Down") }
             }
 
@@ -266,6 +279,7 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
                     text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
                     style = MaterialTheme.typography.caption,
                     color = when {
+                        isBlocked -> MaterialTheme.colors.error
                         isRunning -> MaterialTheme.colors.primary
                         job.status == "Paused" -> MaterialTheme.colors.secondary
                         else -> LocalContentColor.current.copy(alpha = 0.7f)
@@ -280,14 +294,15 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
                     PlatformTooltip("Edit Job") {
                         IconButton(
                             onClick = { onEvent(Event.Queue.RequestEditJob(job.id)) },
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(36.dp),
+                            enabled = !isBlocked
                         ) { Icon(Icons.Default.Edit, "Edit Job") }
                     }
                 }
                 PlatformTooltip(if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job") {
                     IconButton(
                         onClick = { onEvent(Event.Queue.TogglePauseJob(job.id)) },
-                        enabled = !isFinished,
+                        enabled = !isFinished && !isBlocked,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(

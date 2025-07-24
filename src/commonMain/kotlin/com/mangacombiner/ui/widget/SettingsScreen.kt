@@ -202,6 +202,19 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
                     )
                 }
+
+                FormControlLabel(
+                    onClick = { onEvent(Event.Settings.ToggleProxyOnStartup(!state.proxyEnabledOnStartup)) },
+                    control = {
+                        Switch(
+                            checked = state.proxyEnabledOnStartup,
+                            onCheckedChange = { onEvent(Event.Settings.ToggleProxyOnStartup(it)) },
+                            enabled = state.proxyType != ProxyType.NONE
+                        )
+                    },
+                    label = { Text("Connect to proxy on startup (Kill Switch)") }
+                )
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)

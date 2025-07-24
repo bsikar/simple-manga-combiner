@@ -29,6 +29,7 @@ actual class SettingsRepository {
         private const val ZOOM_FACTOR = "zoom_factor"
         private const val FONT_SIZE_PRESET = "font_size_preset"
         private const val OFFLINE_MODE = "offline_mode"
+        private const val PROXY_ENABLED_ON_STARTUP = "proxy_enabled_on_startup"
     }
 
     actual fun saveSettings(settings: AppSettings) {
@@ -52,6 +53,7 @@ actual class SettingsRepository {
         prefs.putFloat(ZOOM_FACTOR, settings.zoomFactor)
         prefs.put(FONT_SIZE_PRESET, settings.fontSizePreset)
         prefs.putBoolean(OFFLINE_MODE, settings.offlineMode)
+        prefs.putBoolean(PROXY_ENABLED_ON_STARTUP, settings.proxyEnabledOnStartup)
     }
 
     actual fun loadSettings(): AppSettings {
@@ -79,7 +81,8 @@ actual class SettingsRepository {
             logAutoscrollEnabled = prefs.getBoolean(LOG_AUTOSCROLL, defaultSettings.logAutoscrollEnabled),
             zoomFactor = prefs.getFloat(ZOOM_FACTOR, defaultSettings.zoomFactor),
             fontSizePreset = prefs.get(FONT_SIZE_PRESET, defaultSettings.fontSizePreset),
-            offlineMode = prefs.getBoolean(OFFLINE_MODE, defaultSettings.offlineMode)
+            offlineMode = prefs.getBoolean(OFFLINE_MODE, defaultSettings.offlineMode),
+            proxyEnabledOnStartup = prefs.getBoolean(PROXY_ENABLED_ON_STARTUP, defaultSettings.proxyEnabledOnStartup)
         )
     }
 }

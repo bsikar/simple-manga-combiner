@@ -108,7 +108,10 @@ data class UiState(
     val logAutoscrollEnabled: Boolean = AppSettings.Defaults.LOG_AUTOSCROLL_ENABLED,
     val zoomFactor: Float = AppSettings.Defaults.ZOOM_FACTOR,
     val fontSizePreset: String = AppSettings.Defaults.FONT_SIZE_PRESET,
-    val offlineMode: Boolean = AppSettings.Defaults.OFFLINE_MODE
+    val offlineMode: Boolean = AppSettings.Defaults.OFFLINE_MODE,
+    val proxyEnabledOnStartup: Boolean = AppSettings.Defaults.PROXY_ENABLED_ON_STARTUP,
+    val isNetworkBlocked: Boolean = false,
+    val isInitialProxyCheckRunning: Boolean = false
 )
 
 internal fun UiState.toAppSettings() = AppSettings(
@@ -130,5 +133,6 @@ internal fun UiState.toAppSettings() = AppSettings(
     logAutoscrollEnabled = this.logAutoscrollEnabled,
     zoomFactor = this.zoomFactor,
     fontSizePreset = this.fontSizePreset,
-    offlineMode = this.offlineMode
+    offlineMode = this.offlineMode,
+    proxyEnabledOnStartup = this.proxyEnabledOnStartup
 )

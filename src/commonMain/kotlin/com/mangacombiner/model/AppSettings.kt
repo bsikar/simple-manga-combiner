@@ -27,7 +27,8 @@ data class AppSettings(
     val logAutoscrollEnabled: Boolean = Defaults.LOG_AUTOSCROLL_ENABLED,
     val zoomFactor: Float = Defaults.ZOOM_FACTOR,
     val fontSizePreset: String = Defaults.FONT_SIZE_PRESET,
-    val offlineMode: Boolean = Defaults.OFFLINE_MODE
+    val offlineMode: Boolean = Defaults.OFFLINE_MODE,
+    val proxyEnabledOnStartup: Boolean = Defaults.PROXY_ENABLED_ON_STARTUP
 ) {
     /**
      * A companion object that holds all default application settings,
@@ -53,5 +54,6 @@ data class AppSettings(
         const val ZOOM_FACTOR = 1.0f
         const val FONT_SIZE_PRESET = "Medium"
         const val OFFLINE_MODE = false
+        const val PROXY_ENABLED_ON_STARTUP = false
     }
 }
