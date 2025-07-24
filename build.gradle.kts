@@ -73,6 +73,9 @@ kotlin {
                 api(libs.koin.android)
                 implementation(libs.ktor.client.java)
                 implementation(libs.ktor.client.cio)
+                implementation(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.serialization.kotlinx.json.jvm)
+                implementation(libs.ktor.client.okhttp)
                 implementation(libs.androidx.documentfile)
                 implementation(libs.ktor.io.jvm)
             }
@@ -86,6 +89,7 @@ kotlin {
                 implementation(libs.ktor.io.jvm)
                 implementation(libs.ktor.client.content.negotiation)
                 implementation(libs.ktor.serialization.kotlinx.json.jvm)
+                implementation(libs.ktor.client.okhttp)
                 implementation(libs.imageio.webp)
                 implementation(libs.slf4j.simple)
                 implementation(libs.kotlinx.coroutines.swing)
@@ -125,7 +129,7 @@ android {
 compose.desktop {
     application {
         mainClass = "com.mangacombiner.desktop.DesktopAppKt"
-        jvmArgs("--enable-native-access=ALL-UNNAMED")
+        jvmArgs("--enable-native-access=ALL-UNNAMED", "-Djava.net.preferIPv4Stack=true")
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "MangaCombiner"

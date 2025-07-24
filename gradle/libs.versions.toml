@@ -39,6 +39,7 @@ ktor-serialization-kotlinx-json-jvm = { module = "io.ktor:ktor-serialization-kot
 ktor-client-logging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
 ktor-io = { module = "io.ktor:ktor-io", version.ref = "ktor" }
 ktor-io-jvm = { module = "io.ktor:ktor-io-jvm", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 
 # Parsing & Serialization
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
