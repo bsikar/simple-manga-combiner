@@ -2,11 +2,9 @@ package com.mangacombiner.util
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp // Use OkHttp engine
-import io.ktor.client.plugins.HttpRequestRetry
-import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.cookies.HttpCookies
-import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.header
@@ -21,7 +19,7 @@ import java.net.URI
 
 /**
  * Creates a Ktor HttpClient using the OkHttp engine with the standard Java Authenticator
- * for reliable SOCKS5 proxy support.
+ * for reliable SOCKS5 proxy support and a strict no-fallback policy.
  */
 actual fun createHttpClient(proxyUrl: String?): HttpClient {
     // Clear the JVM's global authenticator to ensure a clean state for each client.
@@ -65,6 +63,8 @@ actual fun createHttpClient(proxyUrl: String?): HttpClient {
             Logger.logError("Invalid proxy URL format or configuration error: $proxyUrl", e)
             configuredProxy = null
         }
+    } else {
+        configuredProxy = Proxy.NO_PROXY
     }
 
     return HttpClient(OkHttp) {

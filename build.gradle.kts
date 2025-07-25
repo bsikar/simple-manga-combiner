@@ -47,14 +47,16 @@ kotlin {
 
                 api(libs.koin.core)
                 api(libs.koin.compose)
-
                 api(libs.kotlinx.coroutines.core)
+                api(libs.ktor.client.core)
+                api(libs.ktor.client.logging)
+                api(libs.ktor.io)
+                api(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.serialization.kotlinx.json)
+
                 implementation(libs.kotlinx.serialization.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.cli)
-                implementation(libs.ktor.client.core)
-                implementation(libs.ktor.client.logging)
-                implementation(libs.ktor.io)
                 implementation(libs.xmlutil.serialization)
                 implementation(libs.jsoup)
                 implementation(libs.zip4j)

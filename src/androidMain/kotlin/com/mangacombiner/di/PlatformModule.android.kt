@@ -34,6 +34,6 @@ actual fun platformModule(): Module = module {
     // Background download service implementation for Android
     single<BackgroundDownloader> { AndroidBackgroundDownloader(androidContext(), get(), get()) }
 
-    // ViewModel registration using updated Koin DSL
+    // ViewModel registration using updated Koin DSL - let it use constructor injection
     viewModelOf(::MainViewModel)
 }

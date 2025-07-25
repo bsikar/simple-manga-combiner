@@ -28,7 +28,9 @@ data class AppSettings(
     val zoomFactor: Float = Defaults.ZOOM_FACTOR,
     val fontSizePreset: String = Defaults.FONT_SIZE_PRESET,
     val offlineMode: Boolean = Defaults.OFFLINE_MODE,
-    val proxyEnabledOnStartup: Boolean = Defaults.PROXY_ENABLED_ON_STARTUP
+    val proxyEnabledOnStartup: Boolean = Defaults.PROXY_ENABLED_ON_STARTUP,
+    val ipLookupUrl: String = Defaults.IP_LOOKUP_URL,
+    val customIpLookupUrl: String = Defaults.CUSTOM_IP_LOOKUP_URL
 ) {
     /**
      * A companion object that holds all default application settings,
@@ -55,5 +57,7 @@ data class AppSettings(
         const val FONT_SIZE_PRESET = "Medium"
         const val OFFLINE_MODE = false
         const val PROXY_ENABLED_ON_STARTUP = false
+        const val IP_LOOKUP_URL = "https://ipinfo.io/json"
+        const val CUSTOM_IP_LOOKUP_URL = ""
     }
 }

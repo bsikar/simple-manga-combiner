@@ -2,12 +2,16 @@ package com.mangacombiner.ui.viewmodel
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.model.DownloadJob
+import com.mangacombiner.model.IpInfo
 import com.mangacombiner.model.ProxyType
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.service.*
 import com.mangacombiner.ui.viewmodel.handler.*
 import com.mangacombiner.ui.viewmodel.state.*
 import com.mangacombiner.util.*
+import io.ktor.client.call.body
+import io.ktor.client.request.get
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.File
@@ -31,7 +35,9 @@ class MainViewModel(
     internal val settingsRepository: SettingsRepository,
     internal val queuePersistenceService: QueuePersistenceService,
     internal val fileMover: FileMover,
-    internal val backgroundDownloader: BackgroundDownloader
+    internal val backgroundDownloader: BackgroundDownloader,
+    internal val proxyMonitorService: ProxyMonitorService,
+    internal val networkInterceptor: NetworkInterceptor
 ) : PlatformViewModel() {
 
     internal val _state: MutableStateFlow<UiState>
@@ -56,7 +62,8 @@ class MainViewModel(
         val queue: List<DownloadJob>,
         val isPaused: Boolean,
         val isBlocked: Boolean,
-        val isVerifying: Boolean
+        val isVerifying: Boolean,
+        val proxyConnectionState: ProxyMonitorService.ProxyConnectionState
     )
 
     init {
@@ -97,11 +104,48 @@ class MainViewModel(
                 fontSizePreset = savedSettings.fontSizePreset,
                 outputPath = initialOutputPath,
                 offlineMode = savedSettings.offlineMode,
-                proxyEnabledOnStartup = savedSettings.proxyEnabledOnStartup
+                proxyEnabledOnStartup = savedSettings.proxyEnabledOnStartup,
+                proxyConnectionState = ProxyMonitorService.ProxyConnectionState.UNKNOWN,
+                ipLookupUrl = savedSettings.ipLookupUrl
             )
         )
         state = _state.asStateFlow()
         Logger.logDebug { "ViewModel initialized with loaded settings." }
+
+        // Set up proxy monitoring
+        viewModelScope.launch {
+            proxyMonitorService.connectionState.collect { connectionState ->
+                _state.update {
+                    it.copy(
+                        isNetworkBlocked = when (connectionState) {
+                            ProxyMonitorService.ProxyConnectionState.DISCONNECTED,
+                            ProxyMonitorService.ProxyConnectionState.UNKNOWN,
+                            ProxyMonitorService.ProxyConnectionState.RECONNECTING ->
+                                it.proxyEnabledOnStartup && it.proxyType != ProxyType.NONE
+                            ProxyMonitorService.ProxyConnectionState.CONNECTED,
+                            ProxyMonitorService.ProxyConnectionState.DISABLED -> false
+                        },
+                        proxyConnectionState = connectionState,
+                        killSwitchActive = connectionState == ProxyMonitorService.ProxyConnectionState.DISCONNECTED
+                    )
+                }
+
+                // Log state changes
+                when (connectionState) {
+                    ProxyMonitorService.ProxyConnectionState.DISCONNECTED -> {
+                        Logger.logError("🔴 KILL SWITCH ACTIVE - All network operations blocked")
+                    }
+                    ProxyMonitorService.ProxyConnectionState.CONNECTED -> {
+                        Logger.logInfo("🟢 Proxy connected - Network operations allowed")
+                        _state.update { it.copy(isInitialProxyCheckRunning = false) }
+                    }
+                    ProxyMonitorService.ProxyConnectionState.RECONNECTING -> {
+                        Logger.logInfo("🟡 Attempting to reconnect to proxy...")
+                    }
+                    else -> {}
+                }
+            }
+        }
 
         // Trigger proxy verification on startup if enabled
         if (savedSettings.proxyEnabledOnStartup && savedSettings.proxyUrl.isNotBlank()) {
@@ -111,6 +155,261 @@ class MainViewModel(
 
         loadQueueFromCache()
         setupListeners()
+    }
+
+    private fun startProxyMonitoring() {
+        val s = state.value
+        val proxyUrl = buildProxyUrl(
+            s.proxyType,
+            s.proxyHost,
+            s.proxyPort,
+            s.proxyUser,
+            s.proxyPass
+        )
+        val lookupUrl = s.ipLookupUrl
+
+        if (proxyUrl != null) {
+            viewModelScope.launch {
+                try {
+                    networkInterceptor.checkNetworkAllowed()
+                    val client = createHttpClient(proxyUrl)
+                    val response = client.get(lookupUrl)
+                    if (response.status.isSuccess()) {
+                        val ipInfo = response.body<IpInfo>()
+                        val proxyIp = ipInfo.ip
+
+                        // Start monitoring with the expected IP
+                        proxyMonitorService.startMonitoring(
+                            ProxyMonitorService.ProxyConfig(proxyUrl, proxyIp, lookupUrl),
+                            viewModelScope
+                        )
+                    } else {
+                        // Start monitoring without expected IP if ipinfo fails
+                        proxyMonitorService.startMonitoring(
+                            ProxyMonitorService.ProxyConfig(proxyUrl, lookupUrl = lookupUrl),
+                            viewModelScope
+                        )
+                    }
+                    client.close()
+                } catch (e: ProxyKillSwitchException) {
+                    Logger.logError("Kill switch prevented initial proxy check: ${e.message}")
+                    proxyMonitorService.startMonitoring(
+                        ProxyMonitorService.ProxyConfig(proxyUrl, lookupUrl = lookupUrl),
+                        viewModelScope
+                    )
+                } catch (e: Exception) {
+                    Logger.logError("Failed to get proxy IP for monitoring", e)
+                    proxyMonitorService.startMonitoring(
+                        ProxyMonitorService.ProxyConfig(proxyUrl, lookupUrl = lookupUrl),
+                        viewModelScope
+                    )
+                }
+            }
+        } else {
+            _state.update { it.copy(isInitialProxyCheckRunning = false) }
+        }
+    }
+
+    private fun restartProxyMonitoringIfNeeded() {
+        if (state.value.proxyEnabledOnStartup) {
+            proxyMonitorService.stopMonitoring()
+            startProxyMonitoring()
+        }
+    }
+
+    internal fun verifyProxyConnection() {
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    proxyStatus = ProxyStatus.VERIFYING,
+                    proxyVerificationMessage = "Running comprehensive proxy test...",
+                    ipInfoResult = null,
+                    ipCheckError = null,
+                    isNetworkBlocked = true // Block network while verifying
+                )
+            }
+
+            try {
+                val s = state.value
+                val url = buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass)
+                val lookupUrl = s.ipLookupUrl
+
+                if (url == null) {
+                    _state.update {
+                        it.copy(
+                            proxyStatus = ProxyStatus.UNVERIFIED,
+                            proxyVerificationMessage = "No proxy configured.",
+                            isNetworkBlocked = false // Unblock if no proxy is set
+                        )
+                    }
+                    return@launch
+                }
+
+                Logger.logInfo("Starting comprehensive proxy verification for: $url")
+                val testResult = ProxyTestUtility.runComprehensiveProxyTest(url, lookupUrl)
+
+                if (testResult.success) {
+                    val message = buildString {
+                        append("✓ Proxy working correctly")
+                        if (testResult.ipChanged) {
+                            append("\n✓ IP changed: ${testResult.directIp} → ${testResult.proxyIp}")
+                        }
+                        if (testResult.killSwitchWorking) {
+                            append("\n✓ Kill switch active")
+                        }
+                        testResult.proxyLocation?.let {
+                            append("\n📍 Location: $it")
+                        }
+                    }
+
+                    _state.update {
+                        it.copy(
+                            proxyStatus = ProxyStatus.CONNECTED,
+                            proxyVerificationMessage = message,
+                            ipInfoResult = IpInfo(
+                                ip = testResult.proxyIp,
+                                city = testResult.proxyLocation?.split(", ")?.getOrNull(0),
+                                country = testResult.proxyLocation?.split(", ")?.getOrNull(1)
+                            ),
+                            isNetworkBlocked = false // Unblock on success
+                        )
+                    }
+
+                    // Restart monitoring with verified config
+                    restartProxyMonitoringIfNeeded()
+                } else {
+                    val message = buildString {
+                        append("✗ Proxy test failed")
+                        testResult.error?.let { append(": $it") }
+                        if (!testResult.ipChanged && testResult.directIp != null && testResult.proxyIp != null) {
+                            append("\n⚠️ IP unchanged - proxy may not be working")
+                        }
+                        if (!testResult.killSwitchWorking) {
+                            append("\n⚠️ Kill switch not working - traffic may leak!")
+                        }
+                    }
+
+                    _state.update {
+                        it.copy(
+                            proxyStatus = ProxyStatus.FAILED,
+                            proxyVerificationMessage = message,
+                            isNetworkBlocked = true // Keep blocked on failure
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                val message = "Test failed: ${e.message?.take(100) ?: "Unknown error"}"
+                _state.update {
+                    it.copy(
+                        proxyStatus = ProxyStatus.FAILED,
+                        proxyVerificationMessage = message,
+                        isNetworkBlocked = true // Keep blocked on failure
+                    )
+                }
+                Logger.logError("Comprehensive proxy verification failed", e)
+            } finally {
+                _state.update { it.copy(isInitialProxyCheckRunning = false) }
+            }
+        }
+    }
+
+    internal fun fetchChapters() {
+        val url = _state.value.seriesUrl
+        if (url.isBlank()) return
+
+        fetchChaptersJob?.cancel()
+        fetchChaptersJob = viewModelScope.launch {
+            try {
+                networkInterceptor.checkNetworkAllowed() // Check kill switch
+
+                _state.update { it.copy(isFetchingChapters = true) }
+                val s = _state.value
+                val seriesSlug = url.toSlug()
+                val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
+                val localChapterMap = s.localChaptersForSync
+                val failedChapterTitles = s.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
+                val preselectedNames = s.chaptersToPreselect
+
+                val client = createHttpClient(buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass))
+                Logger.logInfo("Fetching chapter list for: $url")
+                val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
+                val (seriesMetadata, chapters) = scraperService.fetchSeriesDetails(client, url, userAgent)
+                client.close()
+
+                if (chapters.isNotEmpty()) {
+                    val allChapters = chapters.map { (chapUrl, title) ->
+                        val sanitizedTitle = FileUtils.sanitizeFilename(title)
+                        val comparableKey = SlugUtils.toComparableKey(title)
+                        val originalLocalSlug = localChapterMap[comparableKey]
+
+                        val isLocal = originalLocalSlug != null
+                        val isCached = cachedChapterStatus.containsKey(sanitizedTitle)
+                        val isBroken = isCached && cachedChapterStatus[sanitizedTitle] == false
+                        val isRetry = comparableKey in failedChapterTitles
+
+                        val sources = mutableSetOf(ChapterSource.WEB)
+                        if (isLocal) sources.add(ChapterSource.LOCAL)
+                        if (isCached) sources.add(ChapterSource.CACHE)
+
+                        val chapter = Chapter(
+                            url = chapUrl,
+                            title = title,
+                            availableSources = sources,
+                            selectedSource = null,
+                            localSlug = originalLocalSlug,
+                            isRetry = isRetry,
+                            isBroken = isBroken
+                        )
+
+                        val initialSource = when {
+                            sanitizedTitle in preselectedNames -> {
+                                if (isBroken) ChapterSource.WEB else ChapterSource.CACHE
+                            }
+                            preselectedNames.isNotEmpty() -> null
+                            isRetry || isBroken -> ChapterSource.WEB
+                            else -> getChapterDefaultSource(chapter)
+                        }
+
+                        chapter.copy(selectedSource = initialSource)
+
+                    }.sortedWith(compareBy(naturalSortComparator) { it.title })
+
+                    _state.update {
+                        it.copy(
+                            seriesMetadata = seriesMetadata,
+                            customTitle = seriesMetadata.title,
+                            fetchedChapters = allChapters,
+                            showChapterDialog = true,
+                            chaptersToPreselect = emptySet()
+                        )
+                    }
+                } else {
+                    Logger.logError("Could not find any chapters at the provided URL.")
+                }
+            } catch (e: ProxyKillSwitchException) {
+                Logger.logError("Kill switch blocked chapter fetching: ${e.message}")
+                _state.update {
+                    it.copy(
+                        showNetworkErrorDialog = true,
+                        networkErrorMessage = "Network operations are blocked. Proxy connection required."
+                    )
+                }
+            } catch (e: NetworkException) {
+                Logger.logError("Failed to fetch chapters due to network error", e)
+                _state.update {
+                    it.copy(
+                        showNetworkErrorDialog = true,
+                        networkErrorMessage = "Chapter fetching failed. Please check your network connection and proxy settings."
+                    )
+                }
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    Logger.logError("Failed to fetch chapters", e)
+                }
+            } finally {
+                _state.update { it.copy(isFetchingChapters = false) }
+            }
+        }
     }
 
     private fun loadQueueFromCache() {
@@ -180,14 +479,25 @@ class MainViewModel(
         }
         viewModelScope.launch(Dispatchers.IO) {
             Logger.logDebug { "Queue processor listener started." }
-            state.map { QueueProcessorState(it.batchWorkers, it.downloadQueue, it.isQueueGloballyPaused, it.isNetworkBlocked, it.isInitialProxyCheckRunning) }
+            state.map {
+                QueueProcessorState(
+                    it.batchWorkers,
+                    it.downloadQueue,
+                    it.isQueueGloballyPaused,
+                    it.isNetworkBlocked,
+                    it.isInitialProxyCheckRunning,
+                    it.proxyConnectionState
+                )
+            }
                 .distinctUntilChanged()
-                .collect { (batchWorkers, queue, isPaused, isBlocked, isVerifying) ->
+                .collect { (batchWorkers, queue, isPaused, isBlocked, isVerifying, proxyState) ->
 
-                    // If the queue is paused, network is blocked, or initial check is running, stop everything.
-                    if (isPaused || isBlocked || isVerifying) {
+                    val shouldStopAll = isPaused || isBlocked || isVerifying ||
+                            (state.value.proxyEnabledOnStartup && proxyState == ProxyMonitorService.ProxyConnectionState.DISCONNECTED)
+
+                    if (shouldStopAll) {
                         if (activeServiceJobs.isNotEmpty()) {
-                            Logger.logDebug { "Queue paused, network blocked, or verifying proxy. Stopping all active jobs." }
+                            Logger.logDebug { "Stopping all active jobs due to: paused=$isPaused, blocked=$isBlocked, verifying=$isVerifying, killSwitch=${proxyState == ProxyMonitorService.ProxyConnectionState.DISCONNECTED}" }
                             backgroundDownloader.stopAllJobs()
                             activeServiceJobs.clear()
                         }
@@ -414,95 +724,6 @@ class MainViewModel(
         }
     }
 
-    internal fun fetchChapters() {
-        val url = _state.value.seriesUrl
-        if (url.isBlank()) return
-
-        fetchChaptersJob?.cancel()
-        fetchChaptersJob = viewModelScope.launch {
-            try {
-                _state.update { it.copy(isFetchingChapters = true) }
-                val s = _state.value
-                val seriesSlug = url.toSlug()
-                val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
-                val localChapterMap = s.localChaptersForSync
-                val failedChapterTitles = s.failedItemsForSync.keys.map { SlugUtils.toComparableKey(it) }.toSet()
-                val preselectedNames = s.chaptersToPreselect
-
-                val client = createHttpClient(buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass))
-                Logger.logInfo("Fetching chapter list for: $url")
-                val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
-                val (seriesMetadata, chapters) = scraperService.fetchSeriesDetails(client, url, userAgent)
-                client.close()
-
-                if (chapters.isNotEmpty()) {
-                    val allChapters = chapters.map { (chapUrl, title) ->
-                        val sanitizedTitle = FileUtils.sanitizeFilename(title)
-                        val comparableKey = SlugUtils.toComparableKey(title)
-                        val originalLocalSlug = localChapterMap[comparableKey]
-
-                        val isLocal = originalLocalSlug != null
-                        val isCached = cachedChapterStatus.containsKey(sanitizedTitle)
-                        val isBroken = isCached && cachedChapterStatus[sanitizedTitle] == false
-                        val isRetry = comparableKey in failedChapterTitles
-
-                        val sources = mutableSetOf(ChapterSource.WEB)
-                        if (isLocal) sources.add(ChapterSource.LOCAL)
-                        if (isCached) sources.add(ChapterSource.CACHE)
-
-                        val chapter = Chapter(
-                            url = chapUrl,
-                            title = title,
-                            availableSources = sources,
-                            selectedSource = null,
-                            localSlug = originalLocalSlug,
-                            isRetry = isRetry,
-                            isBroken = isBroken
-                        )
-
-                        val initialSource = when {
-                            sanitizedTitle in preselectedNames -> {
-                                if (isBroken) ChapterSource.WEB else ChapterSource.CACHE
-                            }
-                            preselectedNames.isNotEmpty() -> null
-                            isRetry || isBroken -> ChapterSource.WEB
-                            else -> getChapterDefaultSource(chapter)
-                        }
-
-                        chapter.copy(selectedSource = initialSource)
-
-                    }.sortedWith(compareBy(naturalSortComparator) { it.title })
-
-                    _state.update {
-                        it.copy(
-                            seriesMetadata = seriesMetadata,
-                            customTitle = seriesMetadata.title,
-                            fetchedChapters = allChapters,
-                            showChapterDialog = true,
-                            chaptersToPreselect = emptySet()
-                        )
-                    }
-                } else {
-                    Logger.logError("Could not find any chapters at the provided URL.")
-                }
-            } catch (e: NetworkException) {
-                Logger.logError("Failed to fetch chapters due to network error", e)
-                _state.update {
-                    it.copy(
-                        showNetworkErrorDialog = true,
-                        networkErrorMessage = "Chapter fetching failed. Please check your network connection and proxy settings."
-                    )
-                }
-            } catch (e: Exception) {
-                if (e !is CancellationException) {
-                    Logger.logError("Failed to fetch chapters", e)
-                }
-            } finally {
-                _state.update { it.copy(isFetchingChapters = false) }
-            }
-        }
-    }
-
     internal fun startOperation(isRetry: Boolean = false) {
         activeOperationJob = viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -544,7 +765,7 @@ class MainViewModel(
                         _state.update { it.copy(progress = 0.1f, progressStatusText = "Extracting local chapters...") }
                         allChapterFolders.addAll(
                             downloadService.processorService.extractChaptersToDirectory(
-                                File(s.sourceFilePath),
+                                File(s.sourceFilePath!!),
                                 chaptersToExtract.mapNotNull { it.localSlug },
                                 tempUpdateDir
                             )
@@ -677,7 +898,7 @@ class MainViewModel(
                 Logger.logError("Selected path is not a valid file: $path")
                 return@launch
             }
-            _state.update { it.copy(customTitle = file.toPath().nameWithoutExtension.toString()) }
+            _state.update { it.copy(customTitle = file.toPath().nameWithoutExtension) }
             analyzeLocalFile(file)
         }
     }

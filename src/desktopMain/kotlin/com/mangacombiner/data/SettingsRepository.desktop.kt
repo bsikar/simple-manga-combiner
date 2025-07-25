@@ -30,6 +30,8 @@ actual class SettingsRepository {
         private const val FONT_SIZE_PRESET = "font_size_preset"
         private const val OFFLINE_MODE = "offline_mode"
         private const val PROXY_ENABLED_ON_STARTUP = "proxy_enabled_on_startup"
+        private const val IP_LOOKUP_URL = "ip_lookup_url"
+        private const val CUSTOM_IP_LOOKUP_URL = "custom_ip_lookup_url"
     }
 
     actual fun saveSettings(settings: AppSettings) {
@@ -54,6 +56,8 @@ actual class SettingsRepository {
         prefs.put(FONT_SIZE_PRESET, settings.fontSizePreset)
         prefs.putBoolean(OFFLINE_MODE, settings.offlineMode)
         prefs.putBoolean(PROXY_ENABLED_ON_STARTUP, settings.proxyEnabledOnStartup)
+        prefs.put(IP_LOOKUP_URL, settings.ipLookupUrl)
+        prefs.put(CUSTOM_IP_LOOKUP_URL, settings.customIpLookupUrl)
     }
 
     actual fun loadSettings(): AppSettings {
@@ -82,7 +86,9 @@ actual class SettingsRepository {
             zoomFactor = prefs.getFloat(ZOOM_FACTOR, defaultSettings.zoomFactor),
             fontSizePreset = prefs.get(FONT_SIZE_PRESET, defaultSettings.fontSizePreset),
             offlineMode = prefs.getBoolean(OFFLINE_MODE, defaultSettings.offlineMode),
-            proxyEnabledOnStartup = prefs.getBoolean(PROXY_ENABLED_ON_STARTUP, defaultSettings.proxyEnabledOnStartup)
+            proxyEnabledOnStartup = prefs.getBoolean(PROXY_ENABLED_ON_STARTUP, defaultSettings.proxyEnabledOnStartup),
+            ipLookupUrl = prefs.get(IP_LOOKUP_URL, defaultSettings.ipLookupUrl),
+            customIpLookupUrl = prefs.get(CUSTOM_IP_LOOKUP_URL, defaultSettings.customIpLookupUrl)
         )
     }
 }

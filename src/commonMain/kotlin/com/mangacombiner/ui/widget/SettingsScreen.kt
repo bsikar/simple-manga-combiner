@@ -41,6 +41,18 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     val themeOptions = remember { AppTheme.values().toList() }
     val fontPresets = listOf("XX-Small", "X-Small", "Small", "Medium", "Large", "X-Large", "XX-Large")
 
+    // Predefined IP lookup services
+    val ipServices = remember {
+        mapOf(
+            "ipinfo.io" to "https://ipinfo.io/json",
+            "ipify.org" to "https://api.ipify.org?format=json",
+            "Custom" to "custom"
+        )
+    }
+    val currentIpServiceName = ipServices.entries.find { it.value == state.ipLookupUrl }?.key ?: "Custom"
+    var ipServiceDropdownExpanded by remember { mutableStateOf(false) }
+
+
     Column(
         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -55,9 +67,7 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Theme:", style = MaterialTheme.typography.body1)
-                    Box(
-                        modifier = Modifier.tooltipHoverFix()
-                    ) {
+                    Box(modifier = Modifier.tooltipHoverFix()) {
                         OutlinedButton(onClick = { themeDropdownExpanded = true }) {
                             Text(state.theme.name.lowercase().replace('_', ' ').titlecase())
                             Icon(Icons.Default.ArrowDropDown, "Theme")
@@ -82,9 +92,7 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Font Size:", style = MaterialTheme.typography.body1)
-                    Box(
-                        modifier = Modifier.tooltipHoverFix()
-                    ) {
+                    Box(modifier = Modifier.tooltipHoverFix()) {
                         OutlinedButton(onClick = { fontSizeDropdownExpanded = true }) {
                             Text(state.fontSizePreset)
                             Icon(Icons.Default.ArrowDropDown, "Font Size")
@@ -126,7 +134,54 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
 
         Card(elevation = 4.dp) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Proxy Settings", style = MaterialTheme.typography.h6)
+                Text("Proxy & Network", style = MaterialTheme.typography.h6)
+
+                // IP Lookup Service Dropdown
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("IP Lookup Service:", style = MaterialTheme.typography.body1)
+                    Box(modifier = Modifier.tooltipHoverFix()) {
+                        OutlinedButton(onClick = { ipServiceDropdownExpanded = true }) {
+                            Text(currentIpServiceName)
+                            Icon(Icons.Default.ArrowDropDown, "IP Lookup Service")
+                        }
+                        DropdownMenu(
+                            expanded = ipServiceDropdownExpanded,
+                            onDismissRequest = { ipServiceDropdownExpanded = false }
+                        ) {
+                            ipServices.forEach { (name, url) ->
+                                DropdownMenuItem(onClick = {
+                                    if (name == "Custom") {
+                                        // When switching to custom, restore the saved custom URL.
+                                        onEvent(Event.Settings.UpdateIpLookupUrl(state.customIpLookupUrl))
+                                    } else {
+                                        // When selecting a preset, use its URL.
+                                        onEvent(Event.Settings.UpdateIpLookupUrl(url))
+                                    }
+                                    ipServiceDropdownExpanded = false
+                                }) { Text(name) }
+                            }
+                        }
+                    }
+                }
+
+                // Custom URL Text Field
+                AnimatedVisibility(visible = currentIpServiceName == "Custom") {
+                    OutlinedTextField(
+                        value = state.ipLookupUrl,
+                        onValueChange = {
+                            // When the user types, update both the active URL and the saved custom URL
+                            onEvent(Event.Settings.UpdateIpLookupUrl(it))
+                            onEvent(Event.Settings.UpdateCustomIpLookupUrl(it))
+                        },
+                        label = { Text("Custom IP Lookup URL") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        singleLine = true
+                    )
+                }
 
                 var proxyTypeDropdownExpanded by remember { mutableStateOf(false) }
                 Row(
@@ -283,9 +338,7 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Default Location:", style = MaterialTheme.typography.body1)
-                    Box(
-                        modifier = Modifier.tooltipHoverFix()
-                    ) {
+                    Box(modifier = Modifier.tooltipHoverFix()) {
                         OutlinedButton(onClick = { outputDropdownExpanded = true }) {
                             Text(state.defaultOutputLocation)
                             Icon(Icons.Default.ArrowDropDown, "Default Location")
@@ -349,7 +402,6 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                 }
             }
         }
-
 
         Button(
             onClick = { onEvent(Event.Settings.RequestRestoreDefaults) },

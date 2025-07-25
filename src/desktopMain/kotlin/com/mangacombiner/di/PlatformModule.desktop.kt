@@ -22,8 +22,21 @@ actual fun platformModule(): Module = module {
     // Provide the Desktop-specific implementation for the common interface
     singleOf(::DesktopDownloader).bind<BackgroundDownloader>()
 
-    // ViewModel for Desktop
+    // ViewModel for Desktop - updated with proxy services
     factory {
-        MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
+        MainViewModel(
+            downloadService = get(),
+            scraperService = get(),
+            webDavService = get(),
+            clipboardManager = get(),
+            platformProvider = get(),
+            cacheService = get(),
+            settingsRepository = get(),
+            queuePersistenceService = get(),
+            fileMover = get(),
+            backgroundDownloader = get(),
+            proxyMonitorService = get(),
+            networkInterceptor = get()
+        )
     }
 }

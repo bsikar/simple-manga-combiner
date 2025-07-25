@@ -1,93 +1,17 @@
 package com.mangacombiner.ui.viewmodel.state
 
-import com.mangacombiner.model.AppSettings
-import com.mangacombiner.model.DownloadJob
-import com.mangacombiner.model.IpInfo
-import com.mangacombiner.model.ProxyType
-import com.mangacombiner.model.QueuedOperation
-import com.mangacombiner.model.SearchResult
-import com.mangacombiner.service.CachedSeries
-import com.mangacombiner.service.DownloadOptions
-import com.mangacombiner.service.DownloadResult
-import com.mangacombiner.service.SeriesMetadata
-import com.mangacombiner.service.WebDavFile
+import com.mangacombiner.model.*
+import com.mangacombiner.service.*
 import com.mangacombiner.ui.theme.AppTheme
+import com.mangacombiner.service.ProxyMonitorService
 import com.mangacombiner.ui.viewmodel.OperationState
 
 data class UiState(
     val currentScreen: Screen = Screen.SEARCH,
-    val seriesUrl: String = "",
-    val customTitle: String = "",
-    val outputPath: String = "",
-    val operationState: OperationState = OperationState.IDLE,
-    val progress: Float = 0f,
-    val progressStatusText: String = "",
-    val completionMessage: String? = null,
-    val isFetchingChapters: Boolean = false,
-    val isAnalyzingFile: Boolean = false,
-    val fetchedChapters: List<Chapter> = emptyList(),
-    val seriesMetadata: SeriesMetadata? = null,
-    val localChaptersForSync: Map<String, String> = emptyMap(),
-    val failedItemsForSync: Map<String, List<String>> = emptyMap(),
-    val sourceFilePath: String? = null,
-    val showChapterDialog: Boolean = false,
-    val showClearCacheDialog: Boolean = false,
-    val showCancelDialog: Boolean = false,
-    val deleteCacheOnCancel: Boolean = false,
-    val showDeleteCacheConfirmationDialog: Boolean = false,
-    val isCacheLocationOpenable: Boolean = false,
-    val cacheContents: List<CachedSeries> = emptyList(),
-    val cacheItemsToDelete: Set<String> = emptySet(),
-    val cacheSortState: Map<String, CacheSortState?> = emptyMap(),
-    val expandedCacheSeries: Set<String> = emptySet(),
-    val activeDownloadOptions: DownloadOptions? = null,
-    val settingsLocationDescription: String = "",
-    val isSettingsLocationOpenable: Boolean = false,
-    val cachePath: String = "",
-    val showRestoreDefaultsDialog: Boolean = false,
-    val outputFileExists: Boolean = false,
-    val showOverwriteConfirmationDialog: Boolean = false,
     val showAboutDialog: Boolean = false,
-    val searchQuery: String = "",
-    val searchResults: List<SearchResult> = emptyList(),
-    val originalSearchResults: List<SearchResult> = emptyList(),
-    val isSearching: Boolean = false,
-    val searchSortOption: SearchSortOption = SearchSortOption.DEFAULT,
-    val downloadQueue: List<DownloadJob> = emptyList(),
-    val overallQueueProgress: Float = 0f,
-    val editingJobId: String? = null,
-    val editingJobIdForChapters: String? = null,
-    val editingJobContext: QueuedOperation? = null,
-    val showBrokenDownloadDialog: Boolean = false,
-    val showCompletionDialog: Boolean = false,
-    val lastDownloadResult: DownloadResult? = null,
-    val chaptersToPreselect: Set<String> = emptySet(),
-    val isQueueGloballyPaused: Boolean = false,
-    val showAddDuplicateDialog: Boolean = false,
-    val jobContextToAdd: QueuedOperation? = null,
-    val showNetworkErrorDialog: Boolean = false,
-    val networkErrorMessage: String? = null,
+    val showRestoreDefaultsDialog: Boolean = false,
 
-    val webDavUrl: String = "",
-    val webDavUser: String = "",
-    val webDavPass: String = "",
-    val isConnectingToWebDav: Boolean = false,
-    val isDownloadingFromWebDav: Boolean = false,
-    val webDavDownloadProgress: Float = 0f,
-    val webDavStatus: String = "",
-    val webDavFileCache: Map<String, WebDavFile> = emptyMap(),
-    val webDavFiles: List<WebDavFile> = emptyList(),
-    val webDavSelectedFiles: Set<String> = emptySet(),
-    val webDavError: String? = null,
-    val webDavIncludeHidden: Boolean = false,
-    val webDavSortState: CacheSortState = CacheSortState(SortCriteria.NAME, SortDirection.ASC),
-    val webDavFilterQuery: String = "",
-    val webDavFolderSizes: Map<String, Long?> = emptyMap(),
-
-    val isCheckingIp: Boolean = false,
-    val ipInfoResult: IpInfo? = null,
-    val ipCheckError: String? = null,
-
+    // Settings
     val theme: AppTheme = AppSettings.Defaults.THEME,
     val defaultOutputLocation: String = AppSettings.Defaults.DEFAULT_OUTPUT_LOCATION,
     val customDefaultOutputPath: String = AppSettings.Defaults.CUSTOM_DEFAULT_OUTPUT_PATH,
@@ -102,37 +26,125 @@ data class UiState(
     val proxyPort: String = AppSettings.Defaults.PROXY_PORT,
     val proxyUser: String = AppSettings.Defaults.PROXY_USER,
     val proxyPass: String = AppSettings.Defaults.PROXY_PASS,
-    val proxyStatus: ProxyStatus = ProxyStatus.UNVERIFIED,
-    val proxyVerificationMessage: String? = null,
     val debugLog: Boolean = AppSettings.Defaults.DEBUG_LOG,
     val logAutoscrollEnabled: Boolean = AppSettings.Defaults.LOG_AUTOSCROLL_ENABLED,
+    val settingsLocationDescription: String = "",
+    val isSettingsLocationOpenable: Boolean = false,
+    val isCacheLocationOpenable: Boolean = false,
+    val cachePath: String = "",
     val zoomFactor: Float = AppSettings.Defaults.ZOOM_FACTOR,
     val fontSizePreset: String = AppSettings.Defaults.FONT_SIZE_PRESET,
     val offlineMode: Boolean = AppSettings.Defaults.OFFLINE_MODE,
     val proxyEnabledOnStartup: Boolean = AppSettings.Defaults.PROXY_ENABLED_ON_STARTUP,
+    val ipLookupUrl: String = AppSettings.Defaults.IP_LOOKUP_URL,
+    val customIpLookupUrl: String = AppSettings.Defaults.CUSTOM_IP_LOOKUP_URL,
+
+    // Proxy status
+    val proxyStatus: ProxyStatus = ProxyStatus.UNVERIFIED,
+    val proxyVerificationMessage: String? = null,
+    val ipInfoResult: IpInfo? = null,
+    val ipCheckError: String? = null,
+    val isCheckingIp: Boolean = false,
+    val proxyConnectionState: ProxyMonitorService.ProxyConnectionState = ProxyMonitorService.ProxyConnectionState.UNKNOWN,
+    val killSwitchActive: Boolean = false,
+
+    // Search state
+    val searchQuery: String = "",
+    val searchResults: List<SearchResult> = emptyList(),
+    val originalSearchResults: List<SearchResult> = emptyList(),
+    val searchSortOption: SearchSortOption = SearchSortOption.DEFAULT,
+    val isSearching: Boolean = false,
+
+    // Download state
+    val seriesUrl: String = "",
+    val customTitle: String = "",
+    val outputPath: String = "",
+    val outputFileExists: Boolean = false,
+    val sourceFilePath: String? = null,
+    val localChaptersForSync: Map<String, String> = emptyMap(),
+    val failedItemsForSync: Map<String, List<String>> = emptyMap(),
+    val fetchedChapters: List<Chapter> = emptyList(),
+    val seriesMetadata: SeriesMetadata? = null,
+    val isFetchingChapters: Boolean = false,
+    val isAnalyzingFile: Boolean = false,
+    val showChapterDialog: Boolean = false,
+    val chaptersToPreselect: Set<String> = emptySet(),
+
+    // Operation state
+    val operationState: OperationState = OperationState.IDLE,
+    val progress: Float = 0f,
+    val progressStatusText: String = "",
+    val activeDownloadOptions: DownloadOptions? = null,
+    val showCancelDialog: Boolean = false,
+    val deleteCacheOnCancel: Boolean = false,
+    val showOverwriteConfirmationDialog: Boolean = false,
+    val showBrokenDownloadDialog: Boolean = false,
+    val lastDownloadResult: DownloadResult? = null,
+    val showCompletionDialog: Boolean = false,
+    val completionMessage: String? = null,
+    val showNetworkErrorDialog: Boolean = false,
+    val networkErrorMessage: String? = null,
+
+    // Queue state
+    val downloadQueue: List<DownloadJob> = emptyList(),
+    val overallQueueProgress: Float = 0f,
+    val editingJobId: String? = null,
+    val editingJobContext: QueuedOperation? = null,
+    val editingJobIdForChapters: String? = null,
+    val showAddDuplicateDialog: Boolean = false,
+    val jobContextToAdd: QueuedOperation? = null,
+    val isQueueGloballyPaused: Boolean = false,
     val isNetworkBlocked: Boolean = false,
-    val isInitialProxyCheckRunning: Boolean = false
+    val isInitialProxyCheckRunning: Boolean = false,
+
+    // Cache state
+    val cacheContents: List<CachedSeries> = emptyList(),
+    val expandedCacheSeries: Set<String> = emptySet(),
+    val cacheItemsToDelete: Set<String> = emptySet(),
+    val cacheSortState: Map<String, CacheSortState> = emptyMap(),
+    val showClearCacheDialog: Boolean = false,
+    val showDeleteCacheConfirmationDialog: Boolean = false,
+
+    // WebDAV state
+    val webDavUrl: String = "",
+    val webDavUser: String = "",
+    val webDavPass: String = "",
+    val webDavIncludeHidden: Boolean = false,
+    val webDavFiles: List<WebDavFile> = emptyList(),
+    val webDavFileCache: Map<String, WebDavFile> = emptyMap(),
+    val webDavSelectedFiles: Set<String> = emptySet(),
+    val webDavFolderSizes: Map<String, Long?> = emptyMap(),
+    val webDavFilterQuery: String = "",
+    val webDavSortState: CacheSortState = CacheSortState(SortCriteria.NAME, SortDirection.ASC),
+    val isConnectingToWebDav: Boolean = false,
+    val webDavError: String? = null,
+    val isDownloadingFromWebDav: Boolean = false,
+    val webDavDownloadProgress: Float = 0f,
+    val webDavStatus: String = ""
 )
 
-internal fun UiState.toAppSettings() = AppSettings(
-    theme = this.theme,
-    defaultOutputLocation = this.defaultOutputLocation,
-    customDefaultOutputPath = this.customDefaultOutputPath,
-    workers = this.workers,
-    batchWorkers = this.batchWorkers,
-    outputFormat = this.outputFormat,
-    userAgentName = this.userAgentName,
-    perWorkerUserAgent = this.perWorkerUserAgent,
-    proxyUrl = this.proxyUrl,
-    proxyType = this.proxyType,
-    proxyHost = this.proxyHost,
-    proxyPort = this.proxyPort,
-    proxyUser = this.proxyUser,
-    proxyPass = this.proxyPass,
-    debugLog = this.debugLog,
-    logAutoscrollEnabled = this.logAutoscrollEnabled,
-    zoomFactor = this.zoomFactor,
-    fontSizePreset = this.fontSizePreset,
-    offlineMode = this.offlineMode,
-    proxyEnabledOnStartup = this.proxyEnabledOnStartup
+// Extension function to convert UiState to AppSettings
+fun UiState.toAppSettings() = AppSettings(
+    theme = theme,
+    defaultOutputLocation = defaultOutputLocation,
+    customDefaultOutputPath = customDefaultOutputPath,
+    workers = workers,
+    batchWorkers = batchWorkers,
+    outputFormat = outputFormat,
+    userAgentName = userAgentName,
+    perWorkerUserAgent = perWorkerUserAgent,
+    proxyUrl = proxyUrl,
+    proxyType = proxyType,
+    proxyHost = proxyHost,
+    proxyPort = proxyPort,
+    proxyUser = proxyUser,
+    proxyPass = proxyPass,
+    debugLog = debugLog,
+    logAutoscrollEnabled = logAutoscrollEnabled,
+    zoomFactor = zoomFactor,
+    fontSizePreset = fontSizePreset,
+    offlineMode = offlineMode,
+    proxyEnabledOnStartup = proxyEnabledOnStartup,
+    ipLookupUrl = ipLookupUrl,
+    customIpLookupUrl = customIpLookupUrl
 )

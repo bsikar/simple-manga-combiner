@@ -50,7 +50,8 @@ enum class DownloadCompletionStatus {
 
 class DownloadService(
     val processorService: ProcessorService,
-    private val scraperService: ScraperService
+    private val scraperService: ScraperService,
+    private val networkInterceptor: NetworkInterceptor? = null
 ) {
     private companion object {
         val IMAGE_DOWNLOAD_DELAY_MS = 400L..800L
@@ -89,6 +90,7 @@ class DownloadService(
     /**
      * Downloads a file from the specified URL with proper error handling and cancellation support.
      * Includes retry logic for transient network failures and validates file existence before download.
+     * Now includes kill switch support via networkInterceptor.
      */
     private suspend fun downloadFile(
         client: HttpClient,
@@ -97,6 +99,9 @@ class DownloadService(
         userAgent: String,
         referer: String?
     ): Boolean {
+        // Check kill switch before starting download
+        networkInterceptor?.checkNetworkAllowed()
+
         if (outputFile.exists() && outputFile.length() > 0) {
             Logger.logDebug { "File already exists and is non-empty, skipping: ${outputFile.name}" }
             return true
@@ -142,6 +147,10 @@ class DownloadService(
                 Logger.logError("Failed to download $url. Status: ${response.status}")
                 false
             }
+        } catch (e: ProxyKillSwitchException) {
+            Logger.logError("Kill switch blocked download of $url: ${e.message}")
+            outputFile.delete() // Clean up partial file
+            throw e // Re-throw to stop the download process
         } catch (e: IOException) {
             Logger.logError("IO error downloading file $url to ${outputFile.name}", e)
             outputFile.delete() // Clean up partial file
@@ -156,6 +165,7 @@ class DownloadService(
     /**
      * Downloads a complete chapter including all images with robust error handling.
      * Creates incomplete markers to track download state and supports resumable downloads.
+     * Includes kill switch checks before each operation.
      */
     private suspend fun downloadChapter(
         options: DownloadOptions,
@@ -164,6 +174,9 @@ class DownloadService(
         baseDir: File,
         client: HttpClient,
     ): ChapterDownloadResult {
+        // Check kill switch before starting chapter download
+        networkInterceptor?.checkNetworkAllowed()
+
         val sanitizedTitle = FileUtils.sanitizeFilename(chapterTitle)
         val chapterDir = File(baseDir, sanitizedTitle)
 
@@ -190,7 +203,13 @@ class DownloadService(
         Logger.logDebug { "Fetching image URLs for chapter: $chapterTitle" }
 
         val imageUrls = try {
+            // Check kill switch before fetching image URLs
+            networkInterceptor?.checkNetworkAllowed()
             scraperService.findImageUrls(client, chapterUrl, scraperUserAgent, options.seriesUrl)
+        } catch (e: ProxyKillSwitchException) {
+            Logger.logError("Kill switch blocked fetching image URLs for chapter '$chapterTitle'", e)
+            incompleteMarker.delete()
+            return ChapterDownloadResult(null, chapterTitle, listOf("Kill switch active: ${e.message}"))
         } catch (e: Exception) {
             Logger.logError("Failed to fetch image URLs for chapter '$chapterTitle'", e)
             incompleteMarker.delete()
@@ -231,7 +250,13 @@ class DownloadService(
 
                         val outputFile = File(chapterDir, "page_${String.format(Locale.ROOT, "%03d", index + 1)}.$extension")
 
-                        val downloadSuccess = downloadFile(client, imageUrl, outputFile, imageUserAgent, chapterUrl)
+                        val downloadSuccess = try {
+                            downloadFile(client, imageUrl, outputFile, imageUserAgent, chapterUrl)
+                        } catch (e: ProxyKillSwitchException) {
+                            Logger.logDebug { "Kill switch blocked image download ${index + 1}/${imageUrls.size}: $imageUrl" }
+                            false
+                        }
+
                         if (!downloadSuccess) {
                             synchronized(failedImageUrls) {
                                 failedImageUrls.add(imageUrl)
@@ -279,11 +304,15 @@ class DownloadService(
     /**
      * Downloads multiple chapters sequentially with proper error tracking and cancellation support.
      * Provides comprehensive progress reporting and maintains detailed failure logs.
+     * Includes kill switch checks throughout the process.
      */
     suspend fun downloadChapters(
         options: DownloadOptions,
         downloadDir: File
     ): DownloadResult? {
+        // Check kill switch before starting
+        networkInterceptor?.checkNetworkAllowed()
+
         val chapterData = options.chaptersToDownload.toList()
             .sortedWith(compareBy(naturalSortComparator) { it.second })
 
@@ -304,6 +333,14 @@ class DownloadService(
             for ((index, chapter) in chapterData.withIndex()) {
                 val (url, title) = chapter
                 coroutineContext.ensureActive()
+
+                // Check kill switch before each chapter
+                try {
+                    networkInterceptor?.checkNetworkAllowed()
+                } catch (e: ProxyKillSwitchException) {
+                    Logger.logInfo("Kill switch activated - pausing downloads")
+                    throw e
+                }
 
                 Logger.logInfo("Processing chapter ${index + 1}/${chapterData.size}: $title")
 
@@ -336,6 +373,9 @@ class DownloadService(
 
             Logger.logInfo("Download process completed. Successful: ${successfulFolders.size}, Failed: ${failedChapters.size}")
 
+        } catch (e: ProxyKillSwitchException) {
+            Logger.logError("Download process interrupted by kill switch", e)
+            throw e
         } catch (e: Exception) {
             Logger.logError("Download process interrupted or failed", e)
             throw e

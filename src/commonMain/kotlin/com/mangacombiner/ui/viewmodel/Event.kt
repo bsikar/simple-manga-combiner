@@ -30,6 +30,8 @@ sealed interface Event {
         data class TogglePerWorkerUserAgent(val isEnabled: Boolean) : Settings
         data class ToggleOfflineMode(val isEnabled: Boolean) : Settings
         data class ToggleProxyOnStartup(val isEnabled: Boolean) : Settings
+        data class UpdateIpLookupUrl(val url: String) : Settings
+        data class UpdateCustomIpLookupUrl(val url: String) : Settings
         object VerifyProxy : Settings
         object CheckIpAddress : Settings
         object PickCustomDefaultPath : Settings

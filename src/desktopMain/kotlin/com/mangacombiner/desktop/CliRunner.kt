@@ -2,6 +2,7 @@ package com.mangacombiner.desktop
 
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.di.appModule
+import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.IpInfo
 import com.mangacombiner.model.ScrapedSeries
 import com.mangacombiner.model.ScrapedSeriesCache
@@ -322,6 +323,7 @@ data class CliArguments(
     val proxyUser: String?,
     val proxyPass: String?,
     val checkIp: Boolean,
+    val ipLookupUrl: String?,
     val perWorkerUserAgent: Boolean,
     val batchWorkers: Int,
     val optimize: Boolean,
@@ -424,10 +426,10 @@ EXAMPLES:
 
   # Use a simple HTTP proxy via the combined URL format
   manga-combiner-cli --proxy http://127.0.0.1:8080 --source ...
-  
+ 
   # Simple update (uses source URL from EPUB metadata)
   manga-combiner-cli --source my-series.epub --update-metadata
-  
+ 
   # Override source URL (uses provided URL instead of EPUB metadata)
   manga-combiner-cli --source my-series.epub --source https://example.com/manga/series --update-metadata
 
@@ -470,6 +472,7 @@ NETWORK & PROXY:
   --proxy-pass <PASS>              Proxy password (optional).
   -ua, --user-agent <NAME>         Browser to impersonate (see --list-user-agents)
   --per-worker-ua                  Use a different random user agent for each download worker.
+  --ip-lookup-url <URL>            Custom URL for IP lookup (e.g., http://ip-api.com/json)
 
 PERFORMANCE:
   -w, --workers <N>                Concurrent image downloads per series (default: 4)
@@ -558,6 +561,7 @@ fun main(args: Array<String>) {
     val proxyUser by parser.option(ArgType.String, "proxy-user")
     val proxyPass by parser.option(ArgType.String, "proxy-pass")
     val checkIp by parser.option(ArgType.Boolean, "check-ip").default(false)
+    val ipLookupUrl by parser.option(ArgType.String, "ip-lookup-url", "ilu")
 
     try {
         parser.parse(args)
@@ -598,7 +602,7 @@ fun main(args: Array<String>) {
         ignoreCache, keep, remove, skipExisting, update, updateMetadata, format, title,
         outputPath, force || redownloadExisting, deleteOriginal, debug, dryRun, exclude, workers,
         userAgentName, proxy, proxyType, proxyHost, proxyPort, proxyUser, proxyPass,
-        checkIp, perWorkerUserAgent, batchWorkers, optimize,
+        checkIp, ipLookupUrl, perWorkerUserAgent, batchWorkers, optimize,
         maxWidth ?: if (optimize) 1200 else null,
         jpegQuality ?: if (optimize) 85 else null,
         sortBy, cacheDir
@@ -645,11 +649,11 @@ fun main(args: Array<String>) {
     runBlocking {
         if (cliArgs.checkIp) {
             val finalProxyUrl = buildProxyUrlFromCliArgs(cliArgs)
+            val lookupServiceUrl = cliArgs.ipLookupUrl ?: AppSettings.Defaults.IP_LOOKUP_URL
 
             if (finalProxyUrl != null) {
-                // Use the comprehensive proxy test utility
                 Logger.logInfo("Running comprehensive proxy test...")
-                val testResult = ProxyTestUtility.runComprehensiveProxyTest(finalProxyUrl)
+                val testResult = ProxyTestUtility.runComprehensiveProxyTest(finalProxyUrl, lookupServiceUrl)
 
                 if (testResult.success) {
                     println("✅ COMPREHENSIVE PROXY TEST PASSED")
@@ -665,7 +669,7 @@ fun main(args: Array<String>) {
 
                     if (!testResult.killSwitchWorking) {
                         println("\n⚠️  WARNING: Kill switch not working! Traffic may leak through direct connection.")
-                        println("   This is a security risk - your real IP could be exposed if proxy fails.")
+                        println("    This is a security risk - your real IP could be exposed if proxy fails.")
                     }
 
                 } else {
@@ -681,11 +685,10 @@ fun main(args: Array<String>) {
                 }
 
             } else {
-                // Simple IP check without proxy
                 Logger.logInfo("Checking public IP address without proxy...")
                 val client = createHttpClient(null)
                 try {
-                    val response = client.get("https://ipinfo.io/json")
+                    val response = client.get(lookupServiceUrl)
                     if (response.status.isSuccess()) {
                         val ipInfo = response.body<IpInfo>()
                         println("✅ Direct Connection IP Check:")

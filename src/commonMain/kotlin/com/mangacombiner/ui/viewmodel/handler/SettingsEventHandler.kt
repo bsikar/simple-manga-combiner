@@ -7,10 +7,11 @@ import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.state.ProxyStatus
 import com.mangacombiner.util.Logger
-import com.mangacombiner.util.ProxyTestUtility
 import com.mangacombiner.util.createHttpClient
 import io.ktor.client.call.*
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.*
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
@@ -29,6 +30,10 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         is Event.Settings.TogglePerWorkerUserAgent -> _state.update { it.copy(perWorkerUserAgent = event.isEnabled) }
         is Event.Settings.ToggleOfflineMode -> _state.update { it.copy(offlineMode = event.isEnabled) }
         is Event.Settings.ToggleProxyOnStartup -> _state.update { it.copy(proxyEnabledOnStartup = event.isEnabled) }
+        is Event.Settings.UpdateIpLookupUrl -> _state.update { it.copy(ipLookupUrl = event.url) }
+        is Event.Settings.UpdateCustomIpLookupUrl -> _state.update { it.copy(customIpLookupUrl = event.url) }
+        Event.Settings.VerifyProxy -> verifyProxyConnection()
+        Event.Settings.CheckIpAddress -> checkIpAddress()
         Event.Settings.PickCustomDefaultPath -> viewModelScope.launch {
             _filePickerRequest.emit(FilePickerRequest.OpenFolder(FilePickerRequest.PathType.CUSTOM_OUTPUT))
         }
@@ -65,8 +70,6 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
             _state.update { it.copy(proxyPass = event.pass) }
             onUpdateProxySetting()
         }
-        is Event.Settings.VerifyProxy -> verifyProxyConnection()
-        is Event.Settings.CheckIpAddress -> checkIpAddress()
     }
 }
 
@@ -130,103 +133,6 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
 }
 
 /**
- * Enhanced proxy verification that tests both basic connectivity and kill switch behavior.
- * This extension function provides comprehensive proxy testing using ProxyTestUtility.
- */
-internal fun MainViewModel.verifyProxyConnection() {
-    viewModelScope.launch {
-        _state.update {
-            it.copy(
-                proxyStatus = ProxyStatus.VERIFYING,
-                proxyVerificationMessage = "Running comprehensive proxy test...",
-                ipInfoResult = null,
-                ipCheckError = null,
-                isNetworkBlocked = true // Block network while verifying
-            )
-        }
-
-        try {
-            val s = state.value
-            val url = buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass)
-
-            if (url == null) {
-                _state.update {
-                    it.copy(
-                        proxyStatus = ProxyStatus.UNVERIFIED,
-                        proxyVerificationMessage = "No proxy configured.",
-                        isNetworkBlocked = false // Unblock if no proxy is set
-                    )
-                }
-                return@launch
-            }
-
-            Logger.logInfo("Starting comprehensive proxy verification for: $url")
-            val testResult = ProxyTestUtility.runComprehensiveProxyTest(url)
-
-            if (testResult.success) {
-                val message = buildString {
-                    append("✓ Proxy working correctly")
-                    if (testResult.ipChanged) {
-                        append("\n✓ IP changed: ${testResult.directIp} → ${testResult.proxyIp}")
-                    }
-                    if (testResult.killSwitchWorking) {
-                        append("\n✓ Kill switch active")
-                    }
-                    testResult.proxyLocation?.let {
-                        append("\n📍 Location: $it")
-                    }
-                }
-
-                _state.update {
-                    it.copy(
-                        proxyStatus = ProxyStatus.CONNECTED,
-                        proxyVerificationMessage = message,
-                        ipInfoResult = com.mangacombiner.model.IpInfo(
-                            ip = testResult.proxyIp,
-                            city = testResult.proxyLocation?.split(", ")?.get(0),
-                            country = testResult.proxyLocation?.split(", ")?.get(1)
-                        ),
-                        isNetworkBlocked = false // Unblock on success
-                    )
-                }
-            } else {
-                val message = buildString {
-                    append("✗ Proxy test failed")
-                    testResult.error?.let { append(": $it") }
-                    if (!testResult.ipChanged && testResult.directIp != null && testResult.proxyIp != null) {
-                        append("\n⚠️ IP unchanged - proxy may not be working")
-                    }
-                    if (!testResult.killSwitchWorking) {
-                        append("\n⚠️ Kill switch not working - traffic may leak!")
-                    }
-                }
-
-                _state.update {
-                    it.copy(
-                        proxyStatus = ProxyStatus.FAILED,
-                        proxyVerificationMessage = message,
-                        isNetworkBlocked = true // Keep blocked on failure
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            val message = "Test failed: ${e.message?.take(100) ?: "Unknown error"}"
-            _state.update {
-                it.copy(
-                    proxyStatus = ProxyStatus.FAILED,
-                    proxyVerificationMessage = message,
-                    isNetworkBlocked = true // Keep blocked on failure
-                )
-            }
-            Logger.logError("Comprehensive proxy verification failed", e)
-        } finally {
-            // This is the crucial fix: always clear the "initial check" flag when done.
-            _state.update { it.copy(isInitialProxyCheckRunning = false) }
-        }
-    }
-}
-
-/**
  * Enhanced IP address checking with proxy awareness and detailed logging.
  * This extension function provides better feedback about proxy functionality.
  */
@@ -243,7 +149,11 @@ internal fun MainViewModel.checkIpAddress() {
 
         val client = createHttpClient(url)
         try {
-            val response = client.get("https://ipinfo.io/json")
+            val lookupUrl = s.ipLookupUrl.ifBlank { AppSettings.Defaults.IP_LOOKUP_URL }
+            val response = client.get(lookupUrl) {
+                // Explicitly set a simple Accept header for JSON APIs
+                accept(ContentType.Application.Json)
+            }
             if (response.status.isSuccess()) {
                 val ipInfo = response.body<com.mangacombiner.model.IpInfo>()
                 _state.update { it.copy(ipInfoResult = ipInfo, isNetworkBlocked = false) }
@@ -255,17 +165,24 @@ internal fun MainViewModel.checkIpAddress() {
                     Logger.logInfo("If this shows your real IP, the proxy is not working correctly")
                 }
             } else {
+                val responseBody = response.bodyAsText()
                 val errorMsg = "Failed: Server responded with ${response.status}"
                 _state.update { it.copy(ipCheckError = errorMsg, isNetworkBlocked = it.proxyEnabledOnStartup) }
                 Logger.logError(errorMsg)
+                Logger.logError("Server Response Body: $responseBody")
             }
         } catch (e: Exception) {
             val errorMsg = "Failed: ${e.message?.take(100) ?: "Unknown error"}"
             _state.update { it.copy(ipCheckError = errorMsg, isNetworkBlocked = it.proxyEnabledOnStartup) }
             Logger.logError("IP Check failed.", e)
+            if (e is ClientRequestException) {
+                val responseBody = e.response.bodyAsText()
+                Logger.logError("Server Response Body: $responseBody")
+            }
         } finally {
             client.close()
             _state.update { it.copy(isCheckingIp = false) }
         }
     }
 }
+

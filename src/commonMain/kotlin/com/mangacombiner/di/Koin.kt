@@ -12,7 +12,23 @@ val appModule = module {
     single { ScraperService() }
     single { FileConverter() }
     single { ProcessorService(get()) }
-    single { DownloadService(get(), get()) }
+    single { IpLookupService() } // Add the new service
+
+    // Proxy monitoring and network interception
+    single { ProxyMonitorService(get()) } // Inject IpLookupService
+    single {
+        NetworkInterceptor(
+            proxyMonitor = get(),
+            isProxyRequired = {
+                val settings = get<com.mangacombiner.data.SettingsRepository>().loadSettings()
+                settings.proxyEnabledOnStartup && settings.proxyType != com.mangacombiner.model.ProxyType.NONE
+            }
+        )
+    }
+
+    // Download service with network interceptor
+    single { DownloadService(get(), get(), get()) }
+
     single { CacheService(get(), get()) }
     single { QueuePersistenceService(get()) }
     single { ScrapeCacheService(get()) }
