@@ -433,6 +433,14 @@ EXAMPLES:
   # Override source URL (uses provided URL instead of EPUB metadata)
   manga-combiner-cli --source my-series.epub --source https://example.com/manga/series --update-metadata
 
+  # Use preset configurations for common scenarios
+  manga-combiner-cli --preset fast --source https://example.com/manga/series
+  manga-combiner-cli --preset quality --source https://example.com/manga/series
+  manga-combiner-cli --preset small-size --source https://example.com/manga/series
+
+  # Sort scraping results by chapter count or alphabetically
+  manga-combiner-cli --scrape --sort-by chapters-desc --source https://example.com/manga-list
+
 INPUT OPTIONS:
   -s, --source <URL|FILE|QUERY>    Source URL, local EPUB file, or search query (can be used multiple times)
 
@@ -440,6 +448,7 @@ DISCOVERY & SEARCH:
   --search                         Search for manga by name and display results
   --scrape                         Batch download all series from a list/genre page URL
   --download-all                   Download all search results (use with --search)
+  --sort-by <METHOD>               Sort search/scrape results (use --list-sort-options to see the list)
 
 OUTPUT OPTIONS:
   --format <epub>                  Output format (default: epub)
@@ -474,9 +483,13 @@ NETWORK & PROXY:
   --per-worker-ua                  Use a different random user agent for each download worker.
   --ip-lookup-url <URL>            Custom URL for IP lookup (e.g., http://ip-api.com/json)
 
-PERFORMANCE:
+PERFORMANCE & OPTIMIZATION:
   -w, --workers <N>                Concurrent image downloads per series (default: 4)
   -bw, --batch-workers <N>         Concurrent series downloads (default: 1)
+  --optimize                       Enable image optimization (reduces file size, SLOW)
+  --max-image-width <PIXELS>       Maximum image width for optimization
+  --jpeg-quality <1-100>           JPEG compression quality (lower = smaller file)
+  --preset <NAME>                  Apply preset configuration (fast, quality, small-size)
 
 UTILITY:
   --check-ip                       Check public IP address through the configured proxy and exit.
@@ -486,6 +499,11 @@ UTILITY:
   --list-sort-options              Show available sort methods
   -v, --version                    Show version information and exit
   --help                           Show this help message
+
+PRESET CONFIGURATIONS:
+  fast         - 8 workers, 3 batch workers, no optimization (fastest download)
+  quality      - 4 workers, 1 batch worker, no optimization, original image quality
+  small-size   - 2 workers, 1 batch worker, optimization enabled, max width 1000px, 75% JPEG quality
     """.trimIndent()
     println(helpText)
 }
@@ -536,7 +554,6 @@ fun main(args: Array<String>) {
     val title by parser.option(ArgType.String, "title", "t")
     val outputPath by parser.option(ArgType.String, "output", "o").default("")
     val force by parser.option(ArgType.Boolean, "force", "f").default(false)
-    val redownloadExisting by parser.option(ArgType.Boolean, "redownload-existing").default(false)
     val deleteOriginal by parser.option(ArgType.Boolean, "delete-original").default(false)
     val debug by parser.option(ArgType.Boolean, "debug").default(false)
     val dryRun by parser.option(ArgType.Boolean, "dry-run").default(false)
@@ -590,8 +607,8 @@ fun main(args: Array<String>) {
     if (downloadAll && !search) {
         println("Error: --download-all requires --search.\nTry 'manga-combiner-cli --help' for usage examples."); return
     }
-    if (listOf(force || redownloadExisting, skipExisting, update, updateMetadata).count { it } > 1) {
-        println("Error: --force/--redownload-existing, --skip-existing, --update, and --update-metadata are mutually exclusive.\nTry 'manga-combiner-cli --help' for more information."); return
+    if (listOf(force, skipExisting, update, updateMetadata).count { it } > 1) {
+        println("Error: --force, --skip-existing, --update, and --update-metadata are mutually exclusive.\nTry 'manga-combiner-cli --help' for more information."); return
     }
     if (keep.isNotEmpty() && remove.isNotEmpty()) {
         println("Error: --keep and --remove are mutually exclusive.\nTry 'manga-combiner-cli --help' for more information."); return
@@ -600,7 +617,7 @@ fun main(args: Array<String>) {
     var cliArgs = CliArguments(
         source, search, scrape, refreshCache, downloadAll, cleanCache, deleteCache,
         ignoreCache, keep, remove, skipExisting, update, updateMetadata, format, title,
-        outputPath, force || redownloadExisting, deleteOriginal, debug, dryRun, exclude, workers,
+        outputPath, force, deleteOriginal, debug, dryRun, exclude, workers,
         userAgentName, proxy, proxyType, proxyHost, proxyPort, proxyUser, proxyPass,
         checkIp, ipLookupUrl, perWorkerUserAgent, batchWorkers, optimize,
         maxWidth ?: if (optimize) 1200 else null,
