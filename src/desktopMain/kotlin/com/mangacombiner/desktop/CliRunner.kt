@@ -36,7 +36,8 @@ private data class DownloadResultForPackaging(
     val outputFile: File,
     val sourceUrl: String,
     val failedChapters: Map<String, List<String>>?,
-    val allFoldersForPackaging: List<File>
+    val allFoldersForPackaging: List<File>,
+    val seriesMetadata: SeriesMetadata?
 )
 
 private suspend fun packageSeries(
@@ -51,7 +52,7 @@ private suspend fun packageSeries(
         outputFile = result.outputFile,
         seriesUrl = result.sourceUrl,
         failedChapters = result.failedChapters,
-        seriesMetadata = null,
+        seriesMetadata = result.seriesMetadata,
         maxWidth = cliArgs.maxWidth,
         jpegQuality = cliArgs.jpegQuality
     )
@@ -84,7 +85,14 @@ private suspend fun downloadSeriesToCache(
             return null
         }
 
-        val mangaTitle = cliArgs.title?.ifBlank { null } ?: source.toSlug().replace('-', ' ').titlecase()
+        Logger.logInfo("--- Processing URL: $source ---")
+        val listScraperAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
+        val (seriesMetadata, allOnlineChapters) = scraperService.fetchSeriesDetails(listClient, source, listScraperAgent)
+        if (allOnlineChapters.isEmpty()) {
+            Logger.logError("No chapters found at $source. Skipping."); return null
+        }
+
+        val mangaTitle = cliArgs.title?.ifBlank { null } ?: seriesMetadata.title
         val finalOutputPath = cliArgs.outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" }
         val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${cliArgs.format}"
         val outputFile = File(finalOutputPath, finalFileName)
@@ -103,23 +111,18 @@ private suspend fun downloadSeriesToCache(
             }
         }
 
-        Logger.logInfo("--- Processing URL: $source ---")
-        val listScraperAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
-        var allOnlineChapters = scraperService.findChapterUrlsAndTitles(listClient, source, listScraperAgent)
-        if (allOnlineChapters.isEmpty()) {
-            Logger.logError("No chapters found at $source. Skipping."); return null
-        }
-
-        if (cliArgs.exclude.isNotEmpty()) {
-            allOnlineChapters = allOnlineChapters.filter { (url, _) -> url.trimEnd('/').substringAfterLast('/') !in cliArgs.exclude }
+        val chaptersToProcess = if (cliArgs.exclude.isNotEmpty()) {
+            allOnlineChapters.filter { (url, _) -> url.trimEnd('/').substringAfterLast('/') !in cliArgs.exclude }
+        } else {
+            allOnlineChapters
         }
 
         val seriesSlug = source.toSlug()
-        var chaptersToDownload = allOnlineChapters
+        var chaptersToDownload = chaptersToProcess
 
         if (!cliArgs.ignoreCache) {
             val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
-            val (cached, toDownload) = allOnlineChapters.partition {
+            val (cached, toDownload) = chaptersToProcess.partition {
                 cachedChapterStatus[FileUtils.sanitizeFilename(it.second)] == true
             }
             if (cached.isNotEmpty()) Logger.logInfo("${cached.size} chapters already in cache. Skipping download portion.")
@@ -132,7 +135,7 @@ private suspend fun downloadSeriesToCache(
             Logger.logInfo("All chapters are available in cache. Proceeding to packaging...")
             if (downloadDir.exists()) {
                 val allFoldersForPackaging = downloadDir.listFiles { file -> file.isDirectory }?.toList() ?: emptyList()
-                return DownloadResultForPackaging(mangaTitle, downloadDir, seriesSlug, outputFile, source, null, allFoldersForPackaging)
+                return DownloadResultForPackaging(mangaTitle, downloadDir, seriesSlug, outputFile, source, null, allFoldersForPackaging, seriesMetadata)
             } else {
                 Logger.logError("Cache is inconsistent; files not found. Please try again with --ignore-cache.")
                 return null
@@ -150,7 +153,7 @@ private suspend fun downloadSeriesToCache(
         val downloadResult = downloadService.downloadChapters(downloadOptions, downloadDir)
         return if (downloadResult != null && downloadResult.successfulFolders.isNotEmpty()) {
             val allFoldersForPackaging = (downloadDir.listFiles { file -> file.isDirectory }?.toList() ?: emptyList())
-            DownloadResultForPackaging(mangaTitle, downloadDir, seriesSlug, outputFile, source, downloadResult.failedChapters, allFoldersForPackaging)
+            DownloadResultForPackaging(mangaTitle, downloadDir, seriesSlug, outputFile, source, downloadResult.failedChapters, allFoldersForPackaging, seriesMetadata)
         } else {
             null
         }
@@ -445,65 +448,65 @@ INPUT OPTIONS:
   -s, --source <URL|FILE|QUERY>    Source URL, local EPUB file, or search query (can be used multiple times)
 
 DISCOVERY & SEARCH:
-  --search                         Search for manga by name and display results
-  --scrape                         Batch download all series from a list/genre page URL
-  --download-all                   Download all search results (use with --search)
-  --sort-by <METHOD>               Sort search/scrape results (use --list-sort-options to see the list)
+  --search                       Search for manga by name and display results
+  --scrape                       Batch download all series from a list/genre page URL
+  --download-all                 Download all search results (use with --search)
+  --sort-by <METHOD>             Sort search/scrape results (use --list-sort-options to see the list)
 
 OUTPUT OPTIONS:
-  --format <epub>                  Output format (default: epub)
-  -t, --title <NAME>               Custom title for output file
-  -o, --output <DIR>               Output directory (default: Downloads)
+  --format <epub>                Output format (default: epub)
+  -t, --title <NAME>             Custom title for output file
+  -o, --output <DIR>             Output directory (default: Downloads)
 
 DOWNLOAD BEHAVIOR:
-  -f, --force                      Force overwrite existing files
-  --skip-existing                  Skip if output file exists (good for batch)
-  --update                         Update an existing EPUB with new chapters
-  --update-metadata                Update metadata of existing EPUB using scraped series data
-  -e, --exclude <SLUG>             Exclude chapters by slug (e.g., 'chapter-4.5'). Can be used multiple times.
-  --delete-original                Delete source file after successful conversion (local files only)
+  -f, --force                    Force overwrite existing files
+  --skip-existing                Skip if output file exists (good for batch)
+  --update                       Update an existing EPUB with new chapters
+  --update-metadata              Update metadata of existing EPUB using scraped series data
+  -e, --exclude <SLUG>           Exclude chapters by slug (e.g., 'chapter-4.5'). Can be used multiple times.
+  --delete-original              Delete source file after successful conversion (local files only)
 
 CACHE MANAGEMENT:
-  --ignore-cache                   Force re-download all chapters, ignoring cached files
-  --clean-cache                    Delete temp files after successful download to save disk space
-  --refresh-cache                  Force refresh of scraped series list. Use with --scrape.
-  --delete-cache                   Delete cached downloads and exit. Use with --keep or --remove for selective deletion.
-  --keep <PATTERN>                 Keep matching series when deleting cache
-  --remove <PATTERN>               Remove matching series when deleting cache
-  --cache-dir <DIR>                Custom cache directory
+  --ignore-cache                 Force re-download all chapters, ignoring cached files
+  --clean-cache                  Delete temp files after successful download to save disk space
+  --refresh-cache                Force refresh of scraped series list. Use with --scrape.
+  --delete-cache                 Delete cached downloads and exit. Use with --keep or --remove for selective deletion.
+  --keep <PATTERN>               Keep matching series when deleting cache
+  --remove <PATTERN>             Remove matching series when deleting cache
+  --cache-dir <DIR>              Custom cache directory
 
 NETWORK & PROXY:
-  --proxy <URL>                    Legacy proxy URL (e.g., socks5://user:pass@host:1080)
-  --proxy-type <http|socks5>       Proxy type. Use with --proxy-host and --proxy-port.
-  --proxy-host <HOST>              Proxy host or IP address.
-  --proxy-port <PORT>              Proxy port number.
-  --proxy-user <USER>              Proxy username (optional).
-  --proxy-pass <PASS>              Proxy password (optional).
-  -ua, --user-agent <NAME>         Browser to impersonate (see --list-user-agents)
-  --per-worker-ua                  Use a different random user agent for each download worker.
-  --ip-lookup-url <URL>            Custom URL for IP lookup (e.g., http://ip-api.com/json)
+  --proxy <URL>                  Legacy proxy URL (e.g., socks5://user:pass@host:1080)
+  --proxy-type <http|socks5>     Proxy type. Use with --proxy-host and --proxy-port.
+  --proxy-host <HOST>            Proxy host or IP address.
+  --proxy-port <PORT>            Proxy port number.
+  --proxy-user <USER>            Proxy username (optional).
+  --proxy-pass <PASS>            Proxy password (optional).
+  -ua, --user-agent <NAME>       Browser to impersonate (see --list-user-agents)
+  --per-worker-ua                Use a different random user agent for each download worker.
+  --ip-lookup-url <URL>          Custom URL for IP lookup (e.g., http://ip-api.com/json)
 
 PERFORMANCE & OPTIMIZATION:
-  -w, --workers <N>                Concurrent image downloads per series (default: 4)
-  -bw, --batch-workers <N>         Concurrent series downloads (default: 1)
-  --optimize                       Enable image optimization (reduces file size, SLOW)
-  --max-image-width <PIXELS>       Maximum image width for optimization
-  --jpeg-quality <1-100>           JPEG compression quality (lower = smaller file)
-  --preset <NAME>                  Apply preset configuration (fast, quality, small-size)
+  -w, --workers <N>              Concurrent image downloads per series (default: 4)
+  -bw, --batch-workers <N>       Concurrent series downloads (default: 1)
+  --optimize                     Enable image optimization (reduces file size, SLOW)
+  --max-image-width <PIXELS>     Maximum image width for optimization
+  --jpeg-quality <1-100>         JPEG compression quality (lower = smaller file)
+  --preset <NAME>                Apply preset configuration (fast, quality, small-size)
 
 UTILITY:
-  --check-ip                       Check public IP address through the configured proxy and exit.
-  --dry-run                        Preview actions without downloading
-  --debug                          Enable verbose logging
-  --list-user-agents               Show available user agents
-  --list-sort-options              Show available sort methods
-  -v, --version                    Show version information and exit
-  --help                           Show this help message
+  --check-ip                     Check public IP address through the configured proxy and exit.
+  --dry-run                      Preview actions without downloading
+  --debug                        Enable verbose logging
+  --list-user-agents             Show available user agents
+  --list-sort-options            Show available sort methods
+  -v, --version                  Show version information and exit
+  --help                         Show this help message
 
 PRESET CONFIGURATIONS:
-  fast         - 8 workers, 3 batch workers, no optimization (fastest download)
-  quality      - 4 workers, 1 batch worker, no optimization, original image quality
-  small-size   - 2 workers, 1 batch worker, optimization enabled, max width 1000px, 75% JPEG quality
+  fast        - 8 workers, 3 batch workers, no optimization (fastest download)
+  quality     - 4 workers, 1 batch worker, no optimization, original image quality
+  small-size  - 2 workers, 1 batch worker, optimization enabled, max width 1000px, 75% JPEG quality
     """.trimIndent()
     println(helpText)
 }
@@ -675,18 +678,18 @@ fun main(args: Array<String>) {
                 if (testResult.success) {
                     println("✅ COMPREHENSIVE PROXY TEST PASSED")
                     println("📍 Direct Connection:")
-                    println("    IP: ${testResult.directIp}")
-                    println("    Location: ${testResult.directLocation}")
+                    println("   IP: ${testResult.directIp}")
+                    println("   Location: ${testResult.directLocation}")
                     println("📍 Proxy Connection:")
-                    println("    IP: ${testResult.proxyIp}")
-                    println("    Location: ${testResult.proxyLocation}")
+                    println("   IP: ${testResult.proxyIp}")
+                    println("   Location: ${testResult.proxyLocation}")
                     println("🔒 Security:")
-                    println("    IP Changed: ${if (testResult.ipChanged) "✅ Yes" else "❌ No"}")
-                    println("    Kill Switch: ${if (testResult.killSwitchWorking) "✅ Active" else "❌ Failed"}")
+                    println("   IP Changed: ${if (testResult.ipChanged) "✅ Yes" else "❌ No"}")
+                    println("   Kill Switch: ${if (testResult.killSwitchWorking) "✅ Active" else "❌ Failed"}")
 
                     if (!testResult.killSwitchWorking) {
                         println("\n⚠️  WARNING: Kill switch not working! Traffic may leak through direct connection.")
-                        println("    This is a security risk - your real IP could be exposed if proxy fails.")
+                        println("   This is a security risk - your real IP could be exposed if proxy fails.")
                     }
 
                 } else {
@@ -694,10 +697,10 @@ fun main(args: Array<String>) {
                     testResult.error?.let { println("Error: $it") }
                     println("\nProblems detected:")
                     if (!testResult.ipChanged) {
-                        println("  - IP address did not change (proxy may not be working)")
+                        println("   - IP address did not change (proxy may not be working)")
                     }
                     if (!testResult.killSwitchWorking) {
-                        println("  - Kill switch not working (traffic may leak on proxy failure)")
+                        println("   - Kill switch not working (traffic may leak on proxy failure)")
                     }
                 }
 
@@ -709,9 +712,9 @@ fun main(args: Array<String>) {
                     if (response.status.isSuccess()) {
                         val ipInfo = response.body<IpInfo>()
                         println("✅ Direct Connection IP Check:")
-                        println("    IP: ${ipInfo.ip ?: "N/A"}")
-                        println("    Location: ${listOfNotNull(ipInfo.city, ipInfo.region, ipInfo.country).joinToString(", ")}")
-                        println("    ISP: ${ipInfo.org ?: "N/A"}")
+                        println("   IP: ${ipInfo.ip ?: "N/A"}")
+                        println("   Location: ${listOfNotNull(ipInfo.city, ipInfo.region, ipInfo.country).joinToString(", ")}")
+                        println("   ISP: ${ipInfo.org ?: "N/A"}")
                     } else {
                         Logger.logError("Failed: Server responded with status ${response.status}")
                     }
@@ -775,7 +778,7 @@ fun main(args: Array<String>) {
                     else if (cliArgs.downloadAll) {
                         results.map { it.url }
                     } else {
-                        results.forEachIndexed { i, r -> println("[${i + 1}] ${r.title}\n    URL: ${r.url}\n") }; emptyList()
+                        results.forEachIndexed { i, r -> println("[${i + 1}] ${r.title}\n   URL: ${r.url}\n") }; emptyList()
                     }
                 } finally {
                     client.close()
