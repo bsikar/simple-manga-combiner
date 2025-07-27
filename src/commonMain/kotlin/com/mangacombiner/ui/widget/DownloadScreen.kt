@@ -103,10 +103,13 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                                 ButtonDefaults.buttonColors()
                             }
                         ) {
-                            if (state.isFetchingChapters) {
-                                Text("Cancel")
-                            } else {
-                                Text("Fetch Chapters")
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (state.isFetchingChapters) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
+                                    Text("Cancel")
+                                } else {
+                                    Text("Fetch Chapters")
+                                }
                             }
                         }
                     }

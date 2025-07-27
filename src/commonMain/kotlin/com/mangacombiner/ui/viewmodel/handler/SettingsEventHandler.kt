@@ -16,6 +16,7 @@ import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
     when (event) {
@@ -137,27 +138,51 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
  * This extension function provides better feedback about proxy functionality.
  */
 internal fun MainViewModel.checkIpAddress() {
-    viewModelScope.launch {
-        _state.update { it.copy(isCheckingIp = true, ipInfoResult = null, ipCheckError = null) }
+    viewModelScope.launch(Dispatchers.IO) {
+        withContext(Dispatchers.Main) {
+            _state.update { it.copy(isCheckingIp = true, ipInfoResult = null, ipCheckError = null) }
+        }
         val s = state.value
         val url = buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass)
 
-        Logger.logInfo("Checking public IP address...")
+        // Define services to check which one is active
+        val ipServices = mapOf(
+            "ipinfo.io" to AppSettings.Defaults.IP_LOOKUP_URL,
+            "ipify.org" to "https://api.ipify.org?format=json",
+            "Custom" to s.customIpLookupUrl
+        )
+        val currentIpServiceName = ipServices.entries.find { it.value == s.ipLookupUrl }?.key ?: "Custom"
+
+        val lookupUrl: String
+        if (currentIpServiceName == "Custom" && s.ipLookupUrl.isBlank()) {
+            val errorMsg = "Custom IP Lookup Service is selected, but the URL is empty."
+            withContext(Dispatchers.Main) {
+                _state.update { it.copy(isCheckingIp = false, ipCheckError = errorMsg) }
+            }
+            Logger.logError(errorMsg)
+            return@launch
+        } else {
+            lookupUrl = s.ipLookupUrl.ifBlank { AppSettings.Defaults.IP_LOOKUP_URL }
+        }
+
+
+        Logger.logInfo("Checking public IP address using: $lookupUrl")
         if (url != null) {
             Logger.logInfo("Using proxy: $url")
         }
 
         val client = createHttpClient(url)
         try {
-            val lookupUrl = s.ipLookupUrl.ifBlank { AppSettings.Defaults.IP_LOOKUP_URL }
             val response = client.get(lookupUrl) {
                 // Explicitly set a simple Accept header for JSON APIs
                 accept(ContentType.Application.Json)
             }
             if (response.status.isSuccess()) {
                 val ipInfo = response.body<com.mangacombiner.model.IpInfo>()
-                _state.update { it.copy(ipInfoResult = ipInfo, isNetworkBlocked = false) }
-                Logger.logInfo("IP Check Success: ${ipInfo.ip} (${ipInfo.city}, ${ipInfo.country})")
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(ipInfoResult = ipInfo, isNetworkBlocked = false) }
+                }
+                Logger.logInfo("IP Check Success via $lookupUrl: ${ipInfo.ip} (${ipInfo.city}, ${ipInfo.country})")
 
                 // Additional logging to help debug proxy issues
                 if (url != null) {
@@ -167,13 +192,17 @@ internal fun MainViewModel.checkIpAddress() {
             } else {
                 val responseBody = response.bodyAsText()
                 val errorMsg = "Failed: Server responded with ${response.status}"
-                _state.update { it.copy(ipCheckError = errorMsg, isNetworkBlocked = it.proxyEnabledOnStartup) }
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(ipCheckError = errorMsg, isNetworkBlocked = it.proxyEnabledOnStartup) }
+                }
                 Logger.logError(errorMsg)
                 Logger.logError("Server Response Body: $responseBody")
             }
         } catch (e: Exception) {
             val errorMsg = "Failed: ${e.message?.take(100) ?: "Unknown error"}"
-            _state.update { it.copy(ipCheckError = errorMsg, isNetworkBlocked = it.proxyEnabledOnStartup) }
+            withContext(Dispatchers.Main) {
+                _state.update { it.copy(ipCheckError = errorMsg, isNetworkBlocked = it.proxyEnabledOnStartup) }
+            }
             Logger.logError("IP Check failed.", e)
             if (e is ClientRequestException) {
                 val responseBody = e.response.bodyAsText()
@@ -181,8 +210,9 @@ internal fun MainViewModel.checkIpAddress() {
             }
         } finally {
             client.close()
-            _state.update { it.copy(isCheckingIp = false) }
+            withContext(Dispatchers.Main) {
+                _state.update { it.copy(isCheckingIp = false) }
+            }
         }
     }
 }
-

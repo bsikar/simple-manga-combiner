@@ -3,6 +3,7 @@ package com.mangacombiner.ui.viewmodel.handler
 import com.mangacombiner.service.WebDavFile
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
+import com.mangacombiner.ui.viewmodel.state.CacheSortState
 import com.mangacombiner.ui.viewmodel.state.SortCriteria
 import com.mangacombiner.ui.viewmodel.state.SortDirection
 import com.mangacombiner.util.Logger
@@ -15,6 +16,7 @@ import kotlinx.coroutines.withContext
 import net.lingala.zip4j.ZipFile
 import java.io.File
 import java.net.URI
+import kotlinx.coroutines.Dispatchers
 
 internal fun MainViewModel.handleWebDavEvent(event: Event.WebDav) {
     when (event) {
@@ -42,22 +44,24 @@ private fun MainViewModel.connectToWebDav() {
     val s = state.value
     if (s.webDavUrl.isBlank()) return
 
-    viewModelScope.launch {
-        _state.update { it.copy(isConnectingToWebDav = true, webDavError = null, webDavFiles = emptyList()) }
+    _state.update { it.copy(isConnectingToWebDav = true, webDavError = null, webDavFiles = emptyList()) }
+    viewModelScope.launch(Dispatchers.IO) {
         val result = webDavService.listFiles(s.webDavUrl, s.webDavUser, s.webDavPass, s.webDavIncludeHidden)
-        result.onSuccess { files ->
-            val uniqueFiles = files.distinctBy { it.href }
-            _state.update {
-                val newCache = it.webDavFileCache.toMutableMap()
-                uniqueFiles.forEach { file -> newCache[file.href] = file }
-                it.copy(
-                    isConnectingToWebDav = false,
-                    webDavFiles = uniqueFiles,
-                    webDavFileCache = newCache
-                )
+        withContext(Dispatchers.Main) {
+            result.onSuccess { files ->
+                val uniqueFiles = files.distinctBy { it.href }
+                _state.update {
+                    val newCache = it.webDavFileCache.toMutableMap()
+                    uniqueFiles.forEach { file -> newCache[file.href] = file }
+                    it.copy(
+                        isConnectingToWebDav = false,
+                        webDavFiles = uniqueFiles,
+                        webDavFileCache = newCache
+                    )
+                }
+            }.onFailure { error ->
+                _state.update { it.copy(isConnectingToWebDav = false, webDavError = error.message ?: "An unknown error occurred.") }
             }
-        }.onFailure { error ->
-            _state.update { it.copy(isConnectingToWebDav = false, webDavError = error.message ?: "An unknown error occurred.") }
         }
     }
 }
@@ -101,18 +105,19 @@ private fun MainViewModel.navigateWebDavBack() {
 
 private var webDavDownloadJob: Job? = null
 private fun MainViewModel.downloadFromWebDav() {
-    webDavDownloadJob = viewModelScope.launch {
-        val s = state.value
-        if (s.outputPath.isBlank()) {
-            _state.update { it.copy(webDavError = "Output path is not set. Please set it in Settings.") }
-            return@launch
-        }
+    val s = state.value
+    if (s.outputPath.isBlank()) {
+        _state.update { it.copy(webDavError = "Output path is not set. Please set it in Settings.") }
+        return
+    }
+
+    _state.update { it.copy(isDownloadingFromWebDav = true, webDavDownloadProgress = 0f, webDavStatus = "Starting download...") }
+    webDavDownloadJob = viewModelScope.launch(Dispatchers.IO) {
         val itemsToDownload = s.webDavFileCache.values.filter { it.href in s.webDavSelectedFiles }
         var downloadedCount = 0
 
         try {
             Logger.logInfo("Download requested for ${itemsToDownload.size} item(s) from WebDAV.")
-            _state.update { it.copy(isDownloadingFromWebDav = true, webDavDownloadProgress = 0f, webDavStatus = "Starting download...") }
 
             val serverUri = URI(s.webDavUrl)
             val serverRoot = "${serverUri.scheme}://${serverUri.authority}"
@@ -123,7 +128,9 @@ private fun MainViewModel.downloadFromWebDav() {
                 if (item.isDirectory) {
                     val zipFile = File(s.outputPath, "${item.name}.zip")
                     Logger.logInfo("Starting download of folder '${item.name}' as a ZIP archive...")
-                    _state.update { it.copy(webDavStatus = "Scanning folder ${index + 1}/${itemsToDownload.size}: ${item.name}") }
+                    withContext(Dispatchers.Main) {
+                        _state.update { it.copy(webDavStatus = "Scanning folder ${index + 1}/${itemsToDownload.size}: ${item.name}") }
+                    }
                     val filesInFolderResult = webDavService.scanDirectoryRecursively(serverRoot + item.href, s.webDavUser, s.webDavPass, s.webDavIncludeHidden)
 
                     filesInFolderResult.onSuccess { filesInFolder ->
@@ -131,12 +138,14 @@ private fun MainViewModel.downloadFromWebDav() {
                         ZipFile(zipFile).use { zip ->
                             filesInFolder.forEachIndexed { fileIndex, fileToZip ->
                                 if (!isActive) return@forEachIndexed
-                                _state.update {
-                                    val overallProgress = (index.toFloat() + ((fileIndex + 1).toFloat() / filesInFolder.size)) / itemsToDownload.size
-                                    it.copy(
-                                        webDavStatus = "Zipping ${item.name} (${fileIndex + 1}/${filesInFolder.size}): ${fileToZip.name}",
-                                        webDavDownloadProgress = overallProgress
-                                    )
+                                withContext(Dispatchers.Main) {
+                                    _state.update {
+                                        val overallProgress = (index.toFloat() + ((fileIndex + 1).toFloat() / filesInFolder.size)) / itemsToDownload.size
+                                        it.copy(
+                                            webDavStatus = "Zipping ${item.name} (${fileIndex + 1}/${filesInFolder.size}): ${fileToZip.name}",
+                                            webDavDownloadProgress = overallProgress
+                                        )
+                                    }
                                 }
                                 val tempFile = File.createTempFile("webdav-", fileToZip.name)
                                 webDavService.downloadFile(serverRoot + fileToZip.href, s.webDavUser, s.webDavPass, tempFile) { _, _ -> }.getOrThrow()
@@ -155,11 +164,14 @@ private fun MainViewModel.downloadFromWebDav() {
                     }
                 } else {
                     val destinationFile = File(s.outputPath, item.name)
-                    _state.update { it.copy(webDavStatus = "Downloading ${index + 1}/${itemsToDownload.size}: ${item.name}") }
+                    withContext(Dispatchers.Main) {
+                        _state.update { it.copy(webDavStatus = "Downloading ${index + 1}/${itemsToDownload.size}: ${item.name}") }
+                    }
                     val result = webDavService.downloadFile(serverRoot + item.href, s.webDavUser, s.webDavPass, destinationFile) { bytes, total ->
                         if (total > 0) {
                             val fileProgress = bytes.toFloat() / total
                             val overallProgress = (index + fileProgress) / itemsToDownload.size
+                            // Update state from a background thread is safe for StateFlow
                             _state.update { it.copy(webDavDownloadProgress = overallProgress) }
                         }
                     }
@@ -172,7 +184,7 @@ private fun MainViewModel.downloadFromWebDav() {
                 }
             }
         } finally {
-            withContext(NonCancellable) {
+            withContext(NonCancellable + Dispatchers.Main) {
                 val wasCancelled = !isActive
                 val finalStatus = if (wasCancelled) "Download cancelled." else "Download complete."
                 val finalMessage = if (wasCancelled) {
@@ -217,20 +229,22 @@ private fun MainViewModel.onToggleWebDavSelection(fileHref: String, isSelected: 
             selection.add(fileHref)
             if (file.isDirectory) {
                 folderSizes[fileHref] = null // Mark as calculating
-                viewModelScope.launch {
+                viewModelScope.launch(Dispatchers.IO) {
                     val s = state.value
                     val serverUri = URI(s.webDavUrl)
                     val serverRoot = "${serverUri.scheme}://${serverUri.authority}"
                     val folderUrl = serverRoot + file.href
                     val result = webDavService.scanDirectoryRecursively(folderUrl, s.webDavUser, s.webDavPass, s.webDavIncludeHidden)
-                    result.onSuccess { filesInFolder ->
-                        val totalSize = filesInFolder.sumOf { f -> f.size }
-                        _state.update { current ->
-                            current.copy(webDavFolderSizes = current.webDavFolderSizes + (fileHref to totalSize))
-                        }
-                    }.onFailure {
-                        _state.update { current ->
-                            current.copy(webDavFolderSizes = current.webDavFolderSizes + (fileHref to -1L)) // Use -1 to indicate error
+                    withContext(Dispatchers.Main) {
+                        result.onSuccess { filesInFolder ->
+                            val totalSize = filesInFolder.sumOf { f -> f.size }
+                            _state.update { current ->
+                                current.copy(webDavFolderSizes = current.webDavFolderSizes + (fileHref to totalSize))
+                            }
+                        }.onFailure {
+                            _state.update { current ->
+                                current.copy(webDavFolderSizes = current.webDavFolderSizes + (fileHref to -1L)) // Use -1 to indicate error
+                            }
                         }
                     }
                 }

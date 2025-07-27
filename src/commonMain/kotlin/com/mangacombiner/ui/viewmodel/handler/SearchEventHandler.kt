@@ -95,8 +95,9 @@ private fun MainViewModel.performSearch() {
     }
 
     searchJob?.cancel()
+    _state.update { it.copy(isSearching = true, searchResults = emptyList(), originalSearchResults = emptyList()) }
+
     searchJob = viewModelScope.launch(Dispatchers.IO) {
-        _state.update { it.copy(isSearching = true, searchResults = emptyList(), originalSearchResults = emptyList()) }
         Logger.logInfo("Searching for '$query'...")
 
         val userAgent = UserAgent.browsers[_state.value.userAgentName] ?: UserAgent.browsers.values.first()
@@ -110,10 +111,12 @@ private fun MainViewModel.performSearch() {
                 return@launch
             }
 
-            _state.update {
-                it.copy(
-                    searchResults = initialResults.map { sr -> sr.copy(isFetchingDetails = true) }
-                )
+            withContext(Dispatchers.Main) {
+                _state.update {
+                    it.copy(
+                        searchResults = initialResults.map { sr -> sr.copy(isFetchingDetails = true) }
+                    )
+                }
             }
 
             coroutineScope {
@@ -129,12 +132,14 @@ private fun MainViewModel.performSearch() {
                         )
                     }
                 }.awaitAll()
-                _state.update {
-                    it.copy(
-                        searchResults = detailedResults,
-                        originalSearchResults = detailedResults,
-                        searchSortOption = SearchSortOption.DEFAULT
-                    )
+                withContext(Dispatchers.Main) {
+                    _state.update {
+                        it.copy(
+                            searchResults = detailedResults,
+                            originalSearchResults = detailedResults,
+                            searchSortOption = SearchSortOption.DEFAULT
+                        )
+                    }
                 }
             }
         } catch (e: CancellationException) {
@@ -142,22 +147,26 @@ private fun MainViewModel.performSearch() {
             throw e
         } catch (e: NetworkException) {
             Logger.logError("Search failed due to network error", e)
-            _state.update {
-                it.copy(
-                    showNetworkErrorDialog = true,
-                    networkErrorMessage = "Search failed. Please check your network connection."
-                )
+            withContext(Dispatchers.Main) {
+                _state.update {
+                    it.copy(
+                        showNetworkErrorDialog = true,
+                        networkErrorMessage = "Search failed. Please check your network connection."
+                    )
+                }
             }
         } catch (e: Exception) {
             Logger.logError("An unexpected error occurred during search", e)
-            _state.update {
-                it.copy(
-                    showNetworkErrorDialog = true,
-                    networkErrorMessage = "An unexpected error occurred."
-                )
+            withContext(Dispatchers.Main) {
+                _state.update {
+                    it.copy(
+                        showNetworkErrorDialog = true,
+                        networkErrorMessage = "An unexpected error occurred."
+                    )
+                }
             }
         } finally {
-            withContext(NonCancellable) {
+            withContext(NonCancellable + Dispatchers.Main) {
                 _state.update { it.copy(isSearching = false) }
                 client.close()
             }

@@ -26,6 +26,7 @@ import org.koin.dsl.module
 import org.koin.java.KoinJavaComponent.get
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
@@ -67,13 +68,94 @@ private suspend fun packageSeries(
     }
 }
 
+private suspend fun runUpdateProcess(
+    cliArgs: CliArguments,
+    outputFile: File,
+    allOnlineChapters: List<Pair<String, String>>,
+    seriesMetadata: SeriesMetadata,
+    platformProvider: PlatformProvider,
+    processorService: ProcessorService,
+    downloadService: DownloadService
+) {
+    Logger.logInfo("--- Updating existing file: ${outputFile.name} ---")
+
+    val (localChapterSlugs, _, _) = processorService.getChaptersAndInfoFromFile(outputFile)
+    if (localChapterSlugs.isEmpty()) {
+        Logger.logError("Could not read any chapters from the existing file. Please use --force to redownload.")
+        return
+    }
+
+    val onlineChapterSlugs = allOnlineChapters.map { it.second.toSlug() }.toSet()
+    val newChapterPairs = allOnlineChapters.filter { it.second.toSlug() !in localChapterSlugs }
+
+    if (newChapterPairs.isEmpty()) {
+        Logger.logInfo("File is already up-to-date. No new chapters found.")
+        return
+    }
+
+    Logger.logInfo("Found ${newChapterPairs.size} new chapters to download.")
+    val tempDir = File(platformProvider.getTmpDir(), "manga-update-${UUID.randomUUID()}").apply { mkdirs() }
+    val backupFile = File(outputFile.parentFile, "${outputFile.nameWithoutExtension}.backup.epub")
+
+    try {
+        // 1. Extract old chapters
+        Logger.logInfo("Extracting ${localChapterSlugs.size} existing chapters...")
+        val oldChapterFolders = processorService.extractChaptersToDirectory(outputFile, localChapterSlugs, tempDir)
+
+        // 2. Download new chapters
+        val mangaTitle = cliArgs.title?.ifBlank { null } ?: seriesMetadata.title
+        val sourceUrl = allOnlineChapters.first().first.substringBeforeLast("/")
+        val downloadOptions = createDownloadOptions(sourceUrl, newChapterPairs.toMap(), mangaTitle, cliArgs, platformProvider)
+        val downloadResult = downloadService.downloadChapters(downloadOptions, tempDir)
+        val newChapterFolders = downloadResult?.successfulFolders ?: emptyList()
+
+        if (newChapterFolders.isEmpty()) {
+            Logger.logError("Failed to download any of the new chapters. Aborting update.")
+            return
+        }
+
+        // 3. Combine and re-package
+        val allFoldersForPackaging = (oldChapterFolders + newChapterFolders).sortedBy { it.name }
+        Logger.logInfo("Combining ${oldChapterFolders.size} old and ${newChapterFolders.size} new chapters...")
+
+        // Backup original file
+        outputFile.copyTo(backupFile, overwrite = true)
+        Logger.logInfo("Created backup: ${backupFile.name}")
+
+        processorService.createEpubFromFolders(
+            mangaTitle = mangaTitle,
+            chapterFolders = allFoldersForPackaging,
+            outputFile = outputFile,
+            seriesUrl = sourceUrl,
+            failedChapters = downloadResult?.failedChapters,
+            seriesMetadata = seriesMetadata,
+            maxWidth = cliArgs.maxWidth,
+            jpegQuality = cliArgs.jpegQuality
+        )
+
+        if (outputFile.exists() && outputFile.length() > backupFile.length()) {
+            Logger.logInfo("Successfully updated file: ${outputFile.absolutePath}")
+            backupFile.delete()
+        } else {
+            Logger.logError("Update failed. Restoring from backup.")
+            backupFile.copyTo(outputFile, overwrite = true)
+            backupFile.delete()
+        }
+
+    } finally {
+        tempDir.deleteRecursively()
+    }
+}
+
+
 private suspend fun downloadSeriesToCache(
     source: String,
     cliArgs: CliArguments,
     downloadService: DownloadService,
     scraperService: ScraperService,
     platformProvider: PlatformProvider,
-    cacheService: CacheService
+    cacheService: CacheService,
+    processorService: ProcessorService
 ): DownloadResultForPackaging? {
     val tempDir = File(platformProvider.getTmpDir())
     val finalProxyUrl = buildProxyUrlFromCliArgs(cliArgs)
@@ -101,8 +183,8 @@ private suspend fun downloadSeriesToCache(
             when {
                 cliArgs.skipExisting -> { Logger.logInfo("Output file ${outputFile.name} already exists. Skipping."); return null }
                 cliArgs.update -> {
-                    Logger.logInfo("Update logic is not yet fully implemented in this CLI version. Use --force to redownload.")
-                    return null
+                    runUpdateProcess(cliArgs, outputFile, allOnlineChapters, seriesMetadata, platformProvider, processorService, downloadService)
+                    return null // Update process is self-contained
                 }
                 !cliArgs.force && !cliArgs.dryRun -> {
                     Logger.logError("Output file exists for $source: ${outputFile.absolutePath}. Use --force, --skip-existing, or --update.")
@@ -383,7 +465,7 @@ private suspend fun CoroutineScope.runDownloadsAndPackaging(
     val downloadJobs = sources.map { src ->
         launch {
             downloadSemaphore.withPermit {
-                val downloadResult = downloadSeriesToCache(src, cliArgs, downloadService, scraperService, platformProvider, cacheService)
+                val downloadResult = downloadSeriesToCache(src, cliArgs, downloadService, scraperService, platformProvider, cacheService, processorService)
                 if (downloadResult != null) {
                     packagingChannel.send(downloadResult)
                 }
@@ -445,63 +527,63 @@ EXAMPLES:
   manga-combiner-cli --scrape --sort-by chapters-desc --source https://example.com/manga-list
 
 INPUT OPTIONS:
-  -s, --source <URL|FILE|QUERY>    Source URL, local EPUB file, or search query (can be used multiple times)
+  -s, --source <URL|FILE|QUERY>   Source URL, local EPUB file, or search query (can be used multiple times)
 
 DISCOVERY & SEARCH:
-  --search                       Search for manga by name and display results
-  --scrape                       Batch download all series from a list/genre page URL
-  --download-all                 Download all search results (use with --search)
-  --sort-by <METHOD>             Sort search/scrape results (use --list-sort-options to see the list)
+  --search                        Search for manga by name and display results
+  --scrape                        Batch download all series from a list/genre page URL
+  --download-all                  Download all search results (use with --search)
+  --sort-by <METHOD>              Sort search/scrape results (use --list-sort-options to see the list)
 
 OUTPUT OPTIONS:
-  --format <epub>                Output format (default: epub)
-  -t, --title <NAME>             Custom title for output file
-  -o, --output <DIR>             Output directory (default: Downloads)
+  --format <epub>                 Output format (default: epub)
+  -t, --title <NAME>              Custom title for output file
+  -o, --output <DIR>              Output directory (default: Downloads)
 
 DOWNLOAD BEHAVIOR:
-  -f, --force                    Force overwrite existing files
-  --skip-existing                Skip if output file exists (good for batch)
-  --update                       Update an existing EPUB with new chapters
-  --update-metadata              Update metadata of existing EPUB using scraped series data
-  -e, --exclude <SLUG>           Exclude chapters by slug (e.g., 'chapter-4.5'). Can be used multiple times.
-  --delete-original              Delete source file after successful conversion (local files only)
+  -f, --force                     Force overwrite existing files
+  --skip-existing                 Skip if output file exists (good for batch)
+  --update                        Update an existing EPUB with new chapters
+  --update-metadata               Update metadata of existing EPUB using scraped series data
+  -e, --exclude <SLUG>            Exclude chapters by slug (e.g., 'chapter-4.5'). Can be used multiple times.
+  --delete-original               Delete source file after successful conversion (local files only)
 
 CACHE MANAGEMENT:
-  --ignore-cache                 Force re-download all chapters, ignoring cached files
-  --clean-cache                  Delete temp files after successful download to save disk space
-  --refresh-cache                Force refresh of scraped series list. Use with --scrape.
-  --delete-cache                 Delete cached downloads and exit. Use with --keep or --remove for selective deletion.
-  --keep <PATTERN>               Keep matching series when deleting cache
-  --remove <PATTERN>             Remove matching series when deleting cache
-  --cache-dir <DIR>              Custom cache directory
+  --ignore-cache                  Force re-download all chapters, ignoring cached files
+  --clean-cache                   Delete temp files after successful download to save disk space
+  --refresh-cache                 Force refresh of scraped series list. Use with --scrape.
+  --delete-cache                  Delete cached downloads and exit. Use with --keep or --remove for selective deletion.
+  --keep <PATTERN>                Keep matching series when deleting cache
+  --remove <PATTERN>              Remove matching series when deleting cache
+  --cache-dir <DIR>               Custom cache directory
 
 NETWORK & PROXY:
-  --proxy <URL>                  Legacy proxy URL (e.g., socks5://user:pass@host:1080)
-  --proxy-type <http|socks5>     Proxy type. Use with --proxy-host and --proxy-port.
-  --proxy-host <HOST>            Proxy host or IP address.
-  --proxy-port <PORT>            Proxy port number.
-  --proxy-user <USER>            Proxy username (optional).
-  --proxy-pass <PASS>            Proxy password (optional).
-  -ua, --user-agent <NAME>       Browser to impersonate (see --list-user-agents)
-  --per-worker-ua                Use a different random user agent for each download worker.
-  --ip-lookup-url <URL>          Custom URL for IP lookup (e.g., http://ip-api.com/json)
+  --proxy <URL>                   Legacy proxy URL (e.g., socks5://user:pass@host:1080)
+  --proxy-type <http|socks5>      Proxy type. Use with --proxy-host and --proxy-port.
+  --proxy-host <HOST>             Proxy host or IP address.
+  --proxy-port <PORT>             Proxy port number.
+  --proxy-user <USER>             Proxy username (optional).
+  --proxy-pass <PASS>             Proxy password (optional).
+  -ua, --user-agent <NAME>        Browser to impersonate (see --list-user-agents)
+  --per-worker-ua                 Use a different random user agent for each download worker.
+  --ip-lookup-url <URL>           Custom URL for IP lookup (e.g., http://ip-api.com/json)
 
 PERFORMANCE & OPTIMIZATION:
-  -w, --workers <N>              Concurrent image downloads per series (default: 4)
-  -bw, --batch-workers <N>       Concurrent series downloads (default: 1)
-  --optimize                     Enable image optimization (reduces file size, SLOW)
-  --max-image-width <PIXELS>     Maximum image width for optimization
-  --jpeg-quality <1-100>         JPEG compression quality (lower = smaller file)
-  --preset <NAME>                Apply preset configuration (fast, quality, small-size)
+  -w, --workers <N>               Concurrent image downloads per series (default: 4)
+  -bw, --batch-workers <N>        Concurrent series downloads (default: 1)
+  --optimize                      Enable image optimization (reduces file size, SLOW)
+  --max-image-width <PIXELS>      Maximum image width for optimization
+  --jpeg-quality <1-100>          JPEG compression quality (lower = smaller file)
+  --preset <NAME>                 Apply preset configuration (fast, quality, small-size)
 
 UTILITY:
-  --check-ip                     Check public IP address through the configured proxy and exit.
-  --dry-run                      Preview actions without downloading
-  --debug                        Enable verbose logging
-  --list-user-agents             Show available user agents
-  --list-sort-options            Show available sort methods
-  -v, --version                  Show version information and exit
-  --help                         Show this help message
+  --check-ip                      Check public IP address through the configured proxy and exit.
+  --dry-run                       Preview actions without downloading
+  --debug                         Enable verbose logging
+  --list-user-agents              Show available user agents
+  --list-sort-options             Show available sort methods
+  -v, --version                   Show version information and exit
+  --help                          Show this help message
 
 PRESET CONFIGURATIONS:
   fast        - 8 workers, 3 batch workers, no optimization (fastest download)

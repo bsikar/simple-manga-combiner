@@ -2,9 +2,10 @@ package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -29,9 +30,17 @@ import com.mangacombiner.util.pointer.tooltipHoverFix
 fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
     var sortDropdownExpanded by remember { mutableStateOf(false) }
     val isIdle = state.operationState == OperationState.IDLE
+    val listState = rememberLazyListState()
+
+    // Scroll to top whenever the search results change (e.g., new search or sort)
+    LaunchedEffect(state.searchResults) {
+        if (state.searchResults.isNotEmpty()) {
+            listState.animateScrollToItem(index = 0)
+        }
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Card(elevation = 4.dp) {
@@ -51,7 +60,6 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
                             IconButton(
                                 onClick = {
                                     onEvent(Event.Search.UpdateQuery(""))
-                                    // Also clear the search results
                                     onEvent(Event.Search.ClearResults)
                                 },
                                 enabled = isIdle
@@ -77,62 +85,78 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
                     },
                     modifier = Modifier.align(Alignment.End)
                 ) {
-                    if (state.isSearching) {
-                        Text("Cancel")
-                    } else {
-                        Text("Search")
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (state.isSearching) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
+                            Text("Cancel")
+                        } else {
+                            Text("Search")
+                        }
                     }
                 }
+            }
+        }
 
-                AnimatedVisibility(visible = state.searchResults.isNotEmpty() || state.isSearching) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+        // Use Modifier.weight(1f) to make the results section fill the remaining space
+        AnimatedVisibility(visible = state.searchResults.isNotEmpty() || state.isSearching, modifier = Modifier.weight(1f)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Search Results:", style = MaterialTheme.typography.subtitle1)
+                    Box(
+                        modifier = Modifier.tooltipHoverFix()
+                    ) {
+                        OutlinedButton(
+                            onClick = { sortDropdownExpanded = true },
+                            enabled = !state.isSearching
                         ) {
-                            Text("Search Results:", style = MaterialTheme.typography.subtitle1)
-                            Box(
-                                modifier = Modifier.tooltipHoverFix()
-                            ) {
-                                OutlinedButton(
-                                    onClick = { sortDropdownExpanded = true },
-                                    enabled = !state.isSearching
-                                ) {
-                                    Icon(Icons.AutoMirrored.Filled.Sort, "Sort Results", modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Sort By")
-                                }
-                                DropdownMenu(
-                                    expanded = sortDropdownExpanded,
-                                    onDismissRequest = { sortDropdownExpanded = false }
-                                ) {
-                                    DropdownMenuItem(onClick = {
-                                        onEvent(Event.Search.SortResults(SearchSortOption.DEFAULT))
-                                        sortDropdownExpanded = false
-                                    }) {
-                                        if (state.searchSortOption == SearchSortOption.DEFAULT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
-                                        Text("Default")
-                                    }
-                                    DropdownMenuItem(onClick = {
-                                        onEvent(Event.Search.SortResults(SearchSortOption.CHAPTER_COUNT))
-                                        sortDropdownExpanded = false
-                                    }) {
-                                        if (state.searchSortOption == SearchSortOption.CHAPTER_COUNT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
-                                        Text("Chapter Count")
-                                    }
-                                    DropdownMenuItem(onClick = {
-                                        onEvent(Event.Search.SortResults(SearchSortOption.ALPHABETICAL))
-                                        sortDropdownExpanded = false
-                                    }) {
-                                        if (state.searchSortOption == SearchSortOption.ALPHABETICAL) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
-                                        Text("Alphabetical")
-                                    }
-                                }
+                            Icon(Icons.AutoMirrored.Filled.Sort, "Sort Results", modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Sort By")
+                        }
+                        DropdownMenu(
+                            expanded = sortDropdownExpanded,
+                            onDismissRequest = { sortDropdownExpanded = false }
+                        ) {
+                            DropdownMenuItem(onClick = {
+                                onEvent(Event.Search.SortResults(SearchSortOption.DEFAULT))
+                                sortDropdownExpanded = false
+                            }) {
+                                if (state.searchSortOption == SearchSortOption.DEFAULT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
+                                Text("Default")
+                            }
+                            DropdownMenuItem(onClick = {
+                                onEvent(Event.Search.SortResults(SearchSortOption.CHAPTER_COUNT))
+                                sortDropdownExpanded = false
+                            }) {
+                                if (state.searchSortOption == SearchSortOption.CHAPTER_COUNT) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
+                                Text("Chapter Count")
+                            }
+                            DropdownMenuItem(onClick = {
+                                onEvent(Event.Search.SortResults(SearchSortOption.ALPHABETICAL))
+                                sortDropdownExpanded = false
+                            }) {
+                                if (state.searchSortOption == SearchSortOption.ALPHABETICAL) Icon(Icons.Default.Check, "Selected") else Spacer(Modifier.width(24.dp))
+                                Text("Alphabetical")
                             }
                         }
-                        Divider()
-                        state.searchResults.forEach { result ->
+                    }
+                }
+                Divider()
+
+                // If searching and no results yet, show an empty box. If not searching and no results, a message will show implicitly.
+                if (state.isSearching && state.searchResults.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize()) // Show a blank area while loading
+                } else {
+                    LazyColumn(
+                        state = listState, // Apply the list state
+                        modifier = Modifier.fillMaxHeight(), // Allow the list to fill available space
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.searchResults, key = { it.url }) { result ->
                             SearchResultItem(
                                 result = result,
                                 onExpandToggle = { onEvent(Event.Search.ToggleResultExpansion(result.url)) },

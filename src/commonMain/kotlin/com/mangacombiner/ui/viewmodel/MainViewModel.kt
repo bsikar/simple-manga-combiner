@@ -217,30 +217,42 @@ class MainViewModel(
         }
     }
 
-    internal fun verifyProxyConnection() {
-        viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    proxyStatus = ProxyStatus.VERIFYING,
-                    proxyVerificationMessage = "Running comprehensive proxy test...",
-                    ipInfoResult = null,
-                    ipCheckError = null,
-                    isNetworkBlocked = true // Block network while verifying
-                )
-            }
+    internal fun handleOfflineCheck(): Boolean {
+        if (state.value.offlineMode) {
+            _state.update { it.copy(completionMessage = "Action unavailable in Offline Mode.") }
+            return true
+        }
+        return false
+    }
 
+    internal fun verifyProxyConnection() {
+        if (handleOfflineCheck()) return
+
+        _state.update {
+            it.copy(
+                proxyStatus = ProxyStatus.VERIFYING,
+                proxyVerificationMessage = "Running comprehensive proxy test...",
+                ipInfoResult = null,
+                ipCheckError = null,
+                isNetworkBlocked = true // Block network while verifying
+            )
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val s = state.value
                 val url = buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass)
                 val lookupUrl = s.ipLookupUrl
 
                 if (url == null) {
-                    _state.update {
-                        it.copy(
-                            proxyStatus = ProxyStatus.UNVERIFIED,
-                            proxyVerificationMessage = "No proxy configured.",
-                            isNetworkBlocked = false // Unblock if no proxy is set
-                        )
+                    withContext(Dispatchers.Main) {
+                        _state.update {
+                            it.copy(
+                                proxyStatus = ProxyStatus.UNVERIFIED,
+                                proxyVerificationMessage = "No proxy configured.",
+                                isNetworkBlocked = false // Unblock if no proxy is set
+                            )
+                        }
                     }
                     return@launch
                 }
@@ -248,47 +260,60 @@ class MainViewModel(
                 Logger.logInfo("Starting comprehensive proxy verification for: $url")
                 val testResult = ProxyTestUtility.runComprehensiveProxyTest(url, lookupUrl)
 
-                if (testResult.success) {
-                    val message = buildString {
-                        append("✓ Proxy working correctly")
-                        if (testResult.ipChanged) {
-                            append("\n✓ IP changed: ${testResult.directIp} → ${testResult.proxyIp}")
+                withContext(Dispatchers.Main) {
+                    if (testResult.success) {
+                        val message = buildString {
+                            append("✓ Proxy working correctly")
+                            if (testResult.ipChanged) {
+                                append("\n✓ IP changed: ${testResult.directIp} → ${testResult.proxyIp}")
+                            }
+                            if (testResult.killSwitchWorking) {
+                                append("\n✓ Kill switch active")
+                            }
+                            testResult.proxyLocation?.let {
+                                append("\n📍 Location: $it")
+                            }
                         }
-                        if (testResult.killSwitchWorking) {
-                            append("\n✓ Kill switch active")
+
+                        _state.update {
+                            it.copy(
+                                proxyStatus = ProxyStatus.CONNECTED,
+                                proxyVerificationMessage = message,
+                                ipInfoResult = IpInfo(
+                                    ip = testResult.proxyIp,
+                                    city = testResult.proxyLocation?.split(", ")?.getOrNull(0),
+                                    country = testResult.proxyLocation?.split(", ")?.getOrNull(1)
+                                ),
+                                isNetworkBlocked = false // Unblock on success
+                            )
                         }
-                        testResult.proxyLocation?.let {
-                            append("\n📍 Location: $it")
+
+                        // Restart monitoring with verified config
+                        restartProxyMonitoringIfNeeded()
+                    } else {
+                        val message = buildString {
+                            append("✗ Proxy test failed")
+                            testResult.error?.let { append(": $it") }
+                            if (!testResult.ipChanged && testResult.directIp != null && testResult.proxyIp != null) {
+                                append("\n⚠️ IP unchanged - proxy may not be working")
+                            }
+                            if (!testResult.killSwitchWorking) {
+                                append("\n⚠️ Kill switch not working - traffic may leak!")
+                            }
+                        }
+
+                        _state.update {
+                            it.copy(
+                                proxyStatus = ProxyStatus.FAILED,
+                                proxyVerificationMessage = message,
+                                isNetworkBlocked = true // Keep blocked on failure
+                            )
                         }
                     }
-
-                    _state.update {
-                        it.copy(
-                            proxyStatus = ProxyStatus.CONNECTED,
-                            proxyVerificationMessage = message,
-                            ipInfoResult = IpInfo(
-                                ip = testResult.proxyIp,
-                                city = testResult.proxyLocation?.split(", ")?.getOrNull(0),
-                                country = testResult.proxyLocation?.split(", ")?.getOrNull(1)
-                            ),
-                            isNetworkBlocked = false // Unblock on success
-                        )
-                    }
-
-                    // Restart monitoring with verified config
-                    restartProxyMonitoringIfNeeded()
-                } else {
-                    val message = buildString {
-                        append("✗ Proxy test failed")
-                        testResult.error?.let { append(": $it") }
-                        if (!testResult.ipChanged && testResult.directIp != null && testResult.proxyIp != null) {
-                            append("\n⚠️ IP unchanged - proxy may not be working")
-                        }
-                        if (!testResult.killSwitchWorking) {
-                            append("\n⚠️ Kill switch not working - traffic may leak!")
-                        }
-                    }
-
+                }
+            } catch (e: Exception) {
+                val message = "Test failed: ${e.message?.take(100) ?: "Unknown error"}"
+                withContext(Dispatchers.Main) {
                     _state.update {
                         it.copy(
                             proxyStatus = ProxyStatus.FAILED,
@@ -297,32 +322,27 @@ class MainViewModel(
                         )
                     }
                 }
-            } catch (e: Exception) {
-                val message = "Test failed: ${e.message?.take(100) ?: "Unknown error"}"
-                _state.update {
-                    it.copy(
-                        proxyStatus = ProxyStatus.FAILED,
-                        proxyVerificationMessage = message,
-                        isNetworkBlocked = true // Keep blocked on failure
-                    )
-                }
                 Logger.logError("Comprehensive proxy verification failed", e)
             } finally {
-                _state.update { it.copy(isInitialProxyCheckRunning = false) }
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(isInitialProxyCheckRunning = false) }
+                }
             }
         }
     }
 
     internal fun fetchChapters() {
+        if (handleOfflineCheck()) return
         val url = _state.value.seriesUrl
         if (url.isBlank()) return
 
         fetchChaptersJob?.cancel()
-        fetchChaptersJob = viewModelScope.launch {
+        _state.update { it.copy(isFetchingChapters = true) }
+
+        fetchChaptersJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 networkInterceptor.checkNetworkAllowed() // Check kill switch
 
-                _state.update { it.copy(isFetchingChapters = true) }
                 val s = _state.value
                 val seriesSlug = url.toSlug()
                 val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
@@ -336,78 +356,86 @@ class MainViewModel(
                 val (seriesMetadata, chapters) = scraperService.fetchSeriesDetails(client, url, userAgent)
                 client.close()
 
-                if (chapters.isNotEmpty()) {
-                    val allChapters = chapters.map { (chapUrl, title) ->
-                        val sanitizedTitle = FileUtils.sanitizeFilename(title)
-                        val comparableKey = SlugUtils.toComparableKey(title)
-                        val originalLocalSlug = localChapterMap[comparableKey]
+                withContext(Dispatchers.Main) {
+                    if (chapters.isNotEmpty()) {
+                        val allChapters = chapters.map { (chapUrl, title) ->
+                            val sanitizedTitle = FileUtils.sanitizeFilename(title)
+                            val comparableKey = SlugUtils.toComparableKey(title)
+                            val originalLocalSlug = localChapterMap[comparableKey]
 
-                        val isLocal = originalLocalSlug != null
-                        val isCached = cachedChapterStatus.containsKey(sanitizedTitle)
-                        val isBroken = isCached && cachedChapterStatus[sanitizedTitle] == false
-                        val isRetry = comparableKey in failedChapterTitles
+                            val isLocal = originalLocalSlug != null
+                            val isCached = cachedChapterStatus.containsKey(sanitizedTitle)
+                            val isBroken = isCached && cachedChapterStatus[sanitizedTitle] == false
+                            val isRetry = comparableKey in failedChapterTitles
 
-                        val sources = mutableSetOf(ChapterSource.WEB)
-                        if (isLocal) sources.add(ChapterSource.LOCAL)
-                        if (isCached) sources.add(ChapterSource.CACHE)
+                            val sources = mutableSetOf(ChapterSource.WEB)
+                            if (isLocal) sources.add(ChapterSource.LOCAL)
+                            if (isCached) sources.add(ChapterSource.CACHE)
 
-                        val chapter = Chapter(
-                            url = chapUrl,
-                            title = title,
-                            availableSources = sources,
-                            selectedSource = null,
-                            localSlug = originalLocalSlug,
-                            isRetry = isRetry,
-                            isBroken = isBroken
-                        )
+                            val chapter = Chapter(
+                                url = chapUrl,
+                                title = title,
+                                availableSources = sources,
+                                selectedSource = null,
+                                localSlug = originalLocalSlug,
+                                isRetry = isRetry,
+                                isBroken = isBroken
+                            )
 
-                        val initialSource = when {
-                            sanitizedTitle in preselectedNames -> {
-                                if (isBroken) ChapterSource.WEB else ChapterSource.CACHE
+                            val initialSource = when {
+                                sanitizedTitle in preselectedNames -> {
+                                    if (isBroken) ChapterSource.WEB else ChapterSource.CACHE
+                                }
+                                preselectedNames.isNotEmpty() -> null
+                                isRetry || isBroken -> ChapterSource.WEB
+                                else -> getChapterDefaultSource(chapter)
                             }
-                            preselectedNames.isNotEmpty() -> null
-                            isRetry || isBroken -> ChapterSource.WEB
-                            else -> getChapterDefaultSource(chapter)
+
+                            chapter.copy(selectedSource = initialSource)
+
+                        }.sortedWith(compareBy(naturalSortComparator) { it.title })
+
+                        _state.update {
+                            it.copy(
+                                seriesMetadata = seriesMetadata,
+                                customTitle = seriesMetadata.title,
+                                fetchedChapters = allChapters,
+                                showChapterDialog = true,
+                                chaptersToPreselect = emptySet()
+                            )
                         }
-
-                        chapter.copy(selectedSource = initialSource)
-
-                    }.sortedWith(compareBy(naturalSortComparator) { it.title })
-
-                    _state.update {
-                        it.copy(
-                            seriesMetadata = seriesMetadata,
-                            customTitle = seriesMetadata.title,
-                            fetchedChapters = allChapters,
-                            showChapterDialog = true,
-                            chaptersToPreselect = emptySet()
-                        )
+                    } else {
+                        Logger.logError("Could not find any chapters at the provided URL.")
                     }
-                } else {
-                    Logger.logError("Could not find any chapters at the provided URL.")
                 }
             } catch (e: ProxyKillSwitchException) {
                 Logger.logError("Kill switch blocked chapter fetching: ${e.message}")
-                _state.update {
-                    it.copy(
-                        showNetworkErrorDialog = true,
-                        networkErrorMessage = "Network operations are blocked. Proxy connection required."
-                    )
+                withContext(Dispatchers.Main) {
+                    _state.update {
+                        it.copy(
+                            showNetworkErrorDialog = true,
+                            networkErrorMessage = "Network operations are blocked. Proxy connection required."
+                        )
+                    }
                 }
             } catch (e: NetworkException) {
                 Logger.logError("Failed to fetch chapters due to network error", e)
-                _state.update {
-                    it.copy(
-                        showNetworkErrorDialog = true,
-                        networkErrorMessage = "Chapter fetching failed. Please check your network connection and proxy settings."
-                    )
+                withContext(Dispatchers.Main) {
+                    _state.update {
+                        it.copy(
+                            showNetworkErrorDialog = true,
+                            networkErrorMessage = "Chapter fetching failed. Please check your network connection and proxy settings."
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 if (e !is CancellationException) {
                     Logger.logError("Failed to fetch chapters", e)
                 }
             } finally {
-                _state.update { it.copy(isFetchingChapters = false) }
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(isFetchingChapters = false) }
+                }
             }
         }
     }
@@ -544,21 +572,23 @@ class MainViewModel(
                         startJob(jobId)
                     }
 
-                    _state.update { currentState ->
-                        val newQueue = currentState.downloadQueue.map { job ->
-                            when (job.id) {
-                                in jobsToStop -> job.copy(status = "Paused")
-                                in jobsToStart -> {
-                                    if (queuedOperationContext.containsKey(job.id)) {
-                                        job.copy(status = "Waiting...")
-                                    } else {
-                                        job.copy(status = "Error: Context not found")
+                    withContext(Dispatchers.Main) {
+                        _state.update { currentState ->
+                            val newQueue = currentState.downloadQueue.map { job ->
+                                when (job.id) {
+                                    in jobsToStop -> job.copy(status = "Paused")
+                                    in jobsToStart -> {
+                                        if (queuedOperationContext.containsKey(job.id)) {
+                                            job.copy(status = "Waiting...")
+                                        } else {
+                                            job.copy(status = "Error: Context not found")
+                                        }
                                     }
+                                    else -> job
                                 }
-                                else -> job
                             }
+                            currentState.copy(downloadQueue = newQueue)
                         }
-                        currentState.copy(downloadQueue = newQueue)
                     }
                 }
         }
@@ -589,22 +619,32 @@ class MainViewModel(
                     return@map job
                 }
 
-                if (update.status == "Cancelled") {
-                    if (state.isQueueGloballyPaused || job.isIndividuallyPaused || job.status == "Paused") {
-                        return@map job.copy(status = "Paused")
-                    }
+                // If the job is paused by the user, its status should remain Paused, not be overwritten by "Cancelled" from the service.
+                if (update.status == "Cancelled" && (state.isQueueGloballyPaused || job.isIndividuallyPaused || job.status == "Paused")) {
+                    return@map job.copy(status = "Paused")
                 }
 
                 val newStatus = update.status ?: job.status
-                var newDownloadedChapters = job.downloadedChapters + (update.downloadedChapters ?: 0)
+                var newDownloadedChapters = job.downloadedChapters
                 var newProgress = job.progress
+
+                if (update.downloadedChapters != null) {
+                    // Treat update as absolute if job is just starting, otherwise treat it as incremental.
+                    val isStarting = job.status in listOf("Queued", "Waiting...", "Starting...")
+                    newDownloadedChapters = if (isStarting) {
+                        update.downloadedChapters
+                    } else {
+                        job.downloadedChapters + update.downloadedChapters
+                    }
+                }
 
                 if (newStatus == "Completed") {
                     newDownloadedChapters = job.totalChapters
                     newProgress = 1f
-                } else if (update.downloadedChapters != null && update.downloadedChapters > 0) {
+                } else if (update.downloadedChapters != null) {
                     newProgress = if (job.totalChapters > 0) newDownloadedChapters.toFloat() / job.totalChapters else 0f
                 } else if (update.progress != null) {
+                    // Progress from within a chapter download is fractional (0.0 to 1.0)
                     newProgress = if (job.totalChapters > 0) (job.downloadedChapters + update.progress) / job.totalChapters else 0f
                 }
 
@@ -701,24 +741,28 @@ class MainViewModel(
                 Logger.logError("Path is not a valid file for analysis: ${file.path}")
                 return@launch
             }
-            _state.update { it.copy(isAnalyzingFile = true) }
+            withContext(Dispatchers.Main) {
+                _state.update { it.copy(isAnalyzingFile = true) }
+            }
             Logger.logInfo("Analyzing local file: ${file.name}")
             val (chapterSlugs, url, failedItems) = downloadService.processorService.getChaptersAndInfoFromFile(file)
 
-            _state.update { currentState ->
-                if (chapterSlugs.isEmpty() && url == null) {
-                    Logger.logInfo("No chapters or URL could be identified in the file: ${file.name}.")
-                    currentState.copy(isAnalyzingFile = false, sourceFilePath = null, localChaptersForSync = emptyMap(), failedItemsForSync = emptyMap())
-                } else {
-                    if (url != null) Logger.logInfo("Found embedded series URL in ${file.name}: $url")
-                    if (failedItems.isNotEmpty()) Logger.logInfo("Found ${failedItems.size} chapters with download failures in the file.")
-                    currentState.copy(
-                        isAnalyzingFile = false,
-                        seriesUrl = currentState.seriesUrl.ifBlank { url ?: "" },
-                        sourceFilePath = file.path,
-                        localChaptersForSync = chapterSlugs.associateBy { SlugUtils.toComparableKey(it) },
-                        failedItemsForSync = failedItems
-                    )
+            withContext(Dispatchers.Main) {
+                _state.update { currentState ->
+                    if (chapterSlugs.isEmpty() && url == null) {
+                        Logger.logInfo("No chapters or URL could be identified in the file: ${file.name}.")
+                        currentState.copy(isAnalyzingFile = false, sourceFilePath = null, localChaptersForSync = emptyMap(), failedItemsForSync = emptyMap())
+                    } else {
+                        if (url != null) Logger.logInfo("Found embedded series URL in ${file.name}: $url")
+                        if (failedItems.isNotEmpty()) Logger.logInfo("Found ${failedItems.size} chapters with download failures in the file.")
+                        currentState.copy(
+                            isAnalyzingFile = false,
+                            seriesUrl = currentState.seriesUrl.ifBlank { url ?: "" },
+                            sourceFilePath = file.path,
+                            localChaptersForSync = chapterSlugs.associateBy { SlugUtils.toComparableKey(it) },
+                            failedItemsForSync = failedItems
+                        )
+                    }
                 }
             }
         }
@@ -727,8 +771,10 @@ class MainViewModel(
     internal fun startOperation(isRetry: Boolean = false) {
         activeOperationJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                _operationState.value = OperationState.RUNNING
-                _state.update { it.copy(progress = 0f, progressStatusText = "Starting operation...") }
+                withContext(Dispatchers.Main) {
+                    _operationState.value = OperationState.RUNNING
+                    _state.update { it.copy(progress = 0f, progressStatusText = "Starting operation...") }
+                }
                 val s = _state.value
                 val tempDir = File(platformProvider.getTmpDir())
                 val tempUpdateDir = File(tempDir, "manga-update-${System.currentTimeMillis()}").apply { mkdirs() }
@@ -762,7 +808,9 @@ class MainViewModel(
                 if (!isRetry) {
                     val chaptersToExtract = chaptersForOperation.filter { it.selectedSource == ChapterSource.LOCAL }
                     if (s.sourceFilePath != null && chaptersToExtract.isNotEmpty()) {
-                        _state.update { it.copy(progress = 0.1f, progressStatusText = "Extracting local chapters...") }
+                        withContext(Dispatchers.Main) {
+                            _state.update { it.copy(progress = 0.1f, progressStatusText = "Extracting local chapters...") }
+                        }
                         allChapterFolders.addAll(
                             downloadService.processorService.extractChaptersToDirectory(
                                 File(s.sourceFilePath!!),
@@ -781,15 +829,21 @@ class MainViewModel(
                 val chaptersToDownload = chaptersForOperation.filter { it.selectedSource == ChapterSource.WEB }
                 if (chaptersToDownload.isNotEmpty()) {
                     val downloadOptions = createDownloadOptions(s, s.seriesUrl, chaptersToDownload)
-                    _state.update { it.copy(activeDownloadOptions = downloadOptions) }
+                    withContext(Dispatchers.Main) {
+                        _state.update { it.copy(activeDownloadOptions = downloadOptions) }
+                    }
                     val downloadResult = downloadService.downloadChapters(downloadOptions, tempSeriesDir)
 
                     if(downloadResult != null) {
                         allChapterFolders.addAll(downloadResult.successfulFolders)
-                        _state.update { it.copy(lastDownloadResult = downloadResult) }
+                        withContext(Dispatchers.Main) {
+                            _state.update { it.copy(lastDownloadResult = downloadResult) }
+                        }
 
                         if (downloadResult.failedChapters.isNotEmpty()) {
-                            _state.update { it.copy(showBrokenDownloadDialog = true) }
+                            withContext(Dispatchers.Main) {
+                                _state.update { it.copy(showBrokenDownloadDialog = true) }
+                            }
                             return@launch
                         }
                     }
@@ -812,7 +866,7 @@ class MainViewModel(
                 }
                 throw e
             } finally {
-                withContext(NonCancellable) {
+                withContext(NonCancellable + Dispatchers.Main) {
                     _operationState.value = OperationState.IDLE
                     if (!_state.value.showCompletionDialog && !_state.value.showBrokenDownloadDialog) {
                         resetUiStateAfterOperation()
@@ -829,7 +883,9 @@ class MainViewModel(
             val mangaTitle = s.customTitle.ifBlank {
                 s.seriesUrl.toSlug().replace('-', ' ').titlecase().ifBlank { "Untitled" }
             }
-            _state.update { it.copy(progress = 0.95f, progressStatusText = "Packaging ${folders.size} chapters...") }
+            withContext(Dispatchers.Main) {
+                _state.update { it.copy(progress = 0.95f, progressStatusText = "Packaging ${folders.size} chapters...") }
+            }
 
             val finalOutputPath = s.outputPath
             val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${s.outputFormat}"
@@ -848,25 +904,33 @@ class MainViewModel(
             coroutineContext.ensureActive()
 
             if (tempOutputFile.exists() && tempOutputFile.length() > 0) {
-                _state.update { it.copy(progress = 1.0f, progressStatusText = "Moving final file...") }
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(progress = 1.0f, progressStatusText = "Moving final file...") }
+                }
                 val finalPath = fileMover.moveToFinalDestination(tempOutputFile, finalOutputPath, finalFileName)
                 val message = if (finalPath.isNotBlank()) {
                     "Download complete: $finalPath"
                 } else {
                     "Error: Failed to move file to final destination."
                 }
-                _state.update { it.copy(completionMessage = message, showCompletionDialog = true) }
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(completionMessage = message, showCompletionDialog = true) }
+                }
                 Logger.logInfo("\n$message")
             } else {
                 val message = "Packaging failed. Output file was not created or is empty."
-                _state.update { it.copy(completionMessage = "Error: $message") }
+                withContext(Dispatchers.Main) {
+                    _state.update { it.copy(completionMessage = "Error: $message") }
+                }
                 Logger.logError(message)
             }
         } else {
             Logger.logInfo("No chapters to process. Operation finished.")
         }
-        _operationState.value = OperationState.IDLE
-        resetUiStateAfterOperation()
+        withContext(Dispatchers.Main) {
+            _operationState.value = OperationState.IDLE
+            resetUiStateAfterOperation()
+        }
     }
 
     internal fun resetUiStateAfterOperation() {
@@ -898,7 +962,9 @@ class MainViewModel(
                 Logger.logError("Selected path is not a valid file: $path")
                 return@launch
             }
-            _state.update { it.copy(customTitle = file.toPath().nameWithoutExtension) }
+            withContext(Dispatchers.Main) {
+                _state.update { it.copy(customTitle = file.toPath().nameWithoutExtension) }
+            }
             analyzeLocalFile(file)
         }
     }

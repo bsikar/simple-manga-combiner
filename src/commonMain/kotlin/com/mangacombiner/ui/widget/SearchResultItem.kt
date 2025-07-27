@@ -3,7 +3,6 @@ package com.mangacombiner.ui.widget
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
@@ -33,14 +32,14 @@ fun SearchResultItem(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(result.title)
-                if (result.isFetchingDetails) {
-                    Text("Fetching details...")
-                } else if (result.chapterCount != null) {
+                // Show chapter count only after details are fetched
+                if (!result.isFetchingDetails && result.chapterCount != null) {
                     Text("${result.chapterCount} chapters (${result.chapterRange})")
                 }
             }
             if (result.isFetchingDetails) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                // Use a Spacer to hold the place of the icon to prevent layout shift
+                Spacer(modifier = Modifier.size(24.dp))
             } else {
                 Icon(
                     imageVector = if (result.isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,

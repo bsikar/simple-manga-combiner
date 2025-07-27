@@ -13,6 +13,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.core.view.WindowCompat
@@ -67,8 +68,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Enable edge-to-edge display using the modern approach
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Disable edge-to-edge to give the status bar a solid background
+        WindowCompat.setDecorFitsSystemWindows(window, true)
 
         // Set up file picker request handling
         lifecycleScope.launch {
@@ -129,7 +130,10 @@ class MainActivity : AppCompatActivity() {
         val window = this.window
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
 
-        // Configure status bar appearance without using deprecated APIs
+        // Set the status bar color to match the app's surface color
+        window.statusBarColor = surfaceColor.toArgb()
+
+        // Configure status bar icons to be dark on light themes
         insetsController.isAppearanceLightStatusBars = isLightTheme
 
         // Configure system bars behavior for better UX

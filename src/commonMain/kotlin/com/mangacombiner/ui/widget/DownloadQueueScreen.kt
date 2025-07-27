@@ -275,17 +275,25 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
                     )
                 }
 
-                Text(
-                    text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
-                    style = MaterialTheme.typography.caption,
-                    color = when {
-                        isBlocked -> MaterialTheme.colors.error
-                        isRunning -> MaterialTheme.colors.primary
-                        job.status == "Paused" -> MaterialTheme.colors.secondary
-                        else -> LocalContentColor.current.copy(alpha = 0.7f)
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (isRunning) {
+                        CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp, color = MaterialTheme.colors.primary)
+                    }
+                    Text(
+                        text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
+                        style = MaterialTheme.typography.caption,
+                        color = when {
+                            isBlocked -> MaterialTheme.colors.error
+                            isRunning -> MaterialTheme.colors.primary
+                            job.status == "Paused" -> MaterialTheme.colors.secondary
+                            else -> LocalContentColor.current.copy(alpha = 0.7f)
+                        }
+                    )
+                }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically
