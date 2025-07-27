@@ -47,6 +47,7 @@ sealed interface Event {
 
     sealed interface Search : Event {
         data class UpdateQuery(val query: String) : Search
+        data class UpdateSource(val source: String) : Search
         data class SelectResult(val url: String) : Search
         data class SortResults(val sortOption: SearchSortOption) : Search
         data class ToggleResultExpansion(val url: String) : Search

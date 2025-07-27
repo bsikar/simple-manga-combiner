@@ -23,6 +23,7 @@ import kotlinx.coroutines.NonCancellable
 internal fun MainViewModel.handleSearchEvent(event: Event.Search) {
     when (event) {
         is Event.Search.UpdateQuery -> _state.update { it.copy(searchQuery = event.query) }
+        is Event.Search.UpdateSource -> _state.update { it.copy(searchSource = event.source) }
         is Event.Search.SelectResult -> onSelectSearchResult(event.url)
         is Event.Search.SortResults -> onSortSearchResults(event.sortOption)
         is Event.Search.ToggleResultExpansion -> onToggleSearchResultExpansion(event.url)
@@ -98,13 +99,14 @@ private fun MainViewModel.performSearch() {
     _state.update { it.copy(isSearching = true, searchResults = emptyList(), originalSearchResults = emptyList()) }
 
     searchJob = viewModelScope.launch(Dispatchers.IO) {
-        Logger.logInfo("Searching for '$query'...")
+        val source = _state.value.searchSource
+        Logger.logInfo("Searching for '$query' on '$source'...")
 
         val userAgent = UserAgent.browsers[_state.value.userAgentName] ?: UserAgent.browsers.values.first()
         val client = createHttpClient(_state.value.proxyUrl)
 
         try {
-            val initialResults = scraperService.search(client, query, userAgent)
+            val initialResults = scraperService.search(client, query, userAgent, source)
 
             if (initialResults.isEmpty()) {
                 Logger.logInfo("No results found for '$query'.")

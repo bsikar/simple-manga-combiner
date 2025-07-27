@@ -85,11 +85,15 @@ private suspend fun runUpdateProcess(
         return
     }
 
-    val onlineChapterSlugs = allOnlineChapters.map { it.second.toSlug() }.toSet()
     val newChapterPairs = allOnlineChapters.filter { it.second.toSlug() !in localChapterSlugs }
 
     if (newChapterPairs.isEmpty()) {
         Logger.logInfo("File is already up-to-date. No new chapters found.")
+        // Even if no new chapters, update metadata if requested
+        if (cliArgs.updateMetadata) {
+            Logger.logInfo("Updating metadata as requested...")
+            updateEpubMetadata(outputFile, allOnlineChapters.first().first.substringBeforeLast("/"), cliArgs, get(ScraperService::class.java), processorService)
+        }
         return
     }
 
@@ -365,10 +369,10 @@ private suspend fun processMetadataUpdate(
     }
 
     val sourceUrl = sourceUrlOverride ?: run {
-        Logger.logInfo("No source URL provided, attempting to extract from EPUB metadata...")
+        Logger.logInfo("No source URL provided for ${epubFile.name}, attempting to extract from EPUB metadata...")
         val extractedUrl = ZipUtils.getSourceUrlFromEpub(epubFile)
         if (extractedUrl == null) {
-            Logger.logError("Could not extract source URL from EPUB metadata. Please provide a source URL with another --source flag.")
+            Logger.logError("Could not extract source URL from ${epubFile.name}. Please provide a source URL with another --source flag.")
             return
         }
         extractedUrl
@@ -380,6 +384,7 @@ private suspend fun processMetadataUpdate(
 data class CliArguments(
     val source: List<String>,
     val search: Boolean,
+    val searchSource: String,
     val scrape: Boolean,
     val refreshCache: Boolean,
     val downloadAll: Boolean,
@@ -503,20 +508,17 @@ EXAMPLES:
   # Search for manga and download all results
   manga-combiner-cli --source "attack on titan" --search --download-all
 
-  # Update metadata of an existing EPUB file
+  # Update metadata of a single EPUB file
   manga-combiner-cli --source my-manga.epub --update-metadata --source https://example.com/manga/series-url
+  
+  # Batch update metadata for all EPUBs in the current directory (extracts URL from each file)
+  manga-combiner-cli --source *.epub --update-metadata
 
   # Use a SOCKS5 proxy with authentication
   manga-combiner-cli --proxy-type socks5 --proxy-host 127.0.0.1 --proxy-port 1080 --proxy-user "user" --proxy-pass "pass" --source ...
 
   # Use a simple HTTP proxy via the combined URL format
   manga-combiner-cli --proxy http://127.0.0.1:8080 --source ...
- 
-  # Simple update (uses source URL from EPUB metadata)
-  manga-combiner-cli --source my-series.epub --update-metadata
- 
-  # Override source URL (uses provided URL instead of EPUB metadata)
-  manga-combiner-cli --source my-series.epub --source https://example.com/manga/series --update-metadata
 
   # Use preset configurations for common scenarios
   manga-combiner-cli --preset fast --source https://example.com/manga/series
@@ -527,68 +529,69 @@ EXAMPLES:
   manga-combiner-cli --scrape --sort-by chapters-desc --source https://example.com/manga-list
 
 INPUT OPTIONS:
-  -s, --source <URL|FILE|QUERY>   Source URL, local EPUB file, or search query (can be used multiple times)
+  -s, --source <URL|FILE|QUERY>    Source URL, local EPUB file, or search query (can be used multiple times)
 
 DISCOVERY & SEARCH:
-  --search                        Search for manga by name and display results
-  --scrape                        Batch download all series from a list/genre page URL
-  --download-all                  Download all search results (use with --search)
-  --sort-by <METHOD>              Sort search/scrape results (use --list-sort-options to see the list)
+  --search                         Search for manga by name and display results
+  --search-source <SOURCE>         Search source: mangaread.org or manhwaus.net (default: mangaread.org)
+  --scrape                         Batch download all series from a list/genre page URL
+  --download-all                   Download all search results (use with --search)
+  --sort-by <METHOD>               Sort search/scrape results (use --list-sort-options to see the list)
 
 OUTPUT OPTIONS:
-  --format <epub>                 Output format (default: epub)
-  -t, --title <NAME>              Custom title for output file
-  -o, --output <DIR>              Output directory (default: Downloads)
+  --format <epub>                  Output format (default: epub)
+  -t, --title <NAME>               Custom title for output file
+  -o, --output <DIR>               Output directory (default: Downloads)
 
 DOWNLOAD BEHAVIOR:
-  -f, --force                     Force overwrite existing files
-  --skip-existing                 Skip if output file exists (good for batch)
-  --update                        Update an existing EPUB with new chapters
-  --update-metadata               Update metadata of existing EPUB using scraped series data
-  -e, --exclude <SLUG>            Exclude chapters by slug (e.g., 'chapter-4.5'). Can be used multiple times.
-  --delete-original               Delete source file after successful conversion (local files only)
+  -f, --force                      Force overwrite existing files
+  --skip-existing                  Skip if output file exists (good for batch)
+  --update                         Update an existing EPUB with new chapters
+  --update-metadata                Update metadata of existing EPUB(s) using scraped series data
+  -e, --exclude <SLUG>             Exclude chapters by slug (e.g., 'chapter-4.5'). Can be used multiple times.
+  --delete-original                Delete source file after successful conversion (local files only)
 
 CACHE MANAGEMENT:
-  --ignore-cache                  Force re-download all chapters, ignoring cached files
-  --clean-cache                   Delete temp files after successful download to save disk space
-  --refresh-cache                 Force refresh of scraped series list. Use with --scrape.
-  --delete-cache                  Delete cached downloads and exit. Use with --keep or --remove for selective deletion.
-  --keep <PATTERN>                Keep matching series when deleting cache
-  --remove <PATTERN>              Remove matching series when deleting cache
-  --cache-dir <DIR>               Custom cache directory
+  --ignore-cache                   Force re-download all chapters, ignoring cached files
+  --clean-cache                    Delete temp files after successful download to save disk space
+  --refresh-cache                  Force refresh of scraped series list. Use with --scrape.
+  --delete-cache                   Delete cached downloads and exit. Use with --keep or --remove for selective deletion.
+  --keep <PATTERN>                 Keep matching series when deleting cache
+  --remove <PATTERN>               Remove matching series when deleting cache
+  --cache-dir <DIR>                Custom cache directory
 
 NETWORK & PROXY:
-  --proxy <URL>                   Legacy proxy URL (e.g., socks5://user:pass@host:1080)
-  --proxy-type <http|socks5>      Proxy type. Use with --proxy-host and --proxy-port.
-  --proxy-host <HOST>             Proxy host or IP address.
-  --proxy-port <PORT>             Proxy port number.
-  --proxy-user <USER>             Proxy username (optional).
-  --proxy-pass <PASS>             Proxy password (optional).
-  -ua, --user-agent <NAME>        Browser to impersonate (see --list-user-agents)
-  --per-worker-ua                 Use a different random user agent for each download worker.
-  --ip-lookup-url <URL>           Custom URL for IP lookup (e.g., http://ip-api.com/json)
+  --proxy <URL>                    Legacy proxy URL (e.g., socks5://user:pass@host:1080)
+  --proxy-type <http|socks5>       Proxy type. Use with --proxy-host and --proxy-port.
+  --proxy-host <HOST>              Proxy host or IP address.
+  --proxy-port <PORT>              Proxy port number.
+  --proxy-user <USER>              Proxy username (optional).
+  --proxy-pass <PASS>              Proxy password (optional).
+  -ua, --user-agent <NAME>         Browser to impersonate (see --list-user-agents)
+  --per-worker-ua                  Use a different random user agent for each download worker.
+  --ip-lookup-url <URL>            Custom URL for IP lookup (e.g., http://ip-api.com/json)
 
 PERFORMANCE & OPTIMIZATION:
-  -w, --workers <N>               Concurrent image downloads per series (default: 4)
-  -bw, --batch-workers <N>        Concurrent series downloads (default: 1)
-  --optimize                      Enable image optimization (reduces file size, SLOW)
-  --max-image-width <PIXELS>      Maximum image width for optimization
-  --jpeg-quality <1-100>          JPEG compression quality (lower = smaller file)
-  --preset <NAME>                 Apply preset configuration (fast, quality, small-size)
+  -w, --workers <N>                Concurrent image downloads per series (default: 4)
+  -bw, --batch-workers <N>         Concurrent series downloads (default: 1)
+  --optimize                       Enable image optimization (reduces file size, SLOW)
+  --max-image-width <PIXELS>       Maximum image width for optimization
+  --jpeg-quality <1-100>           JPEG compression quality (lower = smaller file)
+  --preset <NAME>                  Apply preset configuration (fast, quality, small-size)
 
 UTILITY:
-  --check-ip                      Check public IP address through the configured proxy and exit.
-  --dry-run                       Preview actions without downloading
-  --debug                         Enable verbose logging
-  --list-user-agents              Show available user agents
-  --list-sort-options             Show available sort methods
-  -v, --version                   Show version information and exit
-  --help                          Show this help message
+  --check-ip                       Check public IP address through the configured proxy and exit.
+  --dry-run                        Preview actions without downloading
+  --debug                          Enable verbose logging
+  --list-user-agents               Show available user agents
+  --list-sort-options              Show available sort methods
+  -v, --version                    Show version information and exit
+  --help                           Show this help message
 
 PRESET CONFIGURATIONS:
-  fast        - 8 workers, 3 batch workers, no optimization (fastest download)
-  quality     - 4 workers, 1 batch worker, no optimization, original image quality
-  small-size  - 2 workers, 1 batch worker, optimization enabled, max width 1000px, 75% JPEG quality
+  fast       - 8 workers, 3 batch workers, no optimization (fastest download)
+  quality    - 4 workers, 1 batch worker, no optimization, original image quality
+  small-size - 2 workers, 1 batch worker, optimization enabled, max width 1000px, 75% JPEG quality
     """.trimIndent()
     println(helpText)
 }
@@ -624,6 +627,7 @@ fun main(args: Array<String>) {
     val parser = ArgParser("manga-combiner-cli v${AppVersion.NAME}", useDefaultHelpShortName = false)
     val source by parser.option(ArgType.String, "source", "s").multiple()
     val search by parser.option(ArgType.Boolean, "search").default(false)
+    val searchSource by parser.option(ArgType.Choice(listOf("mangaread.org", "manhwaus.net"), { it }), "search-source").default("mangaread.org")
     val scrape by parser.option(ArgType.Boolean, "scrape").default(false)
     val refreshCache by parser.option(ArgType.Boolean, "refresh-cache").default(false)
     val downloadAll by parser.option(ArgType.Boolean, "download-all").default(false)
@@ -700,7 +704,7 @@ fun main(args: Array<String>) {
     }
 
     var cliArgs = CliArguments(
-        source, search, scrape, refreshCache, downloadAll, cleanCache, deleteCache,
+        source, search, searchSource, scrape, refreshCache, downloadAll, cleanCache, deleteCache,
         ignoreCache, keep, remove, skipExisting, update, updateMetadata, format, title,
         outputPath, force, deleteOriginal, debug, dryRun, exclude, workers,
         userAgentName, proxy, proxyType, proxyHost, proxyPort, proxyUser, proxyPass,
@@ -809,13 +813,38 @@ fun main(args: Array<String>) {
             return@runBlocking
         }
 
+        // Expand any glob patterns in the source arguments first.
+        val expandedSources = cliArgs.source.flatMap { source ->
+            if (!source.startsWith("http") && source.any { it in setOf('*', '?', '[', '{') }) {
+                FileUtils.expandGlobPath(source).map { it.absolutePath }
+            } else {
+                listOf(source)
+            }
+        }.distinct()
+
         if (cliArgs.updateMetadata) {
-            val sourceUrlOverride = if (cliArgs.source.size > 1) cliArgs.source[1] else null
-            processMetadataUpdate(cliArgs.source[0], sourceUrlOverride, cliArgs, scraperService, processorService)
+            val (epubFiles, potentialUrls) = expandedSources.partition {
+                it.endsWith(".epub", ignoreCase = true) && File(it).exists()
+            }
+            val sourceUrlOverride = potentialUrls.lastOrNull { it.startsWith("http") }
+
+            if (epubFiles.isEmpty()) {
+                Logger.logError("No valid .epub files found for metadata update.")
+                return@runBlocking
+            }
+
+            Logger.logInfo("--- Updating metadata for ${epubFiles.size} EPUB file(s) ---")
+            if (sourceUrlOverride != null) {
+                Logger.logInfo("Using override source URL for all files: $sourceUrlOverride")
+            }
+
+            for (epubPath in epubFiles) {
+                processMetadataUpdate(epubPath, sourceUrlOverride, cliArgs, scraperService, processorService)
+            }
             return@runBlocking
         }
 
-        val (localFiles, urls) = cliArgs.source.partition { File(it).exists() }
+        val (localFiles, urls) = expandedSources.partition { File(it).exists() }
         if (localFiles.isNotEmpty()) {
             Logger.logInfo("--- Processing ${localFiles.size} local file(s) ---")
             for (file in localFiles) {
@@ -852,10 +881,10 @@ fun main(args: Array<String>) {
                 }
             }
             cliArgs.search -> {
-                val query = cliArgs.source.joinToString(" ")
+                val query = urls.joinToString(" ")
                 val client = createHttpClient(buildProxyUrlFromCliArgs(cliArgs))
                 try {
-                    val results = scraperService.search(client, query, UserAgent.browsers[cliArgs.userAgentName] ?: "")
+                    val results = scraperService.search(client, query, UserAgent.browsers[cliArgs.userAgentName] ?: "", cliArgs.searchSource)
                     if (results.isEmpty()) { Logger.logInfo("No results found."); emptyList() }
                     else if (cliArgs.downloadAll) {
                         results.map { it.url }

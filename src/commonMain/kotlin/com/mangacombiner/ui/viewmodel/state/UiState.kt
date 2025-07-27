@@ -54,6 +54,8 @@ data class UiState(
     val originalSearchResults: List<SearchResult> = emptyList(),
     val searchSortOption: SearchSortOption = SearchSortOption.DEFAULT,
     val isSearching: Boolean = false,
+    val searchSource: String = "mangaread.org",
+    val searchSources: List<String> = listOf("mangaread.org", "manhwaus.net"),
 
     // Download state
     val seriesUrl: String = "",

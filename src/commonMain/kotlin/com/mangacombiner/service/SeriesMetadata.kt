@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 data class SeriesMetadata(
     val title: String,
     val coverImageUrl: String? = null,
+    val description: String? = null,
     val authors: List<String>? = null,
     val artists: List<String>? = null,
     val genres: List<String>? = null,

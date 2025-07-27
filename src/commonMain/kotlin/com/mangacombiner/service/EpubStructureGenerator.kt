@@ -287,13 +287,9 @@ internal class EpubStructureGenerator {
             }
         }
 
-        // Description from type and status
-        val descriptionParts = mutableListOf<String>()
-        seriesMetadata?.type?.takeIf { it.isNotBlank() }?.let { descriptionParts.add("Type: $it") }
-        seriesMetadata?.status?.takeIf { it.isNotBlank() }?.let { descriptionParts.add("Status: $it") }
-        if (descriptionParts.isNotEmpty()) {
-            val description = descriptionParts.joinToString(" | ")
-            metadataBuilder.appendLine("""    <dc:description>${description.escapeXml()}</dc:description>""")
+        // Description from scraped metadata
+        seriesMetadata?.description?.takeIf { it.isNotBlank() }?.let {
+            metadataBuilder.appendLine("""    <dc:description>${it.escapeXml()}</dc:description>""")
         }
 
         // Source URL

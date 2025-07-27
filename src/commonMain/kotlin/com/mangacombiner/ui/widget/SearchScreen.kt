@@ -12,8 +12,6 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -25,14 +23,14 @@ import com.mangacombiner.ui.viewmodel.state.SearchSortOption
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.pointer.tooltipHoverFix
 
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalMaterialApi::class)
 @Composable
 fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
     var sortDropdownExpanded by remember { mutableStateOf(false) }
+    var sourceDropdownExpanded by remember { mutableStateOf(false) }
     val isIdle = state.operationState == OperationState.IDLE
     val listState = rememberLazyListState()
 
-    // Scroll to top whenever the search results change (e.g., new search or sort)
     LaunchedEffect(state.searchResults) {
         if (state.searchResults.isNotEmpty()) {
             listState.animateScrollToItem(index = 0)
@@ -44,13 +42,44 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Card(elevation = 4.dp) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Search for a Series", style = MaterialTheme.typography.h6)
-                Spacer(Modifier.height(8.dp))
+
+                ExposedDropdownMenuBox(
+                    expanded = sourceDropdownExpanded,
+                    onExpandedChange = {
+                        if (isIdle) sourceDropdownExpanded = !sourceDropdownExpanded
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        readOnly = true,
+                        value = state.searchSource,
+                        onValueChange = { },
+                        label = { Text("Search Source") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = sourceDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = isIdle
+                    )
+                    ExposedDropdownMenu(
+                        expanded = sourceDropdownExpanded,
+                        onDismissRequest = { sourceDropdownExpanded = false }
+                    ) {
+                        state.searchSources.forEach { sourceName ->
+                            DropdownMenuItem(onClick = {
+                                onEvent(Event.Search.UpdateSource(sourceName))
+                                sourceDropdownExpanded = false
+                            }) {
+                                Text(text = sourceName)
+                            }
+                        }
+                    }
+                }
+
                 SubmitTextField(
                     value = state.searchQuery,
                     onValueChange = { onEvent(Event.Search.UpdateQuery(it)) },
-                    label = { Text("Search on MangaRead.org") },
+                    label = { Text("Search on ${state.searchSource}") },
                     onSubmit = { onEvent(Event.Search.Perform) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = isIdle,
@@ -97,7 +126,6 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
             }
         }
 
-        // Use Modifier.weight(1f) to make the results section fill the remaining space
         AnimatedVisibility(visible = state.searchResults.isNotEmpty() || state.isSearching, modifier = Modifier.weight(1f)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -147,13 +175,12 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
                 }
                 Divider()
 
-                // If searching and no results yet, show an empty box. If not searching and no results, a message will show implicitly.
                 if (state.isSearching && state.searchResults.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize()) // Show a blank area while loading
+                    Box(modifier = Modifier.fillMaxSize())
                 } else {
                     LazyColumn(
-                        state = listState, // Apply the list state
-                        modifier = Modifier.fillMaxHeight(), // Allow the list to fill available space
+                        state = listState,
+                        modifier = Modifier.fillMaxHeight(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(state.searchResults, key = { it.url }) { result ->
