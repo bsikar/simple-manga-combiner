@@ -17,4 +17,11 @@ expect class FileMover {
      * @return A string indicating the final path or a confirmation message on success, or an empty string on failure.
      */
     fun moveToFinalDestination(sourceFile: File, destinationIdentifier: String, finalFileName: String): String
+
+    /**
+     * Deletes a file from the filesystem.
+     * @param path The platform-specific path or URI of the file to delete.
+     * @return True if deletion was successful, false otherwise.
+     */
+    fun deleteFile(path: String): Boolean
 }

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
@@ -171,36 +172,54 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(filteredAndSortedBooks, key = { it.filePath }) { book ->
-                            Card(
-                                modifier = Modifier.clickable { onEvent(Event.Library.OpenBook(book.filePath)) },
-                                elevation = 4.dp
-                            ) {
-                                Box {
-                                    Column {
-                                        // Book Cover Image
+                            Card(elevation = 4.dp) {
+                                Column {
+                                    Box(modifier = Modifier.clickable { onEvent(Event.Library.OpenBook(book.filePath)) }) {
                                         if (book.coverImage != null) {
                                             val bitmap = remember(book.coverImage) { bytesToImageBitmap(book.coverImage) }
                                             Image(
                                                 bitmap = bitmap,
                                                 contentDescription = book.title,
-                                                modifier = Modifier.height(160.dp).fillMaxWidth(), // Reduced height
+                                                modifier = Modifier.height(160.dp).fillMaxWidth(),
                                                 contentScale = ContentScale.Crop
                                             )
                                         } else {
-                                            // Placeholder for books without a cover
-                                            Box(modifier = Modifier.height(160.dp).fillMaxWidth().background(MaterialTheme.colors.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
+                                            Box(
+                                                modifier = Modifier.height(160.dp).fillMaxWidth().background(MaterialTheme.colors.surface.copy(alpha = 0.5f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
                                                 Text("No Cover", style = MaterialTheme.typography.caption)
                                             }
                                         }
+                                    }
 
-                                        // Book Title (no scrim, just plain text below)
+                                    Row(
+                                        modifier = Modifier.padding(start = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text(
                                             text = book.title,
-                                            modifier = Modifier.padding(8.dp),
-                                            style = MaterialTheme.typography.caption, // Smaller font
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.caption,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                        var showMenu by remember { mutableStateOf(false) }
+                                        Box {
+                                            IconButton(onClick = { showMenu = true }) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "More options for ${book.title}")
+                                            }
+                                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                                DropdownMenuItem(onClick = {
+                                                    onEvent(Event.Library.EditBook(book.filePath))
+                                                    showMenu = false
+                                                }) { Text("Edit Chapters") }
+                                                DropdownMenuItem(onClick = {
+                                                    onEvent(Event.Library.RequestDeleteBook(book.filePath))
+                                                    showMenu = false
+                                                }) { Text("Delete File") }
+                                            }
+                                        }
                                     }
                                 }
                             }

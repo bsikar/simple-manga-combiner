@@ -139,7 +139,9 @@ data class UiState(
     val readerFontSize: Float = 16.0f,
     val isLibraryLoading: Boolean = false,
     val showReaderToc: Boolean = false,
-    val isCurrentPageText: Boolean = false
+    val isCurrentPageText: Boolean = false,
+    val showDeleteConfirmationDialog: Boolean = false,
+    val bookToModify: String? = null
 )
 
 // Extension function to convert UiState to AppSettings

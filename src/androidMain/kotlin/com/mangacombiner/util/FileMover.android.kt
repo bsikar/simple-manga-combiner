@@ -57,4 +57,18 @@ actual class FileMover(private val context: Context) {
             return ""
         }
     }
+
+    actual fun deleteFile(path: String): Boolean {
+        return try {
+            if (path.startsWith("content://")) {
+                val docFile = DocumentFile.fromSingleUri(context, Uri.parse(path))
+                docFile?.delete() ?: false
+            } else {
+                File(path).delete()
+            }
+        } catch (e: Exception) {
+            Logger.logError("Failed to delete file on Android: $path", e)
+            false
+        }
+    }
 }

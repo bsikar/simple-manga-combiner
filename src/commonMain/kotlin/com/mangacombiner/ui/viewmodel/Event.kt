@@ -188,5 +188,9 @@ sealed interface Event {
         data class UpdateProgress(val currentPage: Int, val currentChapterIndex: Int, val isTextPage: Boolean) : Library
         data class UpdateSearchQuery(val query: String) : Library
         data class SetSort(val sortOption: LibrarySortOption) : Library
+        data class EditBook(val bookPath: String) : Library
+        data class RequestDeleteBook(val bookPath: String) : Library
+        object ConfirmDeleteBook : Library
+        object CancelDeleteBook : Library
     }
 }

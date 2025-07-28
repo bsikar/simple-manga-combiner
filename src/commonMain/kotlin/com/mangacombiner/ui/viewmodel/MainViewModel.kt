@@ -744,6 +744,30 @@ class MainViewModel(
             is Event.Library.ToggleToc -> _state.update { it.copy(showReaderToc = !it.showReaderToc) }
             is Event.Library.UpdateSearchQuery -> _state.update { it.copy(librarySearchQuery = event.query) }
             is Event.Library.SetSort -> _state.update { it.copy(librarySortOption = event.sortOption) }
+            is Event.Library.EditBook -> {
+                _state.update { it.copy(currentScreen = Screen.DOWNLOAD) }
+                analyzeLocalFile(File(event.bookPath))
+            }
+            is Event.Library.RequestDeleteBook -> {
+                _state.update { it.copy(showDeleteConfirmationDialog = true, bookToModify = event.bookPath) }
+            }
+            is Event.Library.ConfirmDeleteBook -> {
+                val bookPath = state.value.bookToModify
+                _state.update { it.copy(showDeleteConfirmationDialog = false, bookToModify = null) }
+                if (bookPath != null) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        if (fileMover.deleteFile(bookPath)) {
+                            Logger.logInfo("Successfully deleted file: $bookPath")
+                            scanForLibraryBooks() // Refresh library
+                        } else {
+                            Logger.logError("Failed to delete file: $bookPath")
+                        }
+                    }
+                }
+            }
+            is Event.Library.CancelDeleteBook -> {
+                _state.update { it.copy(showDeleteConfirmationDialog = false, bookToModify = null) }
+            }
         }
     }
 

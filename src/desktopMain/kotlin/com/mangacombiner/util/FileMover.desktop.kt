@@ -20,4 +20,14 @@ actual class FileMover {
             ""
         }
     }
+
+    actual fun deleteFile(path: String): Boolean {
+        return try {
+            val file = File(path)
+            file.delete()
+        } catch (e: Exception) {
+            Logger.logError("Failed to delete file: $path", e)
+            false
+        }
+    }
 }

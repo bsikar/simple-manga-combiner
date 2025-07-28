@@ -305,6 +305,24 @@ fun MainScreen(viewModel: MainViewModel) {
                     }
                 )
             }
+            if (state.showDeleteConfirmationDialog) {
+                AlertDialog(
+                    onDismissRequest = { viewModel.onEvent(Event.Library.CancelDeleteBook) },
+                    title = { Text("Confirm Deletion") },
+                    text = { Text("Are you sure you want to permanently delete this file? This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = { viewModel.onEvent(Event.Library.ConfirmDeleteBook) },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
+                        ) {
+                            Text("Delete")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.onEvent(Event.Library.CancelDeleteBook) }) { Text("Cancel") }
+                    }
+                )
+            }
         }
     }
 }
