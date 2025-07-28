@@ -10,7 +10,8 @@ data class Book(
 
 data class ChapterContent(
     val title: String,
-    val imageHrefs: List<String>
+    val imageHrefs: List<String>,
+    val textContent: String? = null
 )
 
 expect class EpubReaderService {

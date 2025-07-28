@@ -46,14 +46,15 @@ actual class EpubReaderService {
                     val chapterDoc = Jsoup.parse(chapterContent)
                     val chapterTitle = chapterDoc.title()
 
-                    // Resolve image paths relative to the chapter file, creating a full path from the zip root
                     val imageHrefs = chapterDoc.select("img").map { img ->
                         val relativePath = img.attr("src")
                         URI(chapterPath).resolve(relativePath).path.removePrefix("/")
                     }
+                    val textContent = if (imageHrefs.isEmpty()) chapterDoc.body()?.text() else null
 
-                    if (imageHrefs.isNotEmpty()) {
-                        ChapterContent(chapterTitle, imageHrefs)
+
+                    if (imageHrefs.isNotEmpty() || !textContent.isNullOrBlank()) {
+                        ChapterContent(chapterTitle, imageHrefs, textContent)
                     } else {
                         null
                     }
@@ -67,7 +68,12 @@ actual class EpubReaderService {
                     }
                     .map { (chapterTitle, pages) ->
                         val allImageHrefs = pages.flatMap { it.imageHrefs }
-                        ChapterContent(title = chapterTitle, imageHrefs = allImageHrefs)
+                        val combinedText = pages.mapNotNull { it.textContent }.joinToString("\n\n")
+                        ChapterContent(
+                            title = chapterTitle,
+                            imageHrefs = allImageHrefs,
+                            textContent = if (combinedText.isNotBlank()) combinedText else null
+                        )
                     }
 
                 Book(

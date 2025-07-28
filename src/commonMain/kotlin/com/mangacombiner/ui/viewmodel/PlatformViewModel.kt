@@ -18,4 +18,9 @@ expect open class PlatformViewModel() {
      * Platform-specific implementation for opening a book.
      */
     suspend fun openBook(bookPath: String)
+
+    /**
+     * Platform-specific implementation for closing a book.
+     */
+    fun closeBook()
 }

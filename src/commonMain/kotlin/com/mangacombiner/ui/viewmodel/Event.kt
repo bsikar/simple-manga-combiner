@@ -182,8 +182,8 @@ sealed interface Event {
         data class GoToPage(val page: Int) : Library
         object ZoomIn : Library
         object ZoomOut : Library
-        object ResetImageScale : Library
+        object ResetZoom : Library
         object ToggleToc : Library
-        data class UpdateProgress(val currentPage: Int, val currentChapterIndex: Int) : Library
+        data class UpdateProgress(val currentPage: Int, val currentChapterIndex: Int, val isTextPage: Boolean) : Library
     }
 }

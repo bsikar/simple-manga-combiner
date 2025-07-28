@@ -134,8 +134,10 @@ data class UiState(
     val totalPagesInBook: Int = 0,
     val readerTheme: ReaderTheme = ReaderTheme.BLACK,
     val readerImageScale: Float = 1.0f,
+    val readerFontSize: Float = 16.0f,
     val isLibraryLoading: Boolean = false,
-    val showReaderToc: Boolean = false
+    val showReaderToc: Boolean = false,
+    val isCurrentPageText: Boolean = false
 )
 
 // Extension function to convert UiState to AppSettings

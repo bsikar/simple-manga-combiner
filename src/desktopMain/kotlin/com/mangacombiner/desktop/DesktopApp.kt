@@ -116,15 +116,15 @@ fun main() {
                     if (isModifierPressed) {
                         when (keyEvent.key) {
                             Key.Equals, Key.Plus -> {
-                                viewModel.onEvent(Event.Settings.ZoomIn)
+                                viewModel.onEvent(Event.Library.ZoomIn)
                                 true
                             }
                             Key.Minus -> {
-                                viewModel.onEvent(Event.Settings.ZoomOut)
+                                viewModel.onEvent(Event.Library.ZoomOut)
                                 true
                             }
                             Key.Zero -> {
-                                viewModel.onEvent(Event.Settings.ZoomReset)
+                                viewModel.onEvent(Event.Library.ResetZoom)
                                 true
                             }
                             else -> false

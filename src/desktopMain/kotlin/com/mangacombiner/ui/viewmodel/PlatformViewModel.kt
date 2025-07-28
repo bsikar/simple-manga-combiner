@@ -31,9 +31,7 @@ actual open class PlatformViewModel {
         viewModelScope.launch(Dispatchers.IO) {
             mainViewModel._state.update { it.copy(isLibraryLoading = true) }
 
-            val pathsToScan = mainViewModel.state.value.libraryScanPaths.ifEmpty {
-                setOfNotNull(mainViewModel.state.value.outputPath)
-            }
+            val pathsToScan = mainViewModel.state.value.libraryScanPaths
 
             if (pathsToScan.isEmpty()) {
                 mainViewModel._state.update { it.copy(isLibraryLoading = false, libraryBooks = emptyList()) }
@@ -64,16 +62,31 @@ actual open class PlatformViewModel {
 
         if (book != null) {
             val lastPage = mainViewModel.readingProgressRepository.getProgress(book.filePath)
-            val totalPages = book.chapters.sumOf { it.imageHrefs.size }
+            val totalPages = book.chapters.sumOf { it.imageHrefs.size.coerceAtLeast(if (it.textContent != null) 1 else 0) }
 
             mainViewModel._state.update {
                 it.copy(
                     currentBook = book,
                     currentPageInBook = lastPage.coerceAtLeast(1),
                     totalPagesInBook = totalPages,
-                    readerImageScale = 1.0f
+                    readerFontSize = 16.0f
                 )
             }
+        }
+    }
+
+    actual fun closeBook() {
+        val book = mainViewModel.state.value.currentBook ?: return
+        val currentPage = mainViewModel.state.value.currentPageInBook
+        mainViewModel.readingProgressRepository.saveProgress(book.filePath, currentPage)
+        mainViewModel._state.update {
+            it.copy(
+                currentBook = null,
+                currentPageInBook = 0,
+                currentChapterIndex = 0,
+                totalPagesInBook = 0,
+                showReaderToc = false
+            )
         }
     }
 }

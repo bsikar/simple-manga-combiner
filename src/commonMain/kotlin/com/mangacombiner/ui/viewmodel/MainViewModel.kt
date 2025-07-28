@@ -640,21 +640,6 @@ class MainViewModel(
         }
     }
 
-    private fun closeBook() {
-        val book = state.value.currentBook ?: return
-        val currentPage = state.value.currentPageInBook
-        readingProgressRepository.saveProgress(book.filePath, currentPage)
-        _state.update {
-            it.copy(
-                currentBook = null,
-                currentPageInBook = 0,
-                currentChapterIndex = 0,
-                totalPagesInBook = 0,
-                showReaderToc = false
-            )
-        }
-    }
-
     private fun changeChapter(delta: Int) {
         val book = state.value.currentBook ?: return
         val currentChapterIndex = state.value.currentChapterIndex
@@ -663,7 +648,7 @@ class MainViewModel(
         if (currentChapterIndex != newChapterIndex) {
             var pageCounter = 0
             for (i in 0 until newChapterIndex) {
-                pageCounter += book.chapters[i].imageHrefs.size
+                pageCounter += book.chapters[i].imageHrefs.size.coerceAtLeast(if (book.chapters[i].textContent != null) 1 else 0)
             }
             val newPage = pageCounter + 1
 
@@ -713,7 +698,7 @@ class MainViewModel(
                 var pagesCounted = 0
                 var newChapterIndex = 0
                 for ((idx, chap) in book.chapters.withIndex()) {
-                    val chapterSize = chap.imageHrefs.size
+                    val chapterSize = chap.imageHrefs.size.coerceAtLeast(if (chap.textContent != null) 1 else 0)
                     if (newPage > pagesCounted && newPage <= pagesCounted + chapterSize) {
                         newChapterIndex = idx
                         break
@@ -729,14 +714,32 @@ class MainViewModel(
                     )
                 }
             }
-            is Event.Library.ZoomIn -> _state.update { it.copy(readerImageScale = (it.readerImageScale + 0.2f).coerceIn(0.1f, 3.0f)) }
-            is Event.Library.ZoomOut -> _state.update { it.copy(readerImageScale = (it.readerImageScale - 0.2f).coerceIn(0.1f, 3.0f)) }
-            is Event.Library.ResetImageScale -> _state.update { it.copy(readerImageScale = 1.0f) }
+            is Event.Library.ZoomIn -> _state.update {
+                if (it.isCurrentPageText) {
+                    it.copy(readerFontSize = (it.readerFontSize + 1.0f).coerceIn(8.0f, 48.0f))
+                } else {
+                    it.copy(readerImageScale = (it.readerImageScale + 0.2f).coerceIn(0.1f, 3.0f))
+                }
+            }
+            is Event.Library.ZoomOut -> _state.update {
+                if (it.isCurrentPageText) {
+                    it.copy(readerFontSize = (it.readerFontSize - 1.0f).coerceIn(8.0f, 48.0f))
+                } else {
+                    it.copy(readerImageScale = (it.readerImageScale - 0.2f).coerceIn(0.1f, 3.0f))
+                }
+            }
+            is Event.Library.ResetZoom -> _state.update {
+                it.copy(readerFontSize = 16.0f, readerImageScale = 1.0f)
+            }
             is Event.Library.UpdateProgress -> {
                 _state.value.currentBook?.let { book ->
                     readingProgressRepository.saveProgress(book.filePath, event.currentPage)
                 }
-                _state.update { it.copy(currentPageInBook = event.currentPage, currentChapterIndex = event.currentChapterIndex) }
+                _state.update { it.copy(
+                    currentPageInBook = event.currentPage,
+                    currentChapterIndex = event.currentChapterIndex,
+                    isCurrentPageText = event.isTextPage
+                )}
             }
             is Event.Library.ToggleToc -> _state.update { it.copy(showReaderToc = !it.showReaderToc) }
         }

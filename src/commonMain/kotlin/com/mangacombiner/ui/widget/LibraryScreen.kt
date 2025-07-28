@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,6 +23,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
+import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.bytesToImageBitmap
 
@@ -44,7 +46,7 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                 Text("Library", style = MaterialTheme.typography.h5, modifier = Modifier.weight(1f))
                 PlatformTooltip("Open EPUB File") {
                     IconButton(onClick = { onEvent(Event.Library.OpenFileDirectly) }) {
-                        Icon(Icons.AutoMirrored.Filled.NoteAdd, "Open EPUB File")
+                        Icon(Icons.Default.FolderOpen, "Open EPUB File")
                     }
                 }
                 PlatformTooltip("Refresh Library") {
@@ -61,13 +63,23 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                         CircularProgressIndicator()
                     }
                 }
+                state.libraryBooks.isEmpty() && state.libraryScanPaths.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Your library is empty and no folders are being monitored.")
+                            Button(onClick = { onEvent(Event.Navigate(Screen.SETTINGS)) }) {
+                                Text("Go to Settings to add a folder")
+                            }
+                        }
+                    }
+                }
                 state.libraryBooks.isEmpty() -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Your library is empty.")
+                            Text("No EPUBs found in your library folders.")
                             Spacer(Modifier.height(8.dp))
                             Button(onClick = { onEvent(Event.Library.ScanForBooks) }) {
-                                Text("Scan for EPUBs")
+                                Text("Scan Again")
                             }
                         }
                     }
@@ -97,7 +109,9 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                                             )
                                         } else {
                                             // Placeholder for books without a cover
-                                            Box(modifier = Modifier.height(160.dp).fillMaxWidth().background(MaterialTheme.colors.surface.copy(alpha = 0.5f)))
+                                            Box(modifier = Modifier.height(160.dp).fillMaxWidth().background(MaterialTheme.colors.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
+                                                Text("No Cover", style = MaterialTheme.typography.caption)
+                                            }
                                         }
 
                                         // Book Title (no scrim, just plain text below)

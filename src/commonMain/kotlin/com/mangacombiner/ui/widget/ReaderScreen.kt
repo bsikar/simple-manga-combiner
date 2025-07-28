@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mangacombiner.service.Book
 import com.mangacombiner.service.EpubReaderService
 import com.mangacombiner.ui.viewmodel.Event
@@ -38,6 +40,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
+
+private sealed class PageItem {
+    data class Image(val href: String) : PageItem()
+    data class Text(val content: String) : PageItem()
+}
 
 @Composable
 private fun PageImage(filePath: String, imageHref: String, modifier: Modifier = Modifier) {
@@ -76,6 +83,19 @@ fun ReaderScreen(state: UiState, onEvent: (Event) -> Unit) {
     val book = state.currentBook ?: return
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (state.currentPageInBook - 1).coerceAtLeast(0))
 
+    val pages = remember(book) {
+        book.chapters.flatMap { chapter ->
+            val items = mutableListOf<PageItem>()
+            if (!chapter.textContent.isNullOrBlank()) {
+                items.add(PageItem.Text(chapter.textContent))
+            }
+            chapter.imageHrefs.forEach { href ->
+                items.add(PageItem.Image(href))
+            }
+            items
+        }
+    }
+
     // As the user scrolls, this effect updates the state and saves progress
     LaunchedEffect(listState) {
         snapshotFlow { listState.firstVisibleItemIndex }
@@ -83,17 +103,20 @@ fun ReaderScreen(state: UiState, onEvent: (Event) -> Unit) {
             .distinctUntilChanged()
             .debounce(500) // Persist progress after user stops scrolling for 500ms
             .collect { newPage ->
+                val pageIndex = (newPage - 1).coerceAtLeast(0)
+                val isText = pages.getOrNull(pageIndex) is PageItem.Text
+
                 var pagesCounted = 0
                 var chapterIdx = 0
                 for ((idx, chap) in book.chapters.withIndex()) {
-                    val chapterSize = chap.imageHrefs.size
+                    val chapterSize = chap.imageHrefs.size + if (!chap.textContent.isNullOrBlank()) 1 else 0
                     if (newPage > pagesCounted && newPage <= pagesCounted + chapterSize) {
                         chapterIdx = idx
                         break
                     }
                     pagesCounted += chapterSize
                 }
-                onEvent(Event.Library.UpdateProgress(newPage, chapterIdx))
+                onEvent(Event.Library.UpdateProgress(newPage, chapterIdx, isText))
             }
     }
 
@@ -110,6 +133,7 @@ fun ReaderScreen(state: UiState, onEvent: (Event) -> Unit) {
         ReaderTheme.WHITE -> Color.White
         ReaderTheme.SEPIA -> Color(0xFFFBF0D9)
     }
+    val onBackgroundColor = if (state.readerTheme == ReaderTheme.BLACK) Color.White else Color.Black
 
     Scaffold(
         topBar = {
@@ -119,7 +143,9 @@ fun ReaderScreen(state: UiState, onEvent: (Event) -> Unit) {
                     IconButton(onClick = { onEvent(Event.Library.CloseBook) }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to Library")
                     }
-                }
+                },
+                backgroundColor = MaterialTheme.colors.surface,
+                elevation = 4.dp
             )
         },
         bottomBar = {
@@ -129,35 +155,50 @@ fun ReaderScreen(state: UiState, onEvent: (Event) -> Unit) {
             }
         }
     ) { padding ->
-        val allImageHrefs = remember(book) { book.chapters.flatMap { it.imageHrefs } }
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().background(backgroundColor).padding(padding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            itemsIndexed(allImageHrefs, key = { index, _ -> index }) { index, imageHref ->
-                BoxWithConstraints(modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 200.dp)) {
-                    val horizontalScrollState = rememberScrollState()
-                    val imageWidth = maxWidth * state.readerImageScale
+            itemsIndexed(pages, key = { index, _ -> index }) { _, page ->
+                when (page) {
+                    is PageItem.Image -> {
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 200.dp)) {
+                            val horizontalScrollState = rememberScrollState()
+                            val imageWidth = maxWidth * state.readerImageScale
 
-                    LaunchedEffect(imageWidth, maxWidth) {
-                        if (imageWidth > maxWidth) {
-                            val maxScroll = horizontalScrollState.maxValue
-                            horizontalScrollState.scrollTo(maxScroll / 2)
+                            LaunchedEffect(imageWidth, maxWidth) {
+                                if (imageWidth > maxWidth) {
+                                    val maxScroll = horizontalScrollState.maxValue
+                                    horizontalScrollState.scrollTo(maxScroll / 2)
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(if (imageWidth > maxWidth) Modifier.horizontalScroll(horizontalScrollState) else Modifier),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                PageImage(
+                                    filePath = book.localCachePath ?: book.filePath,
+                                    imageHref = page.href,
+                                    modifier = Modifier.width(imageWidth)
+                                )
+                            }
                         }
                     }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(if (imageWidth > maxWidth) Modifier.horizontalScroll(horizontalScrollState) else Modifier),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        PageImage(
-                            filePath = book.localCachePath ?: book.filePath, // Use the cached path on Android
-                            imageHref = imageHref,
-                            modifier = Modifier.width(imageWidth)
-                        )
+                    is PageItem.Text -> {
+                        Box(
+                            modifier = Modifier.fillParentMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = page.content,
+                                color = onBackgroundColor,
+                                fontSize = state.readerFontSize.sp
+                            )
+                        }
                     }
                 }
             }
@@ -174,7 +215,7 @@ private fun ReaderControlRow(state: UiState, onEvent: (Event) -> Unit) {
     var pageInChapter = 0
     var pagesCounted = 0
     for ((idx, chap) in book.chapters.withIndex()) {
-        val chapterSize = chap.imageHrefs.size
+        val chapterSize = chap.imageHrefs.size + if (!chap.textContent.isNullOrBlank()) 1 else 0
         if (state.currentChapterIndex == idx) {
             pageInChapter = state.currentPageInBook - pagesCounted
             break
@@ -183,6 +224,10 @@ private fun ReaderControlRow(state: UiState, onEvent: (Event) -> Unit) {
     }
     val chapterTitle = book.chapters.getOrNull(state.currentChapterIndex)?.title ?: "Chapter ${state.currentChapterIndex + 1}"
     val progressPercent = if (state.totalPagesInBook > 0) (state.currentPageInBook * 100 / state.totalPagesInBook) else 0
+
+    val zoomOutIcon = if (state.isCurrentPageText) Icons.Default.TextFields else Icons.Default.ZoomOut
+    val zoomInIcon = if (state.isCurrentPageText) Icons.Default.FormatSize else Icons.Default.ZoomIn
+    val resetIcon = if (state.isCurrentPageText) Icons.Default.TextFormat else Icons.Default.ZoomOutMap
 
     Column {
         Row(
@@ -199,9 +244,9 @@ private fun ReaderControlRow(state: UiState, onEvent: (Event) -> Unit) {
 
             // Right controls
             Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
-                IconButton(onClick = { onEvent(Event.Library.ZoomOut) }) { Icon(Icons.Default.ZoomOut, "Zoom Out") }
-                IconButton(onClick = { onEvent(Event.Library.ResetImageScale) }) { Icon(Icons.Default.ZoomOutMap, "Reset Zoom") }
-                IconButton(onClick = { onEvent(Event.Library.ZoomIn) }) { Icon(Icons.Default.ZoomIn, "Zoom In") }
+                IconButton(onClick = { onEvent(Event.Library.ZoomOut) }) { Icon(zoomOutIcon, "Decrease Size") }
+                IconButton(onClick = { onEvent(Event.Library.ResetZoom) }) { Icon(resetIcon, "Reset Size") }
+                IconButton(onClick = { onEvent(Event.Library.ZoomIn) }) { Icon(zoomInIcon, "Increase Size") }
                 Box {
                     IconButton(onClick = { themeMenuExpanded = true }) { Icon(Icons.Default.Palette, "Change Theme") }
                     DropdownMenu(expanded = themeMenuExpanded, onDismissRequest = { themeMenuExpanded = false }) {
@@ -266,7 +311,8 @@ fun TableOfContentsDrawer(
             itemsIndexed(book.chapters) { index, chapter ->
                 val isCurrentChapter = index == currentChapterIndex
                 val startPage = pageCounter + 1
-                val endPage = pageCounter + chapter.imageHrefs.size
+                val chapterSize = chapter.imageHrefs.size + if (!chapter.textContent.isNullOrBlank()) 1 else 0
+                val endPage = pageCounter + chapterSize
 
                 ListItem(
                     modifier = Modifier
