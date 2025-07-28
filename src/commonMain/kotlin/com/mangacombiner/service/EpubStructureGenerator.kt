@@ -7,6 +7,7 @@ import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionMethod
 import java.io.File
 import java.util.UUID
+import java.util.zip.CRC32
 import kotlin.text.Charsets
 
 /**
@@ -40,11 +41,17 @@ internal class EpubStructureGenerator {
     }
 
     fun addEpubCoreFiles(epubZip: ZipFile) {
+        val mimetypeBytes = MIMETYPE.toByteArray(Charsets.UTF_8)
+        val crc = CRC32()
+        crc.update(mimetypeBytes)
+
         val mimetypeParams = ZipParameters().apply {
             fileNameInZip = "mimetype"
             compressionMethod = CompressionMethod.STORE
+            entrySize = mimetypeBytes.size.toLong()
+            entryCRC = crc.value
         }
-        epubZip.addStream(MIMETYPE.byteInputStream(Charsets.UTF_8), mimetypeParams)
+        epubZip.addStream(mimetypeBytes.inputStream(), mimetypeParams)
 
         val containerParams = ZipParameters().apply {
             fileNameInZip = "META-INF/container.xml"

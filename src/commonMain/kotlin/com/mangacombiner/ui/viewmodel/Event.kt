@@ -6,6 +6,7 @@ import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.state.CacheSortState
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
 import com.mangacombiner.ui.viewmodel.state.RangeAction
+import com.mangacombiner.ui.viewmodel.state.ReaderTheme
 import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.SearchSortOption
 
@@ -166,5 +167,19 @@ sealed interface Event {
         object CancelDownload : WebDav
         object SelectAll : WebDav
         object DeselectAll : WebDav
+    }
+
+    sealed interface Library : Event {
+        object ScanForBooks : Library
+        object ScanCustomFolder : Library
+        data class OpenBook(val bookPath: String) : Library
+        object CloseBook : Library
+        object NextChapter : Library
+        object PreviousChapter : Library
+        data class ChangeReaderTheme(val theme: ReaderTheme) : Library
+        data class GoToPage(val page: Int) : Library
+        data class ChangeImageScale(val scale: Float) : Library
+        object ResetImageScale : Library
+        data class UpdateProgress(val currentPage: Int, val currentChapterIndex: Int) : Library
     }
 }

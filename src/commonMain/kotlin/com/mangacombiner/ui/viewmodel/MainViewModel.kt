@@ -37,7 +37,9 @@ class MainViewModel(
     internal val fileMover: FileMover,
     internal val backgroundDownloader: BackgroundDownloader,
     internal val proxyMonitorService: ProxyMonitorService,
-    internal val networkInterceptor: NetworkInterceptor
+    internal val networkInterceptor: NetworkInterceptor,
+    internal val epubReaderService: EpubReaderService,
+    internal val readingProgressRepository: ReadingProgressRepository
 ) : PlatformViewModel() {
 
     internal val _state: MutableStateFlow<UiState>
@@ -669,6 +671,7 @@ class MainViewModel(
             is Event.Operation -> handleOperationEvent(event)
             is Event.Queue -> handleQueueEvent(event)
             is Event.Log -> handleLogEvent(event)
+            is Event.Library -> handleLibraryEvent(event)
             is Event.Navigate -> _state.update { it.copy(currentScreen = event.screen) }
             is Event.ToggleAboutDialog -> _state.update { it.copy(showAboutDialog = event.show) }
         }
@@ -698,6 +701,9 @@ class MainViewModel(
                 val newContext = oldContext.copy(outputPath = path)
                 queuedOperationContext[jobId] = newContext
                 _state.update { it.copy(editingJobContext = newContext) }
+            }
+            FilePickerRequest.PathType.LIBRARY_SCAN -> {
+                scanForLibraryBooks(pathOverride = path)
             }
         }
         checkOutputFileExistence()

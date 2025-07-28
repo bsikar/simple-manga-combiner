@@ -7,6 +7,7 @@ enum class Screen {
     SEARCH,
     WEB_DAV,
     DOWNLOAD_QUEUE,
+    LIBRARY,
     LOGS,
     SETTINGS,
     CACHE_VIEWER
@@ -48,3 +49,7 @@ enum class SearchSortOption {
 }
 
 data class CacheSortState(val criteria: SortCriteria, val direction: SortDirection)
+
+enum class ReaderTheme {
+    BLACK, WHITE, SEPIA
+}

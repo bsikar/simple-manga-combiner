@@ -5,6 +5,6 @@ sealed class FilePickerRequest {
     data class OpenFolder(val forPath: PathType) : FilePickerRequest()
 
     enum class PathType {
-        DEFAULT_OUTPUT, CUSTOM_OUTPUT, JOB_OUTPUT
+        DEFAULT_OUTPUT, CUSTOM_OUTPUT, JOB_OUTPUT, LIBRARY_SCAN
     }
 }

@@ -3,6 +3,8 @@ package com.mangacombiner.di
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.service.BackgroundDownloader
 import com.mangacombiner.service.DesktopDownloader
+import com.mangacombiner.service.EpubReaderService
+import com.mangacombiner.service.ReadingProgressRepository
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.util.ClipboardManager
 import com.mangacombiner.util.DesktopPlatformProvider
@@ -21,6 +23,8 @@ actual fun platformModule(): Module = module {
 
     // Provide the Desktop-specific implementation for the common interface
     singleOf(::DesktopDownloader).bind<BackgroundDownloader>()
+    single { EpubReaderService() }
+    single { ReadingProgressRepository() }
 
     // ViewModel for Desktop - updated with proxy services
     factory {
@@ -36,7 +40,9 @@ actual fun platformModule(): Module = module {
             fileMover = get(),
             backgroundDownloader = get(),
             proxyMonitorService = get(),
-            networkInterceptor = get()
+            networkInterceptor = get(),
+            epubReaderService = get(),
+            readingProgressRepository = get()
         )
     }
 }

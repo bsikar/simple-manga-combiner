@@ -122,7 +122,17 @@ data class UiState(
     val webDavError: String? = null,
     val isDownloadingFromWebDav: Boolean = false,
     val webDavDownloadProgress: Float = 0f,
-    val webDavStatus: String = ""
+    val webDavStatus: String = "",
+
+    // Library & Reader State
+    val libraryBooks: List<Book> = emptyList(),
+    val currentBook: Book? = null,
+    val currentChapterIndex: Int = 0,
+    val currentPageInBook: Int = 0,
+    val totalPagesInBook: Int = 0,
+    val readerTheme: ReaderTheme = ReaderTheme.BLACK,
+    val readerImageScale: Float = 1.0f,
+    val isLibraryLoading: Boolean = false
 )
 
 // Extension function to convert UiState to AppSettings

@@ -3,6 +3,8 @@ package com.mangacombiner.di
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.service.AndroidBackgroundDownloader
 import com.mangacombiner.service.BackgroundDownloader
+import com.mangacombiner.service.EpubReaderService
+import com.mangacombiner.service.ReadingProgressRepository
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.util.AndroidPlatformProvider
 import com.mangacombiner.util.ClipboardManager
@@ -33,6 +35,10 @@ actual fun platformModule(): Module = module {
 
     // Background download service implementation for Android
     single<BackgroundDownloader> { AndroidBackgroundDownloader(androidContext(), get(), get()) }
+
+    // Epub reader service
+    single { EpubReaderService() }
+    single { ReadingProgressRepository(androidContext()) }
 
     // ViewModel registration using updated Koin DSL - let it use constructor injection
     viewModelOf(::MainViewModel)

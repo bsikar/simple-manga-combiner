@@ -19,6 +19,7 @@ import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.widget.*
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
@@ -119,6 +120,15 @@ fun MainScreen(viewModel: MainViewModel) {
                             alwaysShowLabel = false
                         )
                     }
+                    PlatformTooltip("Library") {
+                        NavigationRailItem(
+                            selected = state.currentScreen == Screen.LIBRARY,
+                            onClick = { viewModel.onEvent(Event.Navigate(Screen.LIBRARY)) },
+                            icon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library") },
+                            label = if (showNavLabels) { { Text("Library") } } else null,
+                            alwaysShowLabel = false
+                        )
+                    }
                     PlatformTooltip("Settings") {
                         NavigationRailItem(
                             selected = state.currentScreen == Screen.SETTINGS || state.currentScreen == Screen.LOGS,
@@ -132,12 +142,14 @@ fun MainScreen(viewModel: MainViewModel) {
 
                 Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
 
-                Box(modifier = Modifier.weight(1f).padding(16.dp)) {
+                val padding = if (state.currentScreen == Screen.LIBRARY && state.currentBook != null) 0.dp else 16.dp
+                Box(modifier = Modifier.weight(1f).padding(padding)) {
                     when (state.currentScreen) {
                         Screen.SEARCH -> SearchScreen(state, viewModel::onEvent)
                         Screen.DOWNLOAD -> DownloadScreen(state, viewModel::onEvent)
                         Screen.WEB_DAV -> WebDavScreen(state, viewModel::onEvent)
                         Screen.DOWNLOAD_QUEUE -> DownloadQueueScreen(state, viewModel::onEvent)
+                        Screen.LIBRARY -> LibraryScreen(state, viewModel::onEvent)
                         Screen.LOGS -> LogScreen(state, logs, viewModel::onEvent)
                         Screen.SETTINGS -> SettingsScreen(state, viewModel::onEvent)
                         Screen.CACHE_VIEWER -> CacheViewerScreen(state, viewModel::onEvent)

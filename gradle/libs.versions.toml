@@ -20,6 +20,7 @@ material = "1.12.0"
 androidxComposeBom = "2025.07.00"
 activityCompose = "1.10.1"
 slf4j = "2.0.17"
+epublib = "3.1"
 
 [libraries]
 # Kotlinx
@@ -69,6 +70,9 @@ google-material = { group = "com.google.android.material", name = "material", ve
 
 # Logging
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+
+# Epub
+epublib-core = { module = "nl.siegmann.epublib:epublib-core", version.ref = "epublib" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

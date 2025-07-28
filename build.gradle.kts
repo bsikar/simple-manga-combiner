@@ -57,7 +57,9 @@ kotlin {
                 implementation(libs.kotlinx.serialization.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.cli)
-                implementation(libs.xmlutil.serialization)
+                implementation("io.github.pdvrieze.xmlutil:serialization:${libs.versions.xmlutil.get()}") {
+                    exclude(group = "xmlpull", module = "xmlpull")
+                }
                 implementation(libs.jsoup)
                 implementation(libs.zip4j)
             }
@@ -80,6 +82,7 @@ kotlin {
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.androidx.documentfile)
                 implementation(libs.ktor.io.jvm)
+                implementation(libs.epublib.core)
             }
         }
         val desktopMain by getting {
@@ -95,6 +98,7 @@ kotlin {
                 implementation(libs.imageio.webp)
                 implementation(libs.slf4j.simple)
                 implementation(libs.kotlinx.coroutines.swing)
+                implementation(libs.epublib.core)
             }
         }
     }
@@ -506,4 +510,9 @@ tasks.named("clean") {
         project.layout.buildDirectory.get().dir("generated").asFile.deleteRecursively()
         project.layout.buildDirectory.get().dir("scripts").asFile.deleteRecursively()
     }
+}
+
+// Global rule to exclude the conflicting 'xmlpull' dependency
+configurations.all {
+    exclude(group = "xmlpull", module = "xmlpull")
 }
