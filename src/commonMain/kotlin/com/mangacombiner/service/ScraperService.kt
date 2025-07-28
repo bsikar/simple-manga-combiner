@@ -158,7 +158,7 @@ class ScraperService {
 
         val searchUrl = when (source) {
             "manhwaus.net" -> "https://manhwaus.net/search/?s=$encodedQuery"
-            "mangaread.org" -> "https://www.mangaread.org/?s=$encodedQuery&post_type=wp-manga"
+            "mangaread.org" -> "https://mangaread.org/?s=$encodedQuery&post_type=wp-manga"
             else -> throw IllegalArgumentException("Unsupported search source: $source")
         }
 
@@ -181,8 +181,20 @@ class ScraperService {
             }
 
             return resultElements.mapNotNull { element ->
-                val titleElement = element.selectFirst("div.item-summary h3 a")
-                val imageElement = element.selectFirst("div.item-thumb a img")
+                // Use site-specific selectors for title and image elements
+                val (titleElement, imageElement) = when (source) {
+                    "manhwaus.net" -> {
+                        val title = element.selectFirst("div.item-summary h3 a")
+                        val image = element.selectFirst("div.item-thumb a img")
+                        title to image
+                    }
+                    "mangaread.org" -> {
+                        val title = element.selectFirst(".tab-summary .post-title a")
+                        val image = element.selectFirst(".tab-thumb a img")
+                        title to image
+                    }
+                    else -> null to null
+                }
 
                 val title = titleElement?.text()?.trim()
                 val url = titleElement?.absUrl("href")
@@ -197,8 +209,7 @@ class ScraperService {
         } catch (e: Exception) {
             when (e) {
                 is ClientRequestException, is IOException -> {
-                    Logger.logError("Network/Server error during search for '$query'", e)
-                    throw NetworkException("Failed to perform search: ${e.message}", e)
+                    throw NetworkException("Failed to search on $source: ${e.message}", e)
                 }
                 else -> throw e
             }
