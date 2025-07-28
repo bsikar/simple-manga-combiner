@@ -742,6 +742,8 @@ class MainViewModel(
                 )}
             }
             is Event.Library.ToggleToc -> _state.update { it.copy(showReaderToc = !it.showReaderToc) }
+            is Event.Library.UpdateSearchQuery -> _state.update { it.copy(librarySearchQuery = event.query) }
+            is Event.Library.SetSort -> _state.update { it.copy(librarySortOption = event.sortOption) }
         }
     }
 

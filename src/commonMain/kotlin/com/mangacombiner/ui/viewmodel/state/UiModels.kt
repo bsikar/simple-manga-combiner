@@ -48,6 +48,10 @@ enum class SearchSortOption {
     DEFAULT, CHAPTER_COUNT, ALPHABETICAL
 }
 
+enum class LibrarySortOption {
+    DEFAULT, TITLE_ASC, TITLE_DESC
+}
+
 data class CacheSortState(val criteria: SortCriteria, val direction: SortDirection)
 
 enum class ReaderTheme {

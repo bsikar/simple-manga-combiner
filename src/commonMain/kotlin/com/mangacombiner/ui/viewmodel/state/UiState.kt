@@ -128,6 +128,8 @@ data class UiState(
 
     // Library & Reader State
     val libraryBooks: List<Book> = emptyList(),
+    val librarySearchQuery: String = "",
+    val librarySortOption: LibrarySortOption = LibrarySortOption.DEFAULT,
     val currentBook: Book? = null,
     val currentChapterIndex: Int = 0,
     val currentPageInBook: Int = 0,

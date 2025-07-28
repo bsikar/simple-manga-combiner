@@ -5,6 +5,7 @@ import com.mangacombiner.service.WebDavFile
 import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.state.CacheSortState
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
+import com.mangacombiner.ui.viewmodel.state.LibrarySortOption
 import com.mangacombiner.ui.viewmodel.state.RangeAction
 import com.mangacombiner.ui.viewmodel.state.ReaderTheme
 import com.mangacombiner.ui.viewmodel.state.Screen
@@ -185,5 +186,7 @@ sealed interface Event {
         object ResetZoom : Library
         object ToggleToc : Library
         data class UpdateProgress(val currentPage: Int, val currentChapterIndex: Int, val isTextPage: Boolean) : Library
+        data class UpdateSearchQuery(val query: String) : Library
+        data class SetSort(val sortOption: LibrarySortOption) : Library
     }
 }

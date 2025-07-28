@@ -9,20 +9,25 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.NoteAdd
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
+import com.mangacombiner.ui.viewmodel.state.LibrarySortOption
 import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.bytesToImageBitmap
@@ -55,7 +60,76 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                     }
                 }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = state.librarySearchQuery,
+                    onValueChange = { onEvent(Event.Library.UpdateSearchQuery(it)) },
+                    label = { Text("Search library...") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                    trailingIcon = {
+                        if (state.librarySearchQuery.isNotEmpty()) {
+                            IconButton(onClick = { onEvent(Event.Library.UpdateSearchQuery("")) }) {
+                                Icon(Icons.Default.Clear, "Clear search")
+                            }
+                        }
+                    }
+                )
+
+                var sortMenuExpanded by remember { mutableStateOf(false) }
+                Box {
+                    PlatformTooltip("Sort Books") {
+                        IconButton(onClick = { sortMenuExpanded = true }) {
+                            Icon(Icons.AutoMirrored.Filled.Sort, "Sort Books")
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = sortMenuExpanded,
+                        onDismissRequest = { sortMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(onClick = {
+                            onEvent(Event.Library.SetSort(LibrarySortOption.DEFAULT))
+                            sortMenuExpanded = false
+                        }) {
+                            Text("Default Order")
+                        }
+                        DropdownMenuItem(onClick = {
+                            onEvent(Event.Library.SetSort(LibrarySortOption.TITLE_ASC))
+                            sortMenuExpanded = false
+                        }) {
+                            Text("Title (A-Z)")
+                        }
+                        DropdownMenuItem(onClick = {
+                            onEvent(Event.Library.SetSort(LibrarySortOption.TITLE_DESC))
+                            sortMenuExpanded = false
+                        }) {
+                            Text("Title (Z-A)")
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(16.dp))
+
+            val filteredAndSortedBooks = remember(state.libraryBooks, state.librarySearchQuery, state.librarySortOption) {
+                val filtered = if (state.librarySearchQuery.isBlank()) {
+                    state.libraryBooks
+                } else {
+                    state.libraryBooks.filter { book ->
+                        book.title.contains(state.librarySearchQuery, ignoreCase = true)
+                    }
+                }
+
+                when (state.librarySortOption) {
+                    LibrarySortOption.DEFAULT -> filtered
+                    LibrarySortOption.TITLE_ASC -> filtered.sortedBy { it.title }
+                    LibrarySortOption.TITLE_DESC -> filtered.sortedByDescending { it.title }
+                }
+            }
 
             when {
                 state.isLibraryLoading -> {
@@ -84,6 +158,11 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                         }
                     }
                 }
+                filteredAndSortedBooks.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No books match your search.")
+                    }
+                }
                 else -> {
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(120.dp), // Use a smaller minimum size for more columns
@@ -91,7 +170,7 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(state.libraryBooks, key = { it.filePath }) { book ->
+                        items(filteredAndSortedBooks, key = { it.filePath }) { book ->
                             Card(
                                 modifier = Modifier.clickable { onEvent(Event.Library.OpenBook(book.filePath)) },
                                 elevation = 4.dp
