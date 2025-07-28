@@ -12,6 +12,7 @@ import com.mangacombiner.util.FileMover
 import com.mangacombiner.util.PlatformProvider
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.Module
+import org.koin.core.module.dsl.singleOf
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
@@ -37,7 +38,7 @@ actual fun platformModule(): Module = module {
     single<BackgroundDownloader> { AndroidBackgroundDownloader(androidContext(), get(), get()) }
 
     // Epub reader service
-    single { EpubReaderService() }
+    singleOf(::EpubReaderService)
     single { ReadingProgressRepository(androidContext()) }
 
     // ViewModel registration using updated Koin DSL - let it use constructor injection

@@ -604,7 +604,6 @@ class MainViewModel(
                     return@map job
                 }
 
-                // If the job is paused by the user, its status should remain Paused, not be overwritten by "Cancelled" from the service.
                 if (update.status == "Cancelled" && (state.isQueueGloballyPaused || job.isIndividuallyPaused || job.status == "Paused")) {
                     return@map job.copy(status = "Paused")
                 }
@@ -614,7 +613,6 @@ class MainViewModel(
                 var newProgress = job.progress
 
                 if (update.downloadedChapters != null) {
-                    // Treat update as absolute if job is just starting, otherwise treat it as incremental.
                     val isStarting = job.status in listOf("Queued", "Waiting...", "Starting...")
                     newDownloadedChapters = if (isStarting) {
                         update.downloadedChapters
@@ -629,7 +627,6 @@ class MainViewModel(
                 } else if (update.downloadedChapters != null) {
                     newProgress = if (job.totalChapters > 0) newDownloadedChapters.toFloat() / job.totalChapters else 0f
                 } else if (update.progress != null) {
-                    // Progress from within a chapter download is fractional (0.0 to 1.0)
                     newProgress = if (job.totalChapters > 0) (job.downloadedChapters + update.progress) / job.totalChapters else 0f
                 }
 
@@ -640,6 +637,43 @@ class MainViewModel(
                 )
             }
             state.copy(downloadQueue = updatedQueue)
+        }
+    }
+
+    private fun closeBook() {
+        val book = state.value.currentBook ?: return
+        val currentPage = state.value.currentPageInBook
+        readingProgressRepository.saveProgress(book.filePath, currentPage)
+        _state.update {
+            it.copy(
+                currentBook = null,
+                currentPageInBook = 0,
+                currentChapterIndex = 0,
+                totalPagesInBook = 0,
+                showReaderToc = false
+            )
+        }
+    }
+
+    private fun changeChapter(delta: Int) {
+        val book = state.value.currentBook ?: return
+        val currentChapterIndex = state.value.currentChapterIndex
+        val newChapterIndex = (currentChapterIndex + delta).coerceIn(0, book.chapters.lastIndex)
+
+        if (currentChapterIndex != newChapterIndex) {
+            var pageCounter = 0
+            for (i in 0 until newChapterIndex) {
+                pageCounter += book.chapters[i].imageHrefs.size
+            }
+            val newPage = pageCounter + 1
+
+            readingProgressRepository.saveProgress(book.filePath, newPage)
+            _state.update {
+                it.copy(
+                    currentPageInBook = newPage,
+                    currentChapterIndex = newChapterIndex
+                )
+            }
         }
     }
 
@@ -657,6 +691,54 @@ class MainViewModel(
             is Event.Library -> handleLibraryEvent(event)
             is Event.Navigate -> _state.update { it.copy(currentScreen = event.screen) }
             is Event.ToggleAboutDialog -> _state.update { it.copy(showAboutDialog = event.show) }
+        }
+    }
+
+    private fun handleLibraryEvent(event: Event.Library) {
+        when (event) {
+            is Event.Library.ScanForBooks -> scanForLibraryBooks()
+            is Event.Library.OpenFileDirectly -> viewModelScope.launch {
+                _state.update { it.copy(filePickerPurpose = FilePickerRequest.FilePurpose.OPEN_DIRECTLY) }
+                _filePickerRequest.emit(FilePickerRequest.OpenFile(FilePickerRequest.FilePurpose.OPEN_DIRECTLY))
+            }
+            is Event.Library.OpenBook -> viewModelScope.launch { openBook(event.bookPath) }
+            is Event.Library.CloseBook -> closeBook()
+            is Event.Library.NextChapter -> changeChapter(1)
+            is Event.Library.PreviousChapter -> changeChapter(-1)
+            is Event.Library.ChangeReaderTheme -> _state.update { it.copy(readerTheme = event.theme) }
+            is Event.Library.GoToPage -> {
+                val book = _state.value.currentBook ?: return
+                val newPage = event.page
+
+                var pagesCounted = 0
+                var newChapterIndex = 0
+                for ((idx, chap) in book.chapters.withIndex()) {
+                    val chapterSize = chap.imageHrefs.size
+                    if (newPage > pagesCounted && newPage <= pagesCounted + chapterSize) {
+                        newChapterIndex = idx
+                        break
+                    }
+                    pagesCounted += chapterSize
+                }
+
+                readingProgressRepository.saveProgress(book.filePath, newPage)
+                _state.update {
+                    it.copy(
+                        currentPageInBook = newPage,
+                        currentChapterIndex = newChapterIndex
+                    )
+                }
+            }
+            is Event.Library.ZoomIn -> _state.update { it.copy(readerImageScale = (it.readerImageScale + 0.2f).coerceIn(0.1f, 3.0f)) }
+            is Event.Library.ZoomOut -> _state.update { it.copy(readerImageScale = (it.readerImageScale - 0.2f).coerceIn(0.1f, 3.0f)) }
+            is Event.Library.ResetImageScale -> _state.update { it.copy(readerImageScale = 1.0f) }
+            is Event.Library.UpdateProgress -> {
+                _state.value.currentBook?.let { book ->
+                    readingProgressRepository.saveProgress(book.filePath, event.currentPage)
+                }
+                _state.update { it.copy(currentPageInBook = event.currentPage, currentChapterIndex = event.currentChapterIndex) }
+            }
+            is Event.Library.ToggleToc -> _state.update { it.copy(showReaderToc = !it.showReaderToc) }
         }
     }
 

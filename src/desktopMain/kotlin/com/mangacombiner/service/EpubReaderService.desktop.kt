@@ -1,6 +1,8 @@
 package com.mangacombiner.service
 
 import com.mangacombiner.util.Logger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import net.lingala.zip4j.ZipFile
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
@@ -8,19 +10,19 @@ import java.io.File
 import java.net.URI
 
 actual class EpubReaderService {
-    actual suspend fun parseEpub(filePath: String): Book? {
+    actual suspend fun parseEpub(filePath: String): Book? = withContext(Dispatchers.IO) {
         val epubFile = File(filePath)
-        if (!epubFile.exists()) return null
+        if (!epubFile.exists()) return@withContext null
 
         try {
             ZipFile(epubFile).use { zip ->
-                val containerEntry = zip.getFileHeader("META-INF/container.xml") ?: return null
+                val containerEntry = zip.getFileHeader("META-INF/container.xml") ?: return@withContext null
                 val opfPath = zip.getInputStream(containerEntry).use {
                     val doc = Jsoup.parse(it, "UTF-8", "", Parser.xmlParser())
                     doc.selectFirst("rootfile")?.attr("full-path")
-                } ?: return null
+                } ?: return@withContext null
 
-                val opfEntry = zip.getFileHeader(opfPath) ?: return null
+                val opfEntry = zip.getFileHeader(opfPath) ?: return@withContext null
                 val opfDoc = zip.getInputStream(opfEntry).use {
                     Jsoup.parse(it, "UTF-8", "", Parser.xmlParser())
                 }
@@ -44,14 +46,14 @@ actual class EpubReaderService {
                     val chapterDoc = Jsoup.parse(chapterContent)
                     val chapterTitle = chapterDoc.title()
 
-                    val chapterImages = chapterDoc.select("img").mapNotNull { img ->
-                        val imgHref = img.attr("src")
-                        val imgPath = URI(chapterPath).resolve(imgHref).path.removePrefix("/")
-                        zip.getFileHeader(imgPath)?.let { zip.getInputStream(it).use { stream -> stream.readBytes() } }
+                    // Resolve image paths relative to the chapter file, creating a full path from the zip root
+                    val imageHrefs = chapterDoc.select("img").map { img ->
+                        val relativePath = img.attr("src")
+                        URI(chapterPath).resolve(relativePath).path.removePrefix("/")
                     }
 
-                    if (chapterImages.isNotEmpty()) {
-                        ChapterContent(chapterTitle, chapterImages)
+                    if (imageHrefs.isNotEmpty()) {
+                        ChapterContent(chapterTitle, imageHrefs)
                     } else {
                         null
                     }
@@ -64,12 +66,11 @@ actual class EpubReaderService {
                         chapterRegex.find(chapter.title)?.groupValues?.get(1)?.trim() ?: chapter.title
                     }
                     .map { (chapterTitle, pages) ->
-                        val allImages = pages.flatMap { it.imageResources }
-                        ChapterContent(title = chapterTitle, imageResources = allImages)
+                        val allImageHrefs = pages.flatMap { it.imageHrefs }
+                        ChapterContent(title = chapterTitle, imageHrefs = allImageHrefs)
                     }
 
-
-                return Book(
+                Book(
                     filePath = filePath,
                     title = title,
                     coverImage = coverImageBytes,
@@ -78,7 +79,21 @@ actual class EpubReaderService {
             }
         } catch (e: Exception) {
             Logger.logError("Failed to parse EPUB with zip4j: $filePath", e)
-            return null
+            null
+        }
+    }
+
+    actual suspend fun extractImage(filePath: String, imageHref: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            // The imageHref is now the full, resolved path within the zip. No more parsing is needed.
+            ZipFile(filePath).use { zip ->
+                zip.getFileHeader(imageHref)?.let {
+                    zip.getInputStream(it).use { stream -> stream.readBytes() }
+                }
+            }
+        } catch (e: Exception) {
+            Logger.logError("Failed to extract image '$imageHref' from '$filePath'", e)
+            null
         }
     }
 }

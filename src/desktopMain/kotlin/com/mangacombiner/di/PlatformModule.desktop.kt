@@ -23,7 +23,7 @@ actual fun platformModule(): Module = module {
 
     // Provide the Desktop-specific implementation for the common interface
     singleOf(::DesktopDownloader).bind<BackgroundDownloader>()
-    single { EpubReaderService() }
+    singleOf(::EpubReaderService).bind<EpubReaderService>()
     single { ReadingProgressRepository() }
 
     // ViewModel for Desktop - updated with proxy services

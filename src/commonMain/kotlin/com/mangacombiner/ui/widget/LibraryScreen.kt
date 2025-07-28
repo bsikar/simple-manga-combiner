@@ -74,10 +74,10 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                 }
                 else -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(150.dp),
+                        columns = GridCells.Adaptive(120.dp), // Use a smaller minimum size for more columns
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(state.libraryBooks, key = { it.filePath }) { book ->
                             Card(
@@ -92,36 +92,22 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                                             Image(
                                                 bitmap = bitmap,
                                                 contentDescription = book.title,
-                                                modifier = Modifier.height(200.dp).fillMaxWidth(),
+                                                modifier = Modifier.height(160.dp).fillMaxWidth(), // Reduced height
                                                 contentScale = ContentScale.Crop
                                             )
                                         } else {
                                             // Placeholder for books without a cover
-                                            Box(modifier = Modifier.height(200.dp).fillMaxWidth().background(MaterialTheme.colors.surface.copy(alpha = 0.5f)))
+                                            Box(modifier = Modifier.height(160.dp).fillMaxWidth().background(MaterialTheme.colors.surface.copy(alpha = 0.5f)))
                                         }
 
-                                        // Book Title with scrim for better readability
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(
-                                                    Brush.verticalGradient(
-                                                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)),
-                                                        startY = 0f,
-                                                        endY = 40f
-                                                    )
-                                                )
-                                                .padding(top = 16.dp, bottom = 8.dp, start = 8.dp, end = 8.dp),
-                                            contentAlignment = Alignment.BottomStart
-                                        ) {
-                                            Text(
-                                                text = book.title,
-                                                style = MaterialTheme.typography.subtitle2,
-                                                color = Color.White,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
+                                        // Book Title (no scrim, just plain text below)
+                                        Text(
+                                            text = book.title,
+                                            modifier = Modifier.padding(8.dp),
+                                            style = MaterialTheme.typography.caption, // Smaller font
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             }

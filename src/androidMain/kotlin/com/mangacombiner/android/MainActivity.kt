@@ -1,5 +1,6 @@
 package com.mangacombiner.android
 
+import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
@@ -39,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     private val viewModel: MainViewModel by viewModel<MainViewModel>()
 
     private var currentFolderPickerRequestType: FilePickerRequest.PathType? = null
+    private var currentFilePickerPurpose: FilePickerRequest.FilePurpose? = null
 
     /**
      * Launcher for picking individual files with support for EPUB formats.
@@ -46,7 +48,14 @@ class MainActivity : AppCompatActivity() {
      */
     private val filePickerLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-            uri?.let { handleFileUri(it) }
+            uri?.let {
+                // For direct file opening, we need persistent access across restarts.
+                if (currentFilePickerPurpose == FilePickerRequest.FilePurpose.OPEN_DIRECTLY) {
+                    contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                handleFileUri(it)
+            }
+            currentFilePickerPurpose = null
         }
 
     /**
@@ -56,6 +65,8 @@ class MainActivity : AppCompatActivity() {
     private val folderPickerLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
             uri?.let {
+                // Persist permissions so the app can access this folder later
+                contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                 currentFolderPickerRequestType?.let { type ->
                     val path = it.toString()
                     viewModel.onFolderSelected(path, type)
@@ -75,9 +86,10 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             viewModel.filePickerRequest.collectLatest { request ->
                 when (request) {
-                    is FilePickerRequest.OpenFile -> filePickerLauncher.launch(
-                        arrayOf("application/epub+zip")
-                    )
+                    is FilePickerRequest.OpenFile -> {
+                        currentFilePickerPurpose = request.purpose
+                        filePickerLauncher.launch(arrayOf("application/epub+zip"))
+                    }
                     is FilePickerRequest.OpenFolder -> {
                         currentFolderPickerRequestType = request.forPath
                         folderPickerLauncher.launch(null)
@@ -147,11 +159,25 @@ class MainActivity : AppCompatActivity() {
      * and notifying the ViewModel with the local file path.
      */
     private fun handleFileUri(uri: Uri) {
+        // For direct opening, we pass the persistent URI directly.
+        // For updating, we copy to a temp file as before.
+        val path = if (currentFilePickerPurpose == FilePickerRequest.FilePurpose.OPEN_DIRECTLY) {
+            uri.toString()
+        } else {
+            copyUriToCache(uri)
+        }
+
+        path?.let {
+            viewModel.onFileSelected(it)
+            Logger.logInfo("File processed successfully: $it")
+        }
+    }
+
+    private fun copyUriToCache(uri: Uri): String? {
         try {
             val fileName = getFileName(uri) ?: "temp_manga_file_${System.currentTimeMillis()}"
             val tempFile = File(cacheDir, fileName)
 
-            // Ensure cache directory exists
             cacheDir.mkdirs()
 
             contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -162,14 +188,13 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (tempFile.exists() && tempFile.length() > 0) {
-                viewModel.onFileSelected(tempFile.absolutePath)
-                Logger.logInfo("File processed successfully: ${tempFile.name}")
+                return tempFile.absolutePath
             } else {
                 throw Exception("File copy resulted in empty or missing file")
             }
         } catch (e: Exception) {
             Logger.logError("Failed to process selected file from URI: $uri", e)
-            // Could show a user-friendly error dialog here if needed
+            return null
         }
     }
 
