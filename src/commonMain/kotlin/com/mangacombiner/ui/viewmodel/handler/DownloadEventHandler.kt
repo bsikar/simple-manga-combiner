@@ -182,7 +182,8 @@ private fun MainViewModel.onClearDownloadInputs() {
 
 private fun MainViewModel.onPickLocalFile() {
     viewModelScope.launch {
-        _filePickerRequest.emit(FilePickerRequest.OpenFile)
+        _state.update { it.copy(filePickerPurpose = FilePickerRequest.FilePurpose.UPDATE_LOCAL) }
+        _filePickerRequest.emit(FilePickerRequest.OpenFile(FilePickerRequest.FilePurpose.UPDATE_LOCAL))
     }
 }
 

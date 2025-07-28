@@ -8,6 +8,7 @@ import java.util.prefs.Preferences
 
 actual class SettingsRepository {
     private val prefs = Preferences.userNodeForPackage(AppSettings::class.java)
+    private val pathDelimiter = "|||" // A delimiter unlikely to be in a file path
 
     companion object {
         private const val THEME = "theme"
@@ -32,6 +33,7 @@ actual class SettingsRepository {
         private const val PROXY_ENABLED_ON_STARTUP = "proxy_enabled_on_startup"
         private const val IP_LOOKUP_URL = "ip_lookup_url"
         private const val CUSTOM_IP_LOOKUP_URL = "custom_ip_lookup_url"
+        private const val LIBRARY_SCAN_PATHS = "library_scan_paths"
     }
 
     actual fun saveSettings(settings: AppSettings) {
@@ -58,6 +60,7 @@ actual class SettingsRepository {
         prefs.putBoolean(PROXY_ENABLED_ON_STARTUP, settings.proxyEnabledOnStartup)
         prefs.put(IP_LOOKUP_URL, settings.ipLookupUrl)
         prefs.put(CUSTOM_IP_LOOKUP_URL, settings.customIpLookupUrl)
+        prefs.put(LIBRARY_SCAN_PATHS, settings.libraryScanPaths.joinToString(pathDelimiter))
     }
 
     actual fun loadSettings(): AppSettings {
@@ -65,6 +68,7 @@ actual class SettingsRepository {
         val defaultSettings = AppSettings()
         val savedThemeName = prefs.get(THEME, defaultSettings.theme.name)
         val savedProxyTypeName = prefs.get(PROXY_TYPE, defaultSettings.proxyType.name)
+        val savedPaths = prefs.get(LIBRARY_SCAN_PATHS, "")
 
         return AppSettings(
             theme = AppTheme.entries.find { it.name == savedThemeName } ?: defaultSettings.theme,
@@ -88,7 +92,8 @@ actual class SettingsRepository {
             offlineMode = prefs.getBoolean(OFFLINE_MODE, defaultSettings.offlineMode),
             proxyEnabledOnStartup = prefs.getBoolean(PROXY_ENABLED_ON_STARTUP, defaultSettings.proxyEnabledOnStartup),
             ipLookupUrl = prefs.get(IP_LOOKUP_URL, defaultSettings.ipLookupUrl),
-            customIpLookupUrl = prefs.get(CUSTOM_IP_LOOKUP_URL, defaultSettings.customIpLookupUrl)
+            customIpLookupUrl = prefs.get(CUSTOM_IP_LOOKUP_URL, defaultSettings.customIpLookupUrl),
+            libraryScanPaths = if (savedPaths.isBlank()) emptySet() else savedPaths.split(pathDelimiter).toSet()
         )
     }
 }

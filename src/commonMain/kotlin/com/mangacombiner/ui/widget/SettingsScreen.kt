@@ -7,9 +7,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -111,6 +109,88 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        Card(elevation = 4.dp) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Output Settings", style = MaterialTheme.typography.h6)
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Default Location:", style = MaterialTheme.typography.body1)
+                    Box(modifier = Modifier.tooltipHoverFix()) {
+                        OutlinedButton(onClick = { outputDropdownExpanded = true }) {
+                            Text(state.defaultOutputLocation)
+                            Icon(Icons.Default.ArrowDropDown, "Default Location")
+                        }
+                        DropdownMenu(
+                            expanded = outputDropdownExpanded,
+                            onDismissRequest = { outputDropdownExpanded = false }
+                        ) {
+                            outputLocations.forEach { location ->
+                                DropdownMenuItem(onClick = {
+                                    onEvent(Event.Settings.UpdateDefaultOutputLocation(location))
+                                    outputDropdownExpanded = false
+                                }) { Text(location) }
+                            }
+                        }
+                    }
+                }
+
+                if (state.defaultOutputLocation == "Custom") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Path: ${state.customDefaultOutputPath}",
+                            style = MaterialTheme.typography.body2,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Button(onClick = { onEvent(Event.Settings.PickCustomDefaultPath) }) {
+                            Text("Browse...")
+                        }
+                    }
+                }
+            }
+        }
+
+        Card(elevation = 4.dp) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Library Folders", style = MaterialTheme.typography.h6)
+                Text(
+                    "The library will scan all folders added here for EPUB files. If this list is empty, it will default to your 'Default Output Location'.",
+                    style = MaterialTheme.typography.caption
+                )
+                Spacer(Modifier.height(8.dp))
+
+                state.libraryScanPaths.forEach { path ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(path, modifier = Modifier.weight(1f), style = MaterialTheme.typography.body2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        IconButton(onClick = { onEvent(Event.Settings.RemoveLibraryScanPath(path)) }) {
+                            Icon(Icons.Default.Delete, "Remove Folder")
+                        }
+                    }
+                    Divider()
+                }
+
+                Button(
+                    onClick = { onEvent(Event.Settings.AddLibraryScanPath) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Add Library Folder")
                 }
             }
         }
@@ -322,56 +402,6 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                         }
                         state.ipCheckError?.let { error ->
                             Text(error, color = MaterialTheme.colors.error, style = MaterialTheme.typography.caption)
-                        }
-                    }
-                }
-            }
-        }
-
-        Card(elevation = 4.dp) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Output Settings", style = MaterialTheme.typography.h6)
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Default Location:", style = MaterialTheme.typography.body1)
-                    Box(modifier = Modifier.tooltipHoverFix()) {
-                        OutlinedButton(onClick = { outputDropdownExpanded = true }) {
-                            Text(state.defaultOutputLocation)
-                            Icon(Icons.Default.ArrowDropDown, "Default Location")
-                        }
-                        DropdownMenu(
-                            expanded = outputDropdownExpanded,
-                            onDismissRequest = { outputDropdownExpanded = false }
-                        ) {
-                            outputLocations.forEach { location ->
-                                DropdownMenuItem(onClick = {
-                                    onEvent(Event.Settings.UpdateDefaultOutputLocation(location))
-                                    outputDropdownExpanded = false
-                                }) { Text(location) }
-                            }
-                        }
-                    }
-                }
-
-                if (state.defaultOutputLocation == "Custom") {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Path: ${state.customDefaultOutputPath}",
-                            style = MaterialTheme.typography.body2,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Button(onClick = { onEvent(Event.Settings.PickCustomDefaultPath) }) {
-                            Text("Browse...")
                         }
                     }
                 }

@@ -38,6 +38,7 @@ data class UiState(
     val proxyEnabledOnStartup: Boolean = AppSettings.Defaults.PROXY_ENABLED_ON_STARTUP,
     val ipLookupUrl: String = AppSettings.Defaults.IP_LOOKUP_URL,
     val customIpLookupUrl: String = AppSettings.Defaults.CUSTOM_IP_LOOKUP_URL,
+    val libraryScanPaths: Set<String> = AppSettings.Defaults.LIBRARY_SCAN_PATHS,
 
     // Proxy status
     val proxyStatus: ProxyStatus = ProxyStatus.UNVERIFIED,
@@ -71,6 +72,7 @@ data class UiState(
     val isAnalyzingFile: Boolean = false,
     val showChapterDialog: Boolean = false,
     val chaptersToPreselect: Set<String> = emptySet(),
+    val filePickerPurpose: FilePickerRequest.FilePurpose? = null,
 
     // Operation state
     val operationState: OperationState = OperationState.IDLE,
@@ -132,7 +134,8 @@ data class UiState(
     val totalPagesInBook: Int = 0,
     val readerTheme: ReaderTheme = ReaderTheme.BLACK,
     val readerImageScale: Float = 1.0f,
-    val isLibraryLoading: Boolean = false
+    val isLibraryLoading: Boolean = false,
+    val showReaderToc: Boolean = false
 )
 
 // Extension function to convert UiState to AppSettings
@@ -158,5 +161,6 @@ fun UiState.toAppSettings() = AppSettings(
     offlineMode = offlineMode,
     proxyEnabledOnStartup = proxyEnabledOnStartup,
     ipLookupUrl = ipLookupUrl,
-    customIpLookupUrl = customIpLookupUrl
+    customIpLookupUrl = customIpLookupUrl,
+    libraryScanPaths = libraryScanPaths
 )

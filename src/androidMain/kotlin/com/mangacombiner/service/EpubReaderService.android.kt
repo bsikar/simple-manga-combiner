@@ -35,7 +35,7 @@ actual class EpubReaderService {
                 }
 
                 val chapterIds = opfDoc.select("spine > itemref").map { it.attr("idref") }
-                val chapters = chapterIds.mapNotNull { id ->
+                val pageLevelChapters = chapterIds.mapNotNull { id ->
                     val chapterHref = manifest[id] ?: return@mapNotNull null
                     val chapterPath = URI(opfPath).resolve(chapterHref).path.removePrefix("/")
                     val chapterEntry = zip.getFileHeader(chapterPath) ?: return@mapNotNull null
@@ -57,11 +57,23 @@ actual class EpubReaderService {
                     }
                 }
 
+                // Group page-level entries into logical chapters
+                val chapterRegex = Regex("""^(.*?)(?: - Page \d+|$)""")
+                val groupedChapters = pageLevelChapters
+                    .groupBy { chapter ->
+                        chapterRegex.find(chapter.title)?.groupValues?.get(1)?.trim() ?: chapter.title
+                    }
+                    .map { (chapterTitle, pages) ->
+                        val allImages = pages.flatMap { it.imageResources }
+                        ChapterContent(title = chapterTitle, imageResources = allImages)
+                    }
+
+
                 return Book(
                     filePath = filePath,
                     title = title,
                     coverImage = coverImageBytes,
-                    chapters = chapters
+                    chapters = groupedChapters
                 )
             }
         } catch (e: Exception) {

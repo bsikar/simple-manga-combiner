@@ -30,7 +30,8 @@ data class AppSettings(
     val offlineMode: Boolean = Defaults.OFFLINE_MODE,
     val proxyEnabledOnStartup: Boolean = Defaults.PROXY_ENABLED_ON_STARTUP,
     val ipLookupUrl: String = Defaults.IP_LOOKUP_URL,
-    val customIpLookupUrl: String = Defaults.CUSTOM_IP_LOOKUP_URL
+    val customIpLookupUrl: String = Defaults.CUSTOM_IP_LOOKUP_URL,
+    val libraryScanPaths: Set<String> = Defaults.LIBRARY_SCAN_PATHS
 ) {
     /**
      * A companion object that holds all default application settings,
@@ -59,5 +60,6 @@ data class AppSettings(
         const val PROXY_ENABLED_ON_STARTUP = false
         const val IP_LOOKUP_URL = "https://ipinfo.io/json"
         const val CUSTOM_IP_LOOKUP_URL = ""
+        val LIBRARY_SCAN_PATHS: Set<String> = emptySet()
     }
 }

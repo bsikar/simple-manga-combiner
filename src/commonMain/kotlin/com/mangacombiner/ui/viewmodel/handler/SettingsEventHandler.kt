@@ -9,7 +9,7 @@ import com.mangacombiner.ui.viewmodel.state.ProxyStatus
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
 import io.ktor.client.call.*
-import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
@@ -70,6 +70,12 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         is Event.Settings.UpdateProxyPass -> {
             _state.update { it.copy(proxyPass = event.pass) }
             onUpdateProxySetting()
+        }
+        is Event.Settings.AddLibraryScanPath -> viewModelScope.launch {
+            _filePickerRequest.emit(FilePickerRequest.OpenFolder(FilePickerRequest.PathType.LIBRARY_SCAN_ADD))
+        }
+        is Event.Settings.RemoveLibraryScanPath -> _state.update {
+            it.copy(libraryScanPaths = it.libraryScanPaths - event.path)
         }
     }
 }

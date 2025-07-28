@@ -33,6 +33,7 @@ actual class SettingsRepository(private val context: Context) {
         private const val PROXY_ENABLED_ON_STARTUP = "proxy_enabled_on_startup"
         private const val IP_LOOKUP_URL = "ip_lookup_url"
         private const val CUSTOM_IP_LOOKUP_URL = "custom_ip_lookup_url"
+        private const val LIBRARY_SCAN_PATHS = "library_scan_paths"
     }
 
     actual fun saveSettings(settings: AppSettings) {
@@ -60,6 +61,7 @@ actual class SettingsRepository(private val context: Context) {
             putBoolean(PROXY_ENABLED_ON_STARTUP, settings.proxyEnabledOnStartup)
             putString(IP_LOOKUP_URL, settings.ipLookupUrl)
             putString(CUSTOM_IP_LOOKUP_URL, settings.customIpLookupUrl)
+            putStringSet(LIBRARY_SCAN_PATHS, settings.libraryScanPaths)
         }
     }
 
@@ -91,7 +93,8 @@ actual class SettingsRepository(private val context: Context) {
             offlineMode = prefs.getBoolean(OFFLINE_MODE, defaultSettings.offlineMode),
             proxyEnabledOnStartup = prefs.getBoolean(PROXY_ENABLED_ON_STARTUP, defaultSettings.proxyEnabledOnStartup),
             ipLookupUrl = prefs.getString(IP_LOOKUP_URL, defaultSettings.ipLookupUrl) ?: defaultSettings.ipLookupUrl,
-            customIpLookupUrl = prefs.getString(CUSTOM_IP_LOOKUP_URL, defaultSettings.customIpLookupUrl) ?: defaultSettings.customIpLookupUrl
+            customIpLookupUrl = prefs.getString(CUSTOM_IP_LOOKUP_URL, defaultSettings.customIpLookupUrl) ?: defaultSettings.customIpLookupUrl,
+            libraryScanPaths = prefs.getStringSet(LIBRARY_SCAN_PATHS, defaultSettings.libraryScanPaths) ?: defaultSettings.libraryScanPaths
         )
     }
 }

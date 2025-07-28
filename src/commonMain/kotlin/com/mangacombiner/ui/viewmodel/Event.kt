@@ -44,6 +44,8 @@ sealed interface Event {
         object RequestRestoreDefaults : Settings
         object ConfirmRestoreDefaults : Settings
         object CancelRestoreDefaults : Settings
+        object AddLibraryScanPath : Settings
+        data class RemoveLibraryScanPath(val path: String) : Settings
     }
 
     sealed interface Search : Event {
@@ -171,15 +173,17 @@ sealed interface Event {
 
     sealed interface Library : Event {
         object ScanForBooks : Library
-        object ScanCustomFolder : Library
+        object OpenFileDirectly : Library
         data class OpenBook(val bookPath: String) : Library
         object CloseBook : Library
         object NextChapter : Library
         object PreviousChapter : Library
         data class ChangeReaderTheme(val theme: ReaderTheme) : Library
         data class GoToPage(val page: Int) : Library
-        data class ChangeImageScale(val scale: Float) : Library
+        object ZoomIn : Library
+        object ZoomOut : Library
         object ResetImageScale : Library
+        object ToggleToc : Library
         data class UpdateProgress(val currentPage: Int, val currentChapterIndex: Int) : Library
     }
 }
