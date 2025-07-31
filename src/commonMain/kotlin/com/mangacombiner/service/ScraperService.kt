@@ -15,6 +15,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
 import kotlinx.coroutines.delay
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import java.io.IOException
 import java.net.URI
 import java.net.URLEncoder
@@ -241,7 +242,57 @@ class ScraperService {
         }
     }
 
-    suspend fun findAllSeriesUrls(client: HttpClient, startUrl: String, userAgent: String): List<SearchResult> {
+    private suspend fun scrapeManhwaUs(client: HttpClient, startUrl: String, userAgent: String): List<SearchResult> {
+        val allResults = mutableSetOf<SearchResult>()
+        var nextPageUrl: String? = startUrl
+
+        while (nextPageUrl != null) {
+            Logger.logInfo("Scraping page: $nextPageUrl")
+
+            try {
+                val response: String = client.get(nextPageUrl) {
+                    header(HttpHeaders.UserAgent, userAgent)
+                }.body()
+                val soup = Jsoup.parse(response, nextPageUrl)
+
+                val seriesOnPage = soup.select("div.page-item-detail").mapNotNull { element ->
+                    val titleElement = element.selectFirst("div.item-summary h3 a")
+                    val title = titleElement?.text()?.trim()
+                    val url = titleElement?.absUrl("href")
+                    if (title != null && url != null) {
+                        SearchResult(title = title, url = url, thumbnailUrl = "")
+                    } else {
+                        null
+                    }
+                }
+
+                if (seriesOnPage.isEmpty()) {
+                    Logger.logInfo("No more series found on this page. Stopping scrape.")
+                    break
+                }
+
+                seriesOnPage.forEach { Logger.logInfo("  - Found: ${it.title}") }
+                allResults.addAll(seriesOnPage)
+
+                // Correctly find the "next" link by selecting the anchor tag within the list item with class "next"
+                val nextLinkElement = soup.selectFirst("li.next a")
+                nextPageUrl = nextLinkElement?.absUrl("href")
+
+                if (nextPageUrl == null) {
+                    Logger.logInfo("No 'next' page link found. Reached the end of the list.")
+                }
+
+                delay(Random.nextLong(250, 750)) // Polite delay
+
+            } catch (e: Exception) {
+                Logger.logError("Error scraping page '$nextPageUrl'", e)
+                break // Stop on error
+            }
+        }
+        return allResults.distinctBy { it.url }
+    }
+
+    private suspend fun scrapeMadara(client: HttpClient, startUrl: String, userAgent: String): List<SearchResult> {
         val allResults = mutableSetOf<SearchResult>()
         val baseUrl = URI(startUrl).let { "${it.scheme}://${it.host}" }
         val ajaxUrl = "$baseUrl/wp-admin/admin-ajax.php"
@@ -315,8 +366,22 @@ class ScraperService {
                 break
             }
         }
-        val uniqueResults = allResults.distinctBy { it.url }
-        Logger.logInfo("Total unique series found across all pages: ${uniqueResults.size}")
-        return uniqueResults.toList()
+        return allResults.distinctBy { it.url }
+    }
+
+    suspend fun findAllSeriesUrls(client: HttpClient, startUrl: String, userAgent: String): List<SearchResult> {
+        val host = try { URI(startUrl).host.replace("www.", "") } catch (e: Exception) { "" }
+
+        val results = when(host) {
+            "manhwaus.net" -> scrapeManhwaUs(client, startUrl, userAgent)
+            "mangaread.org" -> scrapeMadara(client, startUrl, userAgent)
+            else -> {
+                Logger.logError("Unsupported scrape source: $host. Only mangaread.org and manhwaus.net are supported for the --scrape command.")
+                emptyList()
+            }
+        }
+
+        Logger.logInfo("Total unique series found across all pages: ${results.size}")
+        return results
     }
 }
