@@ -1,5 +1,7 @@
 package com.mangacombiner.di
 
+import com.mangacombiner.data.NsfwRepository
+import com.mangacombiner.data.SafeOverrideRepository
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.service.AndroidBackgroundDownloader
 import com.mangacombiner.service.BackgroundDownloader
@@ -30,6 +32,8 @@ actual fun platformModule(): Module = module {
 
     // Settings repository with Android SharedPreferences backing
     single { SettingsRepository(androidContext()) }
+    single { NsfwRepository(androidContext()) }
+    single { SafeOverrideRepository(androidContext()) }
 
     // File operations using Android's Storage Access Framework
     factory { FileMover(androidContext()) }

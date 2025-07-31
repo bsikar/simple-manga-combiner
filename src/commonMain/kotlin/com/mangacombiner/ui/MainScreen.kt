@@ -44,7 +44,6 @@ fun MainScreen(viewModel: MainViewModel) {
         }
     }
 
-    // **FIX:** The ModalDrawer is now at the highest level, wrapping the entire Scaffold.
     ModalDrawer(
         drawerState = drawerState,
         gesturesEnabled = drawerState.isOpen, // Allow swiping only when open

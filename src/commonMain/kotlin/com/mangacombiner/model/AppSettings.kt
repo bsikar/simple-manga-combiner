@@ -28,6 +28,7 @@ data class AppSettings(
     val zoomFactor: Float = Defaults.ZOOM_FACTOR,
     val fontSizePreset: String = Defaults.FONT_SIZE_PRESET,
     val offlineMode: Boolean = Defaults.OFFLINE_MODE,
+    val allowNsfw: Boolean = Defaults.ALLOW_NSFW,
     val proxyEnabledOnStartup: Boolean = Defaults.PROXY_ENABLED_ON_STARTUP,
     val ipLookupUrl: String = Defaults.IP_LOOKUP_URL,
     val customIpLookupUrl: String = Defaults.CUSTOM_IP_LOOKUP_URL,
@@ -57,9 +58,13 @@ data class AppSettings(
         const val ZOOM_FACTOR = 1.0f
         const val FONT_SIZE_PRESET = "Medium"
         const val OFFLINE_MODE = false
+        const val ALLOW_NSFW = false
         const val PROXY_ENABLED_ON_STARTUP = false
         const val IP_LOOKUP_URL = "https://ipinfo.io/json"
         const val CUSTOM_IP_LOOKUP_URL = ""
         val LIBRARY_SCAN_PATHS: Set<String> = emptySet()
+        val nsfwGenres = setOf(
+            "18+", "adult", "erotic", "erotica", "explicit", "lewd", "mature", "nsfw", "pornographic", "r18", "sex", "sexual content", "xxx", "porn"
+        )
     }
 }

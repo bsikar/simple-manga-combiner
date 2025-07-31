@@ -99,14 +99,15 @@ private fun MainViewModel.performSearch() {
     _state.update { it.copy(isSearching = true, searchResults = emptyList(), originalSearchResults = emptyList()) }
 
     searchJob = viewModelScope.launch(Dispatchers.IO) {
-        val source = _state.value.searchSource
+        val s = _state.value
+        val source = s.searchSource
         Logger.logInfo("Searching for '$query' on '$source'...")
 
-        val userAgent = UserAgent.browsers[_state.value.userAgentName] ?: UserAgent.browsers.values.first()
-        val client = createHttpClient(_state.value.proxyUrl)
+        val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
+        val client = createHttpClient(s.proxyUrl)
 
         try {
-            val initialResults = scraperService.search(client, query, userAgent, source)
+            val initialResults = scraperService.search(client, query, userAgent, source, s.allowNsfw)
 
             if (initialResults.isEmpty()) {
                 Logger.logInfo("No results found for '$query'.")

@@ -28,6 +28,7 @@ actual class EpubReaderService {
                 }
 
                 val title = opfDoc.selectFirst("metadata > dc|title")?.text() ?: "Unknown Title"
+                val genres = opfDoc.select("metadata > dc|subject").map { it.text() }
                 val manifest = opfDoc.select("manifest > item").associate { it.id() to it.attr("href") }
                 val coverId = opfDoc.selectFirst("metadata > meta[name=cover]")?.attr("content")
                 val coverHref = coverId?.let { manifest[it] }
@@ -80,7 +81,8 @@ actual class EpubReaderService {
                     filePath = filePath,
                     title = title,
                     coverImage = coverImageBytes,
-                    chapters = groupedChapters
+                    chapters = groupedChapters,
+                    genres = genres.takeIf { it.isNotEmpty() }
                 )
             }
         } catch (e: Exception) {

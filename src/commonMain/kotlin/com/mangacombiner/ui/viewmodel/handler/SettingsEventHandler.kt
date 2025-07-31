@@ -6,6 +6,7 @@ import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.state.ProxyStatus
+import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
 import io.ktor.client.call.*
@@ -30,6 +31,7 @@ internal fun MainViewModel.handleSettingsEvent(event: Event.Settings) {
         is Event.Settings.UpdateProxyUrl -> _state.update { it.copy(proxyUrl = event.url) }
         is Event.Settings.TogglePerWorkerUserAgent -> _state.update { it.copy(perWorkerUserAgent = event.isEnabled) }
         is Event.Settings.ToggleOfflineMode -> _state.update { it.copy(offlineMode = event.isEnabled) }
+        is Event.Settings.ToggleAllowNsfw -> _state.update { it.copy(allowNsfw = event.isEnabled) } // New event handler
         is Event.Settings.ToggleProxyOnStartup -> _state.update { it.copy(proxyEnabledOnStartup = event.isEnabled) }
         is Event.Settings.UpdateIpLookupUrl -> _state.update { it.copy(ipLookupUrl = event.url) }
         is Event.Settings.UpdateCustomIpLookupUrl -> _state.update { it.copy(customIpLookupUrl = event.url) }
@@ -133,6 +135,7 @@ private fun MainViewModel.onConfirmRestoreDefaults() {
             zoomFactor = defaultSettings.zoomFactor,
             fontSizePreset = defaultSettings.fontSizePreset,
             offlineMode = defaultSettings.offlineMode,
+            allowNsfw = defaultSettings.allowNsfw,
             proxyEnabledOnStartup = defaultSettings.proxyEnabledOnStartup
         )
     }

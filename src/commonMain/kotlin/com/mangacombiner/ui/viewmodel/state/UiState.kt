@@ -35,6 +35,7 @@ data class UiState(
     val zoomFactor: Float = AppSettings.Defaults.ZOOM_FACTOR,
     val fontSizePreset: String = AppSettings.Defaults.FONT_SIZE_PRESET,
     val offlineMode: Boolean = AppSettings.Defaults.OFFLINE_MODE,
+    val allowNsfw: Boolean = AppSettings.Defaults.ALLOW_NSFW,
     val proxyEnabledOnStartup: Boolean = AppSettings.Defaults.PROXY_ENABLED_ON_STARTUP,
     val ipLookupUrl: String = AppSettings.Defaults.IP_LOOKUP_URL,
     val customIpLookupUrl: String = AppSettings.Defaults.CUSTOM_IP_LOOKUP_URL,
@@ -141,7 +142,9 @@ data class UiState(
     val showReaderToc: Boolean = false,
     val isCurrentPageText: Boolean = false,
     val showDeleteConfirmationDialog: Boolean = false,
-    val bookToModify: String? = null
+    val bookToModify: String? = null,
+    val manuallyMarkedNsfw: Set<String> = emptySet(),
+    val manuallyMarkedSafe: Set<String> = emptySet()
 )
 
 // Extension function to convert UiState to AppSettings
@@ -165,6 +168,7 @@ fun UiState.toAppSettings() = AppSettings(
     zoomFactor = zoomFactor,
     fontSizePreset = fontSizePreset,
     offlineMode = offlineMode,
+    allowNsfw = allowNsfw,
     proxyEnabledOnStartup = proxyEnabledOnStartup,
     ipLookupUrl = ipLookupUrl,
     customIpLookupUrl = customIpLookupUrl,

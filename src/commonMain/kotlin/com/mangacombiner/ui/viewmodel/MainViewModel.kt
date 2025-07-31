@@ -1,5 +1,7 @@
 package com.mangacombiner.ui.viewmodel
 
+import com.mangacombiner.data.NsfwRepository
+import com.mangacombiner.data.SafeOverrideRepository
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.model.DownloadJob
 import com.mangacombiner.model.IpInfo
@@ -39,7 +41,9 @@ class MainViewModel(
     internal val proxyMonitorService: ProxyMonitorService,
     internal val networkInterceptor: NetworkInterceptor,
     internal val epubReaderService: EpubReaderService,
-    internal val readingProgressRepository: ReadingProgressRepository
+    internal val readingProgressRepository: ReadingProgressRepository,
+    internal val nsfwRepository: NsfwRepository,
+    internal val safeOverrideRepository: SafeOverrideRepository
 ) : PlatformViewModel() {
 
     internal val _state: MutableStateFlow<UiState>
@@ -70,6 +74,8 @@ class MainViewModel(
 
     init {
         val savedSettings = settingsRepository.loadSettings()
+        val manuallyMarkedNsfw = nsfwRepository.loadNsfwPaths()
+        val manuallyMarkedSafe = safeOverrideRepository.loadSafePaths()
         Logger.isDebugEnabled = savedSettings.debugLog
         val effectiveDefaultLocation = savedSettings.defaultOutputLocation
         val initialOutputPath = when (effectiveDefaultLocation) {
@@ -106,10 +112,13 @@ class MainViewModel(
                 fontSizePreset = savedSettings.fontSizePreset,
                 outputPath = initialOutputPath,
                 offlineMode = savedSettings.offlineMode,
+                allowNsfw = savedSettings.allowNsfw,
                 proxyEnabledOnStartup = savedSettings.proxyEnabledOnStartup,
                 proxyConnectionState = ProxyMonitorService.ProxyConnectionState.UNKNOWN,
                 ipLookupUrl = savedSettings.ipLookupUrl,
-                libraryScanPaths = savedSettings.libraryScanPaths
+                libraryScanPaths = savedSettings.libraryScanPaths,
+                manuallyMarkedNsfw = manuallyMarkedNsfw,
+                manuallyMarkedSafe = manuallyMarkedSafe
             )
         )
         state = _state.asStateFlow()
@@ -348,10 +357,10 @@ class MainViewModel(
                 val client = createHttpClient(buildProxyUrl(s.proxyType, s.proxyHost, s.proxyPort, s.proxyUser, s.proxyPass))
                 Logger.logInfo("Fetching chapter list for: $url")
                 val userAgent = UserAgent.browsers[s.userAgentName] ?: UserAgent.browsers.values.first()
-                val (seriesMetadata, chapters) = scraperService.fetchSeriesDetails(client, url, userAgent)
+                val (seriesMetadata, chapters) = scraperService.fetchSeriesDetails(client, url, userAgent, s.allowNsfw)
                 client.close()
 
-                if (chapters.isNotEmpty()) {
+                if (seriesMetadata != null && chapters.isNotEmpty()) {
                     val allChapters = chapters.map { (chapUrl, title) ->
                         val sanitizedTitle = FileUtils.sanitizeFilename(title)
                         val comparableKey = SlugUtils.toComparableKey(title)
@@ -399,7 +408,7 @@ class MainViewModel(
                         )
                     }
                 } else {
-                    Logger.logError("Could not find any chapters at the provided URL.")
+                    Logger.logError("Could not find any chapters at the provided URL or the series was filtered.")
                 }
             } catch (e: ProxyKillSwitchException) {
                 Logger.logError("Kill switch blocked chapter fetching: ${e.message}")
@@ -768,7 +777,59 @@ class MainViewModel(
             is Event.Library.CancelDeleteBook -> {
                 _state.update { it.copy(showDeleteConfirmationDialog = false, bookToModify = null) }
             }
+            is Event.Library.ToggleNsfw -> onToggleNsfw(event.bookPath)
+            is Event.Library.ToggleSafeOverride -> onToggleSafeOverride(event.bookPath)
         }
+    }
+
+    private fun onToggleNsfw(bookPath: String) {
+        val currentNsfwPaths = state.value.manuallyMarkedNsfw
+        val isCurrentlyMarked = bookPath in currentNsfwPaths
+        val newNsfwState = !isCurrentlyMarked
+
+        nsfwRepository.setNsfw(bookPath, newNsfwState)
+
+        val updatedNsfwPaths = if (newNsfwState) {
+            currentNsfwPaths + bookPath
+        } else {
+            currentNsfwPaths - bookPath
+        }
+
+        // If we're marking as NSFW, remove any safe override.
+        var updatedSafePaths = state.value.manuallyMarkedSafe
+        if (newNsfwState && updatedSafePaths.contains(bookPath)) {
+            safeOverrideRepository.setSafe(bookPath, false)
+            updatedSafePaths = updatedSafePaths - bookPath
+            Logger.logDebug { "Removed safe override for '${File(bookPath).name}' because it was marked as NSFW." }
+        }
+
+        _state.update { it.copy(manuallyMarkedNsfw = updatedNsfwPaths, manuallyMarkedSafe = updatedSafePaths) }
+        Logger.logInfo("Marked '${File(bookPath).name}' as ${if (newNsfwState) "NSFW" else "SFW"}.")
+    }
+
+    private fun onToggleSafeOverride(bookPath: String) {
+        val currentSafePaths = state.value.manuallyMarkedSafe
+        val isCurrentlyMarked = bookPath in currentSafePaths
+        val newSafeState = !isCurrentlyMarked
+
+        safeOverrideRepository.setSafe(bookPath, newSafeState)
+
+        val updatedSafePaths = if (newSafeState) {
+            currentSafePaths + bookPath
+        } else {
+            currentSafePaths - bookPath
+        }
+
+        // If we're marking as safe, remove any manual NSFW flag.
+        var updatedNsfwPaths = state.value.manuallyMarkedNsfw
+        if (newSafeState && updatedNsfwPaths.contains(bookPath)) {
+            nsfwRepository.setNsfw(bookPath, false)
+            updatedNsfwPaths = updatedNsfwPaths - bookPath
+            Logger.logDebug { "Removed manual NSFW flag for '${File(bookPath).name}' because it was marked as safe." }
+        }
+
+        _state.update { it.copy(manuallyMarkedSafe = updatedSafePaths, manuallyMarkedNsfw = updatedNsfwPaths) }
+        Logger.logInfo("Marked '${File(bookPath).name}' with a safe override: $newSafeState.")
     }
 
     fun onFileSelected(path: String) {
@@ -1141,6 +1202,7 @@ class MainViewModel(
             chapters = s.fetchedChapters,
             workers = s.workers,
             userAgents = userAgents,
+            allowNsfw = s.allowNsfw,
             seriesMetadata = s.seriesMetadata
         )
     }

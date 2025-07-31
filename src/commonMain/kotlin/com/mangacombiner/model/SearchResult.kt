@@ -11,7 +11,8 @@ data class SearchResult(
     val isExpanded: Boolean = Defaults.IS_EXPANDED,
     val chapterCount: Int? = Defaults.CHAPTER_COUNT,
     val chapterRange: String? = Defaults.CHAPTER_RANGE,
-    val chapters: List<Pair<String, String>> = Defaults.CHAPTERS
+    val chapters: List<Pair<String, String>> = Defaults.CHAPTERS,
+    val genres: List<String>? = Defaults.GENRES
 ) {
     companion object Defaults {
         const val IS_FETCHING_DETAILS = false
@@ -19,5 +20,6 @@ data class SearchResult(
         val CHAPTER_COUNT: Int? = null
         val CHAPTER_RANGE: String? = null
         val CHAPTERS: List<Pair<String, String>> = emptyList()
+        val GENRES: List<String>? = null
     }
 }

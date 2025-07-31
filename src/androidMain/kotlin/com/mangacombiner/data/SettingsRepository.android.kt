@@ -30,6 +30,7 @@ actual class SettingsRepository(private val context: Context) {
         private const val ZOOM_FACTOR = "zoom_factor"
         private const val FONT_SIZE_PRESET = "font_size_preset"
         private const val OFFLINE_MODE = "offline_mode"
+        private const val ALLOW_NSFW = "allow_nsfw" // New key
         private const val PROXY_ENABLED_ON_STARTUP = "proxy_enabled_on_startup"
         private const val IP_LOOKUP_URL = "ip_lookup_url"
         private const val CUSTOM_IP_LOOKUP_URL = "custom_ip_lookup_url"
@@ -58,6 +59,7 @@ actual class SettingsRepository(private val context: Context) {
             putFloat(ZOOM_FACTOR, settings.zoomFactor)
             putString(FONT_SIZE_PRESET, settings.fontSizePreset)
             putBoolean(OFFLINE_MODE, settings.offlineMode)
+            putBoolean(ALLOW_NSFW, settings.allowNsfw)
             putBoolean(PROXY_ENABLED_ON_STARTUP, settings.proxyEnabledOnStartup)
             putString(IP_LOOKUP_URL, settings.ipLookupUrl)
             putString(CUSTOM_IP_LOOKUP_URL, settings.customIpLookupUrl)
@@ -91,6 +93,7 @@ actual class SettingsRepository(private val context: Context) {
             zoomFactor = prefs.getFloat(ZOOM_FACTOR, defaultSettings.zoomFactor),
             fontSizePreset = prefs.getString(FONT_SIZE_PRESET, defaultSettings.fontSizePreset) ?: defaultSettings.fontSizePreset,
             offlineMode = prefs.getBoolean(OFFLINE_MODE, defaultSettings.offlineMode),
+            allowNsfw = prefs.getBoolean(ALLOW_NSFW, defaultSettings.allowNsfw),
             proxyEnabledOnStartup = prefs.getBoolean(PROXY_ENABLED_ON_STARTUP, defaultSettings.proxyEnabledOnStartup),
             ipLookupUrl = prefs.getString(IP_LOOKUP_URL, defaultSettings.ipLookupUrl) ?: defaultSettings.ipLookupUrl,
             customIpLookupUrl = prefs.getString(CUSTOM_IP_LOOKUP_URL, defaultSettings.customIpLookupUrl) ?: defaultSettings.customIpLookupUrl,

@@ -79,7 +79,6 @@ actual open class PlatformViewModel : ViewModel() {
 
     /** Helper function to set the state for the reader screen. */
     private suspend fun openReaderWithBook(book: Book) {
-        // NEW: Open the persistent file handle for fast image access
         mainViewModel.epubReaderService.openBookForReading(book)
 
         val lastPage = mainViewModel.readingProgressRepository.getProgress(book.filePath)

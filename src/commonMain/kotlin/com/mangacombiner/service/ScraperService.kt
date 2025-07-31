@@ -1,5 +1,6 @@
 package com.mangacombiner.service
 
+import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.toSlug
@@ -23,10 +24,23 @@ import kotlin.random.Random
 
 class ScraperService {
 
+    private fun filterNsfw(series: List<SearchResult>, allowNsfw: Boolean): List<SearchResult> {
+        if (allowNsfw) return series
+        return series.filter { result ->
+            result.genres?.none { genre -> AppSettings.Defaults.nsfwGenres.contains(genre.lowercase()) } ?: true
+        }
+    }
+
+    private fun filterNsfw(seriesMetadata: SeriesMetadata, allowNsfw: Boolean): SeriesMetadata? {
+        if (allowNsfw) return seriesMetadata
+        val hasNsfwGenre = seriesMetadata.genres?.any { genre -> AppSettings.Defaults.nsfwGenres.contains(genre.lowercase()) } ?: false
+        return if (hasNsfwGenre) null else seriesMetadata
+    }
+
     /**
      * Fetches detailed information for a manga series, including metadata and chapter list.
      */
-    suspend fun fetchSeriesDetails(client: HttpClient, seriesUrl: String, userAgent: String): Pair<SeriesMetadata, List<Pair<String, String>>> {
+    suspend fun fetchSeriesDetails(client: HttpClient, seriesUrl: String, userAgent: String, allowNsfw: Boolean): Pair<SeriesMetadata?, List<Pair<String, String>>> {
         val host = URI(seriesUrl).host.replace("www.", "")
         Logger.logDebug { "Fetching series details from host: $host" }
 
@@ -122,8 +136,15 @@ class ScraperService {
                 throw IllegalArgumentException("Unsupported website: $host")
             }
         }
+
+        val filteredMetadata = filterNsfw(seriesMetadata, allowNsfw)
+        if (filteredMetadata == null) {
+            Logger.logInfo("Filtered out NSFW series: ${seriesMetadata.title}")
+            return null to emptyList()
+        }
+
         val chapters = findChapterUrlsAndTitles(soup, seriesUrl)
-        return seriesMetadata to chapters
+        return filteredMetadata to chapters
     }
 
     private fun findChapterUrlsAndTitles(soup: org.jsoup.nodes.Document, seriesUrl: String): List<Pair<String, String>> {
@@ -154,7 +175,7 @@ class ScraperService {
         }
     }
 
-    suspend fun search(client: HttpClient, query: String, userAgent: String, source: String): List<SearchResult> {
+    suspend fun search(client: HttpClient, query: String, userAgent: String, source: String, allowNsfw: Boolean): List<SearchResult> {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
 
         val searchUrl = when (source) {
@@ -181,20 +202,21 @@ class ScraperService {
                 return emptyList()
             }
 
-            return resultElements.mapNotNull { element ->
-                // Use site-specific selectors for title and image elements
-                val (titleElement, imageElement) = when (source) {
+            val results = resultElements.mapNotNull { element ->
+                val (titleElement, imageElement, genreElement) = when (source) {
                     "manhwaus.net" -> {
                         val title = element.selectFirst("div.item-summary h3 a")
                         val image = element.selectFirst("div.item-thumb a img")
-                        title to image
+                        val genres = element.select("div.item-summary .list-genres a").map { it.text() }
+                        Triple(title, image, genres)
                     }
                     "mangaread.org" -> {
                         val title = element.selectFirst(".tab-summary .post-title a")
                         val image = element.selectFirst(".tab-thumb a img")
-                        title to image
+                        val genres = element.select(".tab-meta .genres-content a").map { it.text() }
+                        Triple(title, image, genres)
                     }
-                    else -> null to null
+                    else -> Triple(null, null, null)
                 }
 
                 val title = titleElement?.text()?.trim()
@@ -202,11 +224,12 @@ class ScraperService {
                 val thumbnailUrl = imageElement?.absUrl("data-src") ?: imageElement?.absUrl("src")
 
                 if (title != null && url != null && thumbnailUrl != null) {
-                    SearchResult(title, url, thumbnailUrl)
+                    SearchResult(title, url, thumbnailUrl, genres = genreElement)
                 } else {
                     null
                 }
             }
+            return filterNsfw(results, allowNsfw)
         } catch (e: Exception) {
             when (e) {
                 is ClientRequestException, is IOException -> {
@@ -242,7 +265,7 @@ class ScraperService {
         }
     }
 
-    private suspend fun scrapeManhwaUs(client: HttpClient, startUrl: String, userAgent: String): List<SearchResult> {
+    private suspend fun scrapeManhwaUs(client: HttpClient, startUrl: String, userAgent: String, allowNsfw: Boolean): List<SearchResult> {
         val allResults = mutableSetOf<SearchResult>()
         var nextPageUrl: String? = startUrl
 
@@ -259,8 +282,9 @@ class ScraperService {
                     val titleElement = element.selectFirst("div.item-summary h3 a")
                     val title = titleElement?.text()?.trim()
                     val url = titleElement?.absUrl("href")
+                    val genres = element.select("div.item-summary .list-genres a").map { it.text() }
                     if (title != null && url != null) {
-                        SearchResult(title = title, url = url, thumbnailUrl = "")
+                        SearchResult(title = title, url = url, thumbnailUrl = "", genres = genres)
                     } else {
                         null
                     }
@@ -271,8 +295,9 @@ class ScraperService {
                     break
                 }
 
-                seriesOnPage.forEach { Logger.logInfo("  - Found: ${it.title}") }
-                allResults.addAll(seriesOnPage)
+                val filteredSeries = filterNsfw(seriesOnPage, allowNsfw)
+                filteredSeries.forEach { Logger.logInfo("  - Found: ${it.title}") }
+                allResults.addAll(filteredSeries)
 
                 // Correctly find the "next" link by selecting the anchor tag within the list item with class "next"
                 val nextLinkElement = soup.selectFirst("li.next a")
@@ -292,7 +317,7 @@ class ScraperService {
         return allResults.distinctBy { it.url }
     }
 
-    private suspend fun scrapeMadara(client: HttpClient, startUrl: String, userAgent: String): List<SearchResult> {
+    private suspend fun scrapeMadara(client: HttpClient, startUrl: String, userAgent: String, allowNsfw: Boolean): List<SearchResult> {
         val allResults = mutableSetOf<SearchResult>()
         val baseUrl = URI(startUrl).let { "${it.scheme}://${it.host}" }
         val ajaxUrl = "$baseUrl/wp-admin/admin-ajax.php"
@@ -330,7 +355,7 @@ class ScraperService {
                 }
 
                 val soup = Jsoup.parse(response, baseUrl)
-                val seriesElements = soup.select("div.page-item-detail a[href*='/manga/'], div.page-item-detail a[href*='/webtoon/']")
+                val seriesElements = soup.select("div.page-item-detail")
 
                 if (seriesElements.isEmpty()) {
                     Logger.logInfo("No more series found on this page. Stopping scrape.")
@@ -338,23 +363,27 @@ class ScraperService {
                 }
 
                 val resultsOnPage = seriesElements.mapNotNull { element ->
-                    val url = element.absUrl("href")
-                    val title = element.attr("title")
+                    val titleElement = element.selectFirst("a[href*='/manga/'], a[href*='/webtoon/']")
+                    val url = titleElement?.absUrl("href")
+                    val title = titleElement?.attr("title")
+                    val genres = element.select(".genres-content a").map { it.text() }
 
-                    if (title.isNotBlank() && url.isNotBlank()) {
-                        SearchResult(title = title, url = url, thumbnailUrl = "")
+                    if (title != null && title.isNotBlank() && url != null && url.isNotBlank()) {
+                        SearchResult(title = title, url = url, thumbnailUrl = "", genres = genres)
                     } else {
                         null
                     }
                 }.toSet()
 
-                if (resultsOnPage.isNotEmpty()) {
-                    resultsOnPage.forEach {
+                val filteredResults = filterNsfw(resultsOnPage.toList(), allowNsfw)
+
+                if (filteredResults.isNotEmpty()) {
+                    filteredResults.forEach {
                         Logger.logInfo("  - Found: ${it.title}")
                     }
                 }
 
-                allResults.addAll(resultsOnPage)
+                allResults.addAll(filteredResults)
                 page++
                 delay(Random.nextLong(250, 750)) // Polite delay
 
@@ -369,12 +398,12 @@ class ScraperService {
         return allResults.distinctBy { it.url }
     }
 
-    suspend fun findAllSeriesUrls(client: HttpClient, startUrl: String, userAgent: String): List<SearchResult> {
+    suspend fun findAllSeriesUrls(client: HttpClient, startUrl: String, userAgent: String, allowNsfw: Boolean): List<SearchResult> {
         val host = try { URI(startUrl).host.replace("www.", "") } catch (e: Exception) { "" }
 
         val results = when(host) {
-            "manhwaus.net" -> scrapeManhwaUs(client, startUrl, userAgent)
-            "mangaread.org" -> scrapeMadara(client, startUrl, userAgent)
+            "manhwaus.net" -> scrapeManhwaUs(client, startUrl, userAgent, allowNsfw)
+            "mangaread.org" -> scrapeMadara(client, startUrl, userAgent, allowNsfw)
             else -> {
                 Logger.logError("Unsupported scrape source: $host. Only mangaread.org and manhwaus.net are supported for the --scrape command.")
                 emptyList()

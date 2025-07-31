@@ -27,11 +27,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mangacombiner.model.AppSettings
+import com.mangacombiner.service.Book
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.state.LibrarySortOption
 import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.bytesToImageBitmap
+
+private fun isBookNsfw(book: Book, manuallyMarkedNsfw: Set<String>, manuallyMarkedSafe: Set<String>): Boolean {
+    // If a book is manually marked as safe, it is never considered NSFW.
+    if (book.filePath in manuallyMarkedSafe) {
+        return false
+    }
+    // Otherwise, it's NSFW if it's manually marked as such OR has an NSFW genre.
+    if (book.filePath in manuallyMarkedNsfw) {
+        return true
+    }
+    return book.genres?.any { genre -> AppSettings.Defaults.nsfwGenres.contains(genre.lowercase()) } ?: false
+}
 
 @Composable
 fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
@@ -116,19 +130,27 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
 
-            val filteredAndSortedBooks = remember(state.libraryBooks, state.librarySearchQuery, state.librarySortOption) {
-                val filtered = if (state.librarySearchQuery.isBlank()) {
+            val filteredAndSortedBooks = remember(state.libraryBooks, state.librarySearchQuery, state.librarySortOption, state.allowNsfw, state.manuallyMarkedNsfw, state.manuallyMarkedSafe) {
+                val nsfwFilteredBooks = if (state.allowNsfw) {
                     state.libraryBooks
                 } else {
                     state.libraryBooks.filter { book ->
+                        !isBookNsfw(book, state.manuallyMarkedNsfw, state.manuallyMarkedSafe)
+                    }
+                }
+
+                val searchFilteredBooks = if (state.librarySearchQuery.isBlank()) {
+                    nsfwFilteredBooks
+                } else {
+                    nsfwFilteredBooks.filter { book ->
                         book.title.contains(state.librarySearchQuery, ignoreCase = true)
                     }
                 }
 
                 when (state.librarySortOption) {
-                    LibrarySortOption.DEFAULT -> filtered
-                    LibrarySortOption.TITLE_ASC -> filtered.sortedBy { it.title }
-                    LibrarySortOption.TITLE_DESC -> filtered.sortedByDescending { it.title }
+                    LibrarySortOption.DEFAULT -> searchFilteredBooks
+                    LibrarySortOption.TITLE_ASC -> searchFilteredBooks.sortedBy { it.title }
+                    LibrarySortOption.TITLE_DESC -> searchFilteredBooks.sortedByDescending { it.title }
                 }
             }
 
@@ -214,6 +236,27 @@ fun LibraryScreen(state: UiState, onEvent: (Event) -> Unit) {
                                                     onEvent(Event.Library.EditBook(book.filePath))
                                                     showMenu = false
                                                 }) { Text("Edit Chapters") }
+
+                                                val isConsideredNsfw = isBookNsfw(book, state.manuallyMarkedNsfw, state.manuallyMarkedSafe)
+
+                                                if (isConsideredNsfw) {
+                                                    // If the book is currently NSFW, the only action is to make it SFW
+                                                    DropdownMenuItem(onClick = {
+                                                        onEvent(Event.Library.ToggleSafeOverride(book.filePath))
+                                                        showMenu = false
+                                                    }) {
+                                                        Text("Mark as SFW")
+                                                    }
+                                                } else {
+                                                    // If the book is currently SFW, the only action is to make it NSFW
+                                                    DropdownMenuItem(onClick = {
+                                                        onEvent(Event.Library.ToggleNsfw(book.filePath))
+                                                        showMenu = false
+                                                    }) {
+                                                        Text("Mark as NSFW")
+                                                    }
+                                                }
+
                                                 DropdownMenuItem(onClick = {
                                                     onEvent(Event.Library.RequestDeleteBook(book.filePath))
                                                     showMenu = false

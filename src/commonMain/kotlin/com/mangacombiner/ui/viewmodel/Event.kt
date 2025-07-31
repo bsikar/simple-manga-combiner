@@ -31,6 +31,7 @@ sealed interface Event {
         data class UpdateProxyPass(val pass: String) : Settings
         data class TogglePerWorkerUserAgent(val isEnabled: Boolean) : Settings
         data class ToggleOfflineMode(val isEnabled: Boolean) : Settings
+        data class ToggleAllowNsfw(val isEnabled: Boolean) : Settings // New event
         data class ToggleProxyOnStartup(val isEnabled: Boolean) : Settings
         data class UpdateIpLookupUrl(val url: String) : Settings
         data class UpdateCustomIpLookupUrl(val url: String) : Settings
@@ -192,5 +193,7 @@ sealed interface Event {
         data class RequestDeleteBook(val bookPath: String) : Library
         object ConfirmDeleteBook : Library
         object CancelDeleteBook : Library
+        data class ToggleNsfw(val bookPath: String) : Library
+        data class ToggleSafeOverride(val bookPath: String) : Library
     }
 }

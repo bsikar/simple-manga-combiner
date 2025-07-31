@@ -42,8 +42,8 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
     // Predefined IP lookup services
     val ipServices = remember {
         mapOf(
-            "ipinfo.io" to "https://ipinfo.io/json",
-            "ipify.org" to "https://api.ipify.org?format=json",
+            "ipinfo.io" to "[https://ipinfo.io/json](https://ipinfo.io/json)",
+            "ipify.org" to "[https://api.ipify.org?format=json](https://api.ipify.org?format=json)",
             "Custom" to "custom"
         )
     }
@@ -206,6 +206,17 @@ fun SettingsScreen(state: UiState, onEvent: (Event) -> Unit) {
                 )
                 Text(
                     "Enable to modify local files, such as removing chapters from an EPUB, without needing an internet connection.",
+                    style = MaterialTheme.typography.caption,
+                    modifier = Modifier.padding(start = 16.dp)
+                )
+                Divider()
+                FormControlLabel(
+                    onClick = { onEvent(Event.Settings.ToggleAllowNsfw(!state.allowNsfw)) },
+                    control = { Switch(checked = state.allowNsfw, onCheckedChange = null) },
+                    label = { Text("Allow NSFW Content") }
+                )
+                Text(
+                    "Enable to include adult content in search results and scrapes. Disabled by default.",
                     style = MaterialTheme.typography.caption,
                     modifier = Modifier.padding(start = 16.dp)
                 )

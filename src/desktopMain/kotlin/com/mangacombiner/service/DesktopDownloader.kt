@@ -153,7 +153,7 @@ class DesktopDownloader(
                 Logger.logDebug { "Metadata not found in operation, fetching from ${op.seriesUrl}" }
                 val client = createHttpClient(null)
                 try {
-                    scraperService.fetchSeriesDetails(client, op.seriesUrl, op.userAgents.first()).first
+                    scraperService.fetchSeriesDetails(client, op.seriesUrl, op.userAgents.first(), op.allowNsfw).first
                 } finally {
                     client.close()
                 }

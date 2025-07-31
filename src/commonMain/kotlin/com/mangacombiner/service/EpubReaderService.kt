@@ -5,7 +5,8 @@ data class Book(
     val title: String,
     val coverImage: ByteArray?, // Cover is loaded once for the library view
     val chapters: List<ChapterContent>,
-    val localCachePath: String? = null // Add this line to store the path to the temp file on Android
+    val genres: List<String>? = null,
+    val localCachePath: String? = null
 )
 
 data class ChapterContent(

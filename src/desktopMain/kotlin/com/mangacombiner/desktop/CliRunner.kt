@@ -153,7 +153,6 @@ private suspend fun runUpdateProcess(
     }
 }
 
-
 private suspend fun downloadSeriesToCache(
     source: String,
     cliArgs: CliArguments,
@@ -175,7 +174,12 @@ private suspend fun downloadSeriesToCache(
 
         Logger.logInfo("--- Processing URL: $source ---")
         val listScraperAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
-        val (seriesMetadata, allOnlineChapters) = scraperService.fetchSeriesDetails(listClient, source, listScraperAgent)
+        val (seriesMetadata, allOnlineChapters) = scraperService.fetchSeriesDetails(listClient, source, listScraperAgent, cliArgs.allowNsfw)
+
+        if (seriesMetadata == null) {
+            Logger.logInfo("Series at $source was filtered out (likely NSFW content and --allow-nsfw is off). Skipping.")
+            return null
+        }
         if (allOnlineChapters.isEmpty()) {
             Logger.logError("No chapters found at $source. Skipping."); return null
         }
@@ -276,7 +280,11 @@ private suspend fun updateEpubMetadata(
     try {
         val userAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
         Logger.logInfo("Scraping metadata from source: $sourceUrl")
-        val (seriesMetadata, _) = scraperService.fetchSeriesDetails(client, sourceUrl, userAgent)
+        val (seriesMetadata, _) = scraperService.fetchSeriesDetails(client, sourceUrl, userAgent, cliArgs.allowNsfw)
+        if (seriesMetadata == null) {
+            Logger.logError("Series at $sourceUrl was filtered out or no metadata found. Cannot update.")
+            return
+        }
         Logger.logInfo("Successfully scraped metadata for: ${seriesMetadata.title}")
 
         if (!backupFile.exists()) {
@@ -423,7 +431,8 @@ data class CliArguments(
     val maxWidth: Int?,
     val jpegQuality: Int?,
     val sortBy: String,
-    val cacheDir: String?
+    val cacheDir: String?,
+    val allowNsfw: Boolean
 )
 
 private fun createDownloadOptions(
@@ -553,6 +562,7 @@ fun printCustomHelp() {
             --update-metadata                 Update metadata of existing EPUB(s) using scraped series data
             -e, --exclude <SLUG>              Exclude chapters by slug (e.g., 'chapter-4.5'). Can be used multiple times.
             --delete-original                 Delete source file after successful conversion (local files only)
+            --allow-nsfw                      Allow downloading of NSFW (Not Safe For Work) content.
 
             CACHE MANAGEMENT:
             --ignore-cache                    Force re-download all chapters, ignoring cached files
@@ -674,6 +684,7 @@ fun main(args: Array<String>) {
     val proxyPass by parser.option(ArgType.String, "proxy-pass")
     val checkIp by parser.option(ArgType.Boolean, "check-ip").default(false)
     val ipLookupUrl by parser.option(ArgType.String, "ip-lookup-url", "ilu")
+    val allowNsfw by parser.option(ArgType.Boolean, "allow-nsfw").default(false)
 
     try {
         parser.parse(args)
@@ -717,7 +728,7 @@ fun main(args: Array<String>) {
         checkIp, ipLookupUrl, perWorkerUserAgent, batchWorkers, optimize,
         maxWidth ?: if (optimize) 1200 else null,
         jpegQuality ?: if (optimize) 85 else null,
-        sortBy, cacheDir
+        sortBy, cacheDir, allowNsfw
     )
     preset?.let { cliArgs = applyPreset(it, cliArgs) }
     Logger.isDebugEnabled = cliArgs.debug
@@ -784,7 +795,7 @@ fun main(args: Array<String>) {
                             Logger.logError("Invalid URL provided for cache update: $startUrl")
                         } else {
                             Logger.logInfo("Scraping: $startUrl")
-                            val results = scraperService.findAllSeriesUrls(client, startUrl, UserAgent.browsers[cliArgs.userAgentName] ?: "")
+                            val results = scraperService.findAllSeriesUrls(client, startUrl, UserAgent.browsers[cliArgs.userAgentName] ?: "", cliArgs.allowNsfw)
                             val processedSeries = results.map { ScrapedSeries(it.title, it.url, it.chapterCount) }
                             scrapeCacheService.saveCacheForHost(hostname, ScrapedWebsiteCache(System.currentTimeMillis(), processedSeries))
                         }
@@ -911,7 +922,7 @@ fun main(args: Array<String>) {
                                 cachedData.series.map { SearchResult(it.title, it.url, "", chapterCount = it.chapterCount) }
                             } else {
                                 Logger.logInfo("Starting initial scrape from URL: $startUrl")
-                                val results = scraperService.findAllSeriesUrls(client, startUrl, UserAgent.browsers[cliArgs.userAgentName] ?: "")
+                                val results = scraperService.findAllSeriesUrls(client, startUrl, UserAgent.browsers[cliArgs.userAgentName] ?: "", cliArgs.allowNsfw)
                                 val processedSeries = results.map { ScrapedSeries(it.title, it.url, it.chapterCount) }
                                 scrapeCacheService.saveCacheForHost(hostname, ScrapedWebsiteCache(System.currentTimeMillis(), processedSeries))
                                 results
@@ -927,7 +938,7 @@ fun main(args: Array<String>) {
                 val query = urls.joinToString(" ")
                 val client = createHttpClient(buildProxyUrlFromCliArgs(cliArgs))
                 try {
-                    val results = scraperService.search(client, query, UserAgent.browsers[cliArgs.userAgentName] ?: "", cliArgs.searchSource)
+                    val results = scraperService.search(client, query, UserAgent.browsers[cliArgs.userAgentName] ?: "", cliArgs.searchSource, cliArgs.allowNsfw)
                     if (results.isEmpty()) { Logger.logInfo("No results found."); emptyList() }
                     else if (cliArgs.downloadAll) {
                         results.map { it.url }

@@ -102,6 +102,7 @@ actual class EpubReaderService : KoinComponent {
                 }
 
                 val title = opfDoc.selectFirst("metadata > dc|title")?.text() ?: "Unknown Title"
+                val genres = opfDoc.select("metadata > dc|subject").map { it.text() }
                 val manifest =
                     opfDoc.select("manifest > item").associate { it.id() to it.attr("href") }
                 val coverId = opfDoc.selectFirst("metadata > meta[name=cover]")?.attr("content")
@@ -157,7 +158,8 @@ actual class EpubReaderService : KoinComponent {
                     title = title,
                     coverImage = coverImageBytes,
                     chapters = groupedChapters,
-                    localCachePath = tempEpubFile.absolutePath
+                    localCachePath = tempEpubFile.absolutePath,
+                    genres = genres.takeIf { it.isNotEmpty() }
                 )
             }
         } catch (e: Exception) {

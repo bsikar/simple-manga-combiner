@@ -1,5 +1,7 @@
 package com.mangacombiner.di
 
+import com.mangacombiner.data.NsfwRepository
+import com.mangacombiner.data.SafeOverrideRepository
 import com.mangacombiner.data.SettingsRepository
 import com.mangacombiner.service.BackgroundDownloader
 import com.mangacombiner.service.DesktopDownloader
@@ -19,6 +21,8 @@ actual fun platformModule(): Module = module {
     factory { ClipboardManager() }
     factory<PlatformProvider> { DesktopPlatformProvider() }
     single { SettingsRepository() }
+    singleOf(::NsfwRepository)
+    singleOf(::SafeOverrideRepository)
     factory { FileMover() }
 
     // Provide the Desktop-specific implementation for the common interface
@@ -42,7 +46,9 @@ actual fun platformModule(): Module = module {
             proxyMonitorService = get(),
             networkInterceptor = get(),
             epubReaderService = get(),
-            readingProgressRepository = get()
+            readingProgressRepository = get(),
+            nsfwRepository = get(),
+            safeOverrideRepository = get()
         )
     }
 }
