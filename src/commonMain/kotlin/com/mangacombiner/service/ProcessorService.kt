@@ -1,7 +1,14 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.util.*
-import io.ktor.client.HttpClient
+import com.mangacombiner.util.EpubStructureGenerator
+import com.mangacombiner.util.FileConverter
+import com.mangacombiner.util.Logger
+import com.mangacombiner.util.SeriesMetadata
+import com.mangacombiner.util.ZipUtils
+import com.mangacombiner.util.createHttpClient
+import com.mangacombiner.util.formatSize
+import com.mangacombiner.util.getImageDimensions
+import com.mangacombiner.util.naturalSortComparator
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.isSuccess
@@ -162,15 +169,19 @@ class ProcessorService(
         return true
     }
 
+    data class EpubCreationOptions(
+        val seriesUrl: String? = null,
+        val failedChapters: Map<String, List<String>>? = null,
+        val seriesMetadata: SeriesMetadata? = null,
+        val maxWidth: Int? = null,
+        val jpegQuality: Int? = null
+    )
+
     suspend fun createEpubFromFolders(
         mangaTitle: String,
         chapterFolders: List<File>,
         outputFile: File,
-        seriesUrl: String? = null,
-        failedChapters: Map<String, List<String>>? = null,
-        seriesMetadata: SeriesMetadata? = null,
-        maxWidth: Int? = null,
-        jpegQuality: Int? = null
+        options: EpubCreationOptions = EpubCreationOptions()
     ) {
         if (outputFile.exists()) {
             outputFile.delete()
@@ -178,7 +189,7 @@ class ProcessorService(
         outputFile.parentFile?.mkdirs()
 
         Logger.logInfo("Creating EPUB archive: ${outputFile.name}...")
-        Logger.logDebug { "Processing ${chapterFolders.size} chapters with series metadata: ${seriesMetadata != null}" }
+        Logger.logDebug { "Processing ${chapterFolders.size} chapters with series metadata: ${options.seriesMetadata != null}" }
 
         val epubGenerator = EpubStructureGenerator()
         val metadata = EpubStructureGenerator.EpubMetadata()
@@ -190,7 +201,7 @@ class ProcessorService(
 
         try {
             // Download cover image if available
-            seriesMetadata?.coverImageUrl?.let { coverUrl ->
+            options.seriesMetadata?.coverImageUrl?.let { coverUrl ->
                 Logger.logInfo("Downloading cover image from: $coverUrl")
 
                 val client = createHttpClient(null)
@@ -250,7 +261,7 @@ class ProcessorService(
                     images.forEachIndexed { index, img ->
                         try {
                             val tempFile = File(tempImageDir, "${folder.name}_${index}.${img.extension}")
-                            val processedImg = processImage(img, tempFile, maxWidth, jpegQuality)
+                            val processedImg = processImage(img, tempFile, options.maxWidth, options.jpegQuality)
                             processedImages.add(processedImg)
                         } catch (e: Exception) {
                             Logger.logError("Failed to process image ${img.name} in chapter ${folder.name}: ${e.message}", e)
@@ -273,9 +284,9 @@ class ProcessorService(
                 }
 
                 // Add failure information if present
-                if (!failedChapters.isNullOrEmpty()) {
+                if (!options.failedChapters.isNullOrEmpty()) {
                     try {
-                        val failuresJson = jsonSerializer.encodeToString(failedChapters)
+                        val failuresJson = jsonSerializer.encodeToString(options.failedChapters)
                         val failuresParams = ZipParameters().apply { fileNameInZip = "OEBPS/$FAILURES_FILE" }
                         epubZip.addStream(failuresJson.byteInputStream(), failuresParams)
                         metadata.manifestItems.add("""<item id="failures" href="$FAILURES_FILE" media-type="application/json"/>""")
@@ -287,7 +298,7 @@ class ProcessorService(
 
                 // Add metadata files
                 try {
-                    epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, seriesUrl, seriesMetadata, metadata)
+                    epubGenerator.addEpubMetadataFiles(epubZip, mangaTitle, options.seriesUrl, options.seriesMetadata, metadata)
                 } catch (e: Exception) {
                     Logger.logError("Failed to add EPUB metadata files: ${e.message}", e)
                     throw e

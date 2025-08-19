@@ -3,6 +3,7 @@ package com.mangacombiner.ui.viewmodel.handler
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.OperationState
+import com.mangacombiner.util.OperationLogSettings
 import com.mangacombiner.util.logOperationSettings
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -43,10 +44,12 @@ private fun MainViewModel.onResumeOperation() {
     _state.value.activeDownloadOptions?.let {
         logOperationSettings(
             it,
-            it.chaptersToDownload.size,
-            _state.value.userAgentName,
-            _state.value.perWorkerUserAgent,
-            isResuming = true
+            OperationLogSettings(
+                chapterCount = it.chaptersToDownload.size,
+                userAgentName = _state.value.userAgentName,
+                perWorkerUserAgent = _state.value.perWorkerUserAgent,
+                isResuming = true
+            )
         )
     }
     _operationState.value = OperationState.RUNNING

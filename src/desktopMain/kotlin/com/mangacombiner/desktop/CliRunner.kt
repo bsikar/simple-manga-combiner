@@ -5,19 +5,39 @@ import com.mangacombiner.di.appModule
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.IpInfo
 import com.mangacombiner.model.ScrapedSeries
-import com.mangacombiner.model.ScrapedSeriesCache
 import com.mangacombiner.model.ScrapedWebsiteCache
 import com.mangacombiner.model.SearchResult
-import com.mangacombiner.service.*
-import com.mangacombiner.util.*
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.http.*
+import com.mangacombiner.service.CacheService
+import com.mangacombiner.service.DownloadService
+import com.mangacombiner.service.FileConverter
+import com.mangacombiner.service.ProcessorService
+import com.mangacombiner.service.ScrapeCacheService
+import com.mangacombiner.service.ScraperService
+import com.mangacombiner.util.AppVersion
+import com.mangacombiner.util.FileUtils
+import com.mangacombiner.util.LocalFileOptions
+import com.mangacombiner.util.Logger
+import com.mangacombiner.util.OperationLogSettings
+import com.mangacombiner.util.PlatformProvider
+import com.mangacombiner.util.SeriesMetadata
+import com.mangacombiner.util.UserAgent
+import com.mangacombiner.util.ZipUtils
+import com.mangacombiner.util.createHttpClient
+import com.mangacombiner.util.formatSize
+import com.mangacombiner.util.toSlug
+import io.ktor.client.call.body
+import io.ktor.client.request.get
+import io.ktor.http.isSuccess
 import kotlinx.cli.ArgParser
 import kotlinx.cli.ArgType
 import kotlinx.cli.default
 import kotlinx.cli.multiple
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -26,7 +46,6 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import org.koin.java.KoinJavaComponent.get
 import java.io.File
-import java.io.IOException
 import java.net.URI
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -53,11 +72,13 @@ private suspend fun packageSeries(
         mangaTitle = result.mangaTitle,
         chapterFolders = result.allFoldersForPackaging,
         outputFile = result.outputFile,
-        seriesUrl = result.sourceUrl,
-        failedChapters = result.failedChapters,
-        seriesMetadata = result.seriesMetadata,
-        maxWidth = cliArgs.maxWidth,
-        jpegQuality = cliArgs.jpegQuality
+        options = ProcessorService.EpubCreationOptions(
+            seriesUrl = result.sourceUrl,
+            failedChapters = result.failedChapters,
+            seriesMetadata = result.seriesMetadata,
+            maxWidth = cliArgs.maxWidth,
+            jpegQuality = cliArgs.jpegQuality
+        )
     )
 
     if (result.outputFile.exists()) {
@@ -70,18 +91,24 @@ private suspend fun packageSeries(
     }
 }
 
+private data class CliServiceDependencies(
+    val platformProvider: PlatformProvider,
+    val processorService: ProcessorService,
+    val downloadService: DownloadService,
+    val scraperService: ScraperService? = null,
+    val cacheService: CacheService? = null
+)
+
 private suspend fun runUpdateProcess(
     cliArgs: CliArguments,
     outputFile: File,
     allOnlineChapters: List<Pair<String, String>>,
     seriesMetadata: SeriesMetadata,
-    platformProvider: PlatformProvider,
-    processorService: ProcessorService,
-    downloadService: DownloadService
+    services: CliServiceDependencies
 ) {
     Logger.logInfo("--- Updating existing file: ${outputFile.name} ---")
 
-    val (localChapterSlugs, _, _) = processorService.getChaptersAndInfoFromFile(outputFile)
+    val (localChapterSlugs, _, _) = services.processorService.getChaptersAndInfoFromFile(outputFile)
     if (localChapterSlugs.isEmpty()) {
         Logger.logError("Could not read any chapters from the existing file. Please use --force to redownload.")
         return
@@ -94,25 +121,25 @@ private suspend fun runUpdateProcess(
         // Even if no new chapters, update metadata if requested
         if (cliArgs.updateMetadata) {
             Logger.logInfo("Updating metadata as requested...")
-            updateEpubMetadata(outputFile, allOnlineChapters.first().first.substringBeforeLast("/"), cliArgs, get(ScraperService::class.java), processorService)
+            updateEpubMetadata(outputFile, allOnlineChapters.first().first.substringBeforeLast("/"), cliArgs, get(ScraperService::class.java), services.processorService)
         }
         return
     }
 
     Logger.logInfo("Found ${newChapterPairs.size} new chapters to download.")
-    val tempDir = File(platformProvider.getTmpDir(), "manga-update-${UUID.randomUUID()}").apply { mkdirs() }
+    val tempDir = File(services.platformProvider.getTmpDir(), "manga-update-${UUID.randomUUID()}").apply { mkdirs() }
     val backupFile = File(outputFile.parentFile, "${outputFile.nameWithoutExtension}.backup.epub")
 
     try {
         // 1. Extract old chapters
         Logger.logInfo("Extracting ${localChapterSlugs.size} existing chapters...")
-        val oldChapterFolders = processorService.extractChaptersToDirectory(outputFile, localChapterSlugs, tempDir)
+        val oldChapterFolders = services.processorService.extractChaptersToDirectory(outputFile, localChapterSlugs, tempDir)
 
         // 2. Download new chapters
         val mangaTitle = cliArgs.title?.ifBlank { null } ?: seriesMetadata.title
         val sourceUrl = allOnlineChapters.first().first.substringBeforeLast("/")
-        val downloadOptions = createDownloadOptions(sourceUrl, newChapterPairs.toMap(), mangaTitle, cliArgs, platformProvider)
-        val downloadResult = downloadService.downloadChapters(downloadOptions, tempDir)
+        val downloadOptions = createDownloadOptions(sourceUrl, newChapterPairs.toMap(), mangaTitle, cliArgs, services.platformProvider)
+        val downloadResult = services.downloadService.downloadChapters(downloadOptions, tempDir)
         val newChapterFolders = downloadResult?.successfulFolders ?: emptyList()
 
         if (newChapterFolders.isEmpty()) {
@@ -128,15 +155,17 @@ private suspend fun runUpdateProcess(
         outputFile.copyTo(backupFile, overwrite = true)
         Logger.logInfo("Created backup: ${backupFile.name}")
 
-        processorService.createEpubFromFolders(
+        services.processorService.createEpubFromFolders(
             mangaTitle = mangaTitle,
             chapterFolders = allFoldersForPackaging,
             outputFile = outputFile,
-            seriesUrl = sourceUrl,
-            failedChapters = downloadResult?.failedChapters,
-            seriesMetadata = seriesMetadata,
-            maxWidth = cliArgs.maxWidth,
-            jpegQuality = cliArgs.jpegQuality
+            options = ProcessorService.EpubCreationOptions(
+                seriesUrl = sourceUrl,
+                failedChapters = downloadResult?.failedChapters,
+                seriesMetadata = seriesMetadata,
+                maxWidth = cliArgs.maxWidth,
+                jpegQuality = cliArgs.jpegQuality
+            )
         )
 
         if (outputFile.exists() && outputFile.length() > backupFile.length()) {
@@ -156,13 +185,9 @@ private suspend fun runUpdateProcess(
 private suspend fun downloadSeriesToCache(
     source: String,
     cliArgs: CliArguments,
-    downloadService: DownloadService,
-    scraperService: ScraperService,
-    platformProvider: PlatformProvider,
-    cacheService: CacheService,
-    processorService: ProcessorService
+    services: CliServiceDependencies
 ): DownloadResultForPackaging? {
-    val tempDir = File(platformProvider.getTmpDir())
+    val tempDir = File(services.platformProvider.getTmpDir())
     val finalProxyUrl = buildProxyUrlFromCliArgs(cliArgs)
     val listClient = createHttpClient(finalProxyUrl)
 
@@ -174,7 +199,7 @@ private suspend fun downloadSeriesToCache(
 
         Logger.logInfo("--- Processing URL: $source ---")
         val listScraperAgent = UserAgent.browsers[cliArgs.userAgentName] ?: UserAgent.browsers.values.first()
-        val (seriesMetadata, allOnlineChapters) = scraperService.fetchSeriesDetails(listClient, source, listScraperAgent, cliArgs.allowNsfw)
+        val (seriesMetadata, allOnlineChapters) = services.scraperService!!.fetchSeriesDetails(listClient, source, listScraperAgent, cliArgs.allowNsfw)
 
         if (seriesMetadata == null) {
             Logger.logInfo("Series at $source was filtered out (likely NSFW content and --allow-nsfw is off). Skipping.")
@@ -185,7 +210,7 @@ private suspend fun downloadSeriesToCache(
         }
 
         val mangaTitle = cliArgs.title?.ifBlank { null } ?: seriesMetadata.title
-        val finalOutputPath = cliArgs.outputPath.ifBlank { platformProvider.getUserDownloadsDir() ?: "" }
+        val finalOutputPath = cliArgs.outputPath.ifBlank { services.platformProvider.getUserDownloadsDir() ?: "" }
         val finalFileName = "${FileUtils.sanitizeFilename(mangaTitle)}.${cliArgs.format}"
         val outputFile = File(finalOutputPath, finalFileName)
 
@@ -193,7 +218,7 @@ private suspend fun downloadSeriesToCache(
             when {
                 cliArgs.skipExisting -> { Logger.logInfo("Output file ${outputFile.name} already exists. Skipping."); return null }
                 cliArgs.update -> {
-                    runUpdateProcess(cliArgs, outputFile, allOnlineChapters, seriesMetadata, platformProvider, processorService, downloadService)
+                    runUpdateProcess(cliArgs, outputFile, allOnlineChapters, seriesMetadata, services)
                     return null // Update process is self-contained
                 }
                 !cliArgs.force && !cliArgs.dryRun -> {
@@ -213,7 +238,7 @@ private suspend fun downloadSeriesToCache(
         var chaptersToDownload = chaptersToProcess
 
         if (!cliArgs.ignoreCache) {
-            val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
+            val cachedChapterStatus = services.cacheService!!.getCachedChapterStatus(seriesSlug)
             val (cached, toDownload) = chaptersToProcess.partition {
                 cachedChapterStatus[FileUtils.sanitizeFilename(it.second)] == true
             }
@@ -234,15 +259,31 @@ private suspend fun downloadSeriesToCache(
             }
         }
 
-        val downloadOptions = createDownloadOptions(source, chaptersToDownload.toMap(), mangaTitle, cliArgs, platformProvider)
-        logOperationSettings(downloadOptions, chaptersToDownload.size, cliArgs.userAgentName, cliArgs.perWorkerUserAgent, proxy = finalProxyUrl, cacheCount = allOnlineChapters.size - chaptersToDownload.size, optimizeMode = cliArgs.optimize, cleanCache = cliArgs.cleanCache, skipExisting = cliArgs.skipExisting, updateExisting = cliArgs.update, force = cliArgs.force, maxWidth = cliArgs.maxWidth, jpegQuality = cliArgs.jpegQuality)
+        val downloadOptions = createDownloadOptions(source, chaptersToDownload.toMap(), mangaTitle, cliArgs, services.platformProvider)
+        logOperationSettings(
+            downloadOptions,
+            OperationLogSettings(
+                chapterCount = chaptersToDownload.size,
+                userAgentName = cliArgs.userAgentName,
+                perWorkerUserAgent = cliArgs.perWorkerUserAgent,
+                proxy = finalProxyUrl,
+                cacheCount = allOnlineChapters.size - chaptersToDownload.size,
+                optimizeMode = cliArgs.optimize,
+                cleanCache = cliArgs.cleanCache,
+                skipExisting = cliArgs.skipExisting,
+                updateExisting = cliArgs.update,
+                force = cliArgs.force,
+                maxWidth = cliArgs.maxWidth,
+                jpegQuality = cliArgs.jpegQuality
+            )
+        )
 
         if (cliArgs.dryRun) {
             Logger.logInfo("DRY RUN: Would download ${chaptersToDownload.size} new chapters for $source.")
             return null
         }
 
-        val downloadResult = downloadService.downloadChapters(downloadOptions, downloadDir)
+        val downloadResult = services.downloadService.downloadChapters(downloadOptions, downloadDir)
         return if (downloadResult != null && downloadResult.successfulFolders.isNotEmpty()) {
             val allFoldersForPackaging = (downloadDir.listFiles { file -> file.isDirectory }?.toList() ?: emptyList())
             DownloadResultForPackaging(mangaTitle, downloadDir, seriesSlug, outputFile, source, downloadResult.failedChapters, allFoldersForPackaging, seriesMetadata)
@@ -461,10 +502,9 @@ private fun createDownloadOptions(
 }
 
 private suspend fun CoroutineScope.runDownloadsAndPackaging(
-    sources: List<String>, cliArgs: CliArguments, downloadService: DownloadService,
-    processorService: ProcessorService, scraperService: ScraperService,
-    platformProvider: PlatformProvider,
-    cacheService: CacheService
+    sources: List<String>,
+    cliArgs: CliArguments,
+    services: CliServiceDependencies
 ) {
     val downloadSemaphore = Semaphore(cliArgs.batchWorkers)
     val packagingChannel = Channel<DownloadResultForPackaging>(Channel.UNLIMITED)
@@ -473,7 +513,7 @@ private suspend fun CoroutineScope.runDownloadsAndPackaging(
         val packagingJobs = mutableListOf<Job>()
         for (result in packagingChannel) {
             packagingJobs.add(launch {
-                packageSeries(result, cliArgs, processorService)
+                packageSeries(result, cliArgs, services.processorService)
             })
         }
         packagingJobs.joinAll()
@@ -482,7 +522,7 @@ private suspend fun CoroutineScope.runDownloadsAndPackaging(
     val downloadJobs = sources.map { src ->
         launch {
             downloadSemaphore.withPermit {
-                val downloadResult = downloadSeriesToCache(src, cliArgs, downloadService, scraperService, platformProvider, cacheService, processorService)
+                val downloadResult = downloadSeriesToCache(src, cliArgs, services)
                 if (downloadResult != null) {
                     packagingChannel.send(downloadResult)
                 }
@@ -607,7 +647,7 @@ fun printCustomHelp() {
             fast        - 8 workers, 3 batch workers, no optimization (fastest download)
             quality     - 4 workers, 1 batch worker, no optimization, original image quality
             small-size  - 2 workers, 1 batch worker, optimization enabled, max width 1000px, 75% JPEG quality
-                """.trimIndent()
+    """.trimIndent()
     println(helpText)
 }
 
@@ -953,7 +993,17 @@ fun main(args: Array<String>) {
         }
 
         if (sourcesToDownload.isNotEmpty()) {
-            runDownloadsAndPackaging(sourcesToDownload, cliArgs, downloadService, processorService, scraperService, platformProvider, cacheService)
+            runDownloadsAndPackaging(
+                sourcesToDownload,
+                cliArgs,
+                CliServiceDependencies(
+                    platformProvider = platformProvider,
+                    processorService = processorService,
+                    downloadService = downloadService,
+                    scraperService = scraperService,
+                    cacheService = cacheService
+                )
+            )
         }
         Logger.logInfo("--- All operations complete. ---")
     }

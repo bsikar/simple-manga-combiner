@@ -1,8 +1,8 @@
 package com.mangacombiner.util
 
 import android.content.ClipData
-import android.content.ClipboardManager as AndroidClipboardManager
 import android.content.Context
+import android.content.ClipboardManager as AndroidClipboardManager
 
 actual class ClipboardManager(private val context: Context) {
     actual fun copyToClipboard(text: String) {

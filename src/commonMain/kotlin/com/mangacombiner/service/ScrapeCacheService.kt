@@ -1,6 +1,5 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.model.ScrapedSeries
 import com.mangacombiner.model.ScrapedSeriesCache
 import com.mangacombiner.model.ScrapedWebsiteCache
 import com.mangacombiner.util.Logger
@@ -8,7 +7,6 @@ import com.mangacombiner.util.PlatformProvider
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.net.URI
 
 class ScrapeCacheService(private val platformProvider: PlatformProvider) {
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }

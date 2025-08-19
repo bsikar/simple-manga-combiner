@@ -13,7 +13,7 @@ fun CompletionDialog(state: UiState, onEvent: (Event) -> Unit) {
     val title = if (result?.failedChapters?.isNotEmpty() == true) "Partial Download Complete" else "Download Complete"
     val message = state.completionMessage ?: if (result?.failedChapters?.isNotEmpty() == true) {
         "A partial file has been created with ${result.successfulFolders.size} successful chapters. " +
-                "It contains metadata about the ${result.failedChapters.size} failed chapters so you can fix it later using the 'Update Local File' feature."
+            "It contains metadata about the ${result.failedChapters.size} failed chapters so you can fix it later using the 'Update Local File' feature."
     } else {
         "Successfully downloaded and packaged ${result?.successfulFolders?.size ?: 0} chapters."
     }

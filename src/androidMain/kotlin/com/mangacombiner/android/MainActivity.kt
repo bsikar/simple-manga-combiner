@@ -37,6 +37,11 @@ import java.io.FileOutputStream
  */
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        lateinit var INSTANCE: MainActivity
+            private set
+    }
+
     private val viewModel: MainViewModel by viewModel<MainViewModel>()
 
     private var currentFolderPickerRequestType: FilePickerRequest.PathType? = null
@@ -78,6 +83,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        INSTANCE = this
 
         // Disable edge-to-edge to give the status bar a solid background
         WindowCompat.setDecorFitsSystemWindows(window, true)

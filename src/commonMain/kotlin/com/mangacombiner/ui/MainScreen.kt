@@ -2,11 +2,45 @@ package com.mangacombiner.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.AlertDialog
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
+import androidx.compose.material.Checkbox
+import androidx.compose.material.Divider
+import androidx.compose.material.DrawerValue
+import androidx.compose.material.Icon
+import androidx.compose.material.LocalContentColor
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.ModalDrawer
+import androidx.compose.material.NavigationRail
+import androidx.compose.material.NavigationRailItem
+import androidx.compose.material.Scaffold
+import androidx.compose.material.Snackbar
+import androidx.compose.material.SnackbarHost
+import androidx.compose.material.Surface
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
+import androidx.compose.material.rememberDrawerState
+import androidx.compose.material.rememberScaffoldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SignalWifiOff
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -18,8 +52,24 @@ import androidx.compose.ui.unit.dp
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.Screen
-import com.mangacombiner.ui.widget.*
-import androidx.compose.material.icons.automirrored.filled.MenuBook
+import com.mangacombiner.ui.widget.AboutDialog
+import com.mangacombiner.ui.widget.BrokenDownloadDialog
+import com.mangacombiner.ui.widget.CacheViewerScreen
+import com.mangacombiner.ui.widget.ChapterSelectionDialog
+import com.mangacombiner.ui.widget.CompletionDialog
+import com.mangacombiner.ui.widget.DownloadQueueScreen
+import com.mangacombiner.ui.widget.DownloadScreen
+import com.mangacombiner.ui.widget.FormControlLabel
+import com.mangacombiner.ui.widget.JobEditDialog
+import com.mangacombiner.ui.widget.LibraryScreen
+import com.mangacombiner.ui.widget.LogScreen
+import com.mangacombiner.ui.widget.PlatformTooltip
+import com.mangacombiner.ui.widget.SearchScreen
+import com.mangacombiner.ui.widget.SettingsScreen
+import com.mangacombiner.ui.widget.TableOfContentsDrawer
+import com.mangacombiner.ui.widget.UpdateDialog
+import com.mangacombiner.ui.widget.UpdateDownloadedDialog
+import com.mangacombiner.ui.widget.WebDavScreen
 
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
@@ -320,6 +370,21 @@ fun MainScreen(viewModel: MainViewModel) {
                     dismissButton = {
                         TextButton(onClick = { viewModel.onEvent(Event.Library.CancelDeleteBook) }) { Text("Cancel") }
                     }
+                )
+            }
+            if (state.showUpdateDialog) {
+                state.latestRelease?.let {
+                    UpdateDialog(
+                        latestRelease = it,
+                        onDismissRequest = { viewModel.onEvent(Event.ToggleUpdateDialog(false)) },
+                        onUpdateClick = { viewModel.onEvent(Event.DownloadUpdate) }
+                    )
+                }
+            }
+            if (state.showUpdateDownloadedDialog) {
+                UpdateDownloadedDialog(
+                    onDismissRequest = { viewModel.onEvent(Event.ToggleUpdateDownloadedDialog(false)) },
+                    onRestartClick = { viewModel.onEvent(Event.RestartToUpdate) }
                 )
             }
         }

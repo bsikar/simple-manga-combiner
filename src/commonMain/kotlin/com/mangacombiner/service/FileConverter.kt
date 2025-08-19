@@ -67,8 +67,10 @@ class FileConverter {
                 mangaTitle = mangaTitle,
                 chapterFolders = chapterFolders,
                 outputFile = outputFile,
-                seriesUrl = ZipUtils.getSourceUrlFromEpub(options.inputFile),
-                seriesMetadata = null
+                options = ProcessorService.EpubCreationOptions(
+                    seriesUrl = ZipUtils.getSourceUrlFromEpub(options.inputFile),
+                    seriesMetadata = null
+                )
             )
             ProcessResult(outputFile.exists() && outputFile.length() > 0, outputFile)
         } finally {

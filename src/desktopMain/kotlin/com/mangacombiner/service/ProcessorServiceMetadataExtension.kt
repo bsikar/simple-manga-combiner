@@ -2,16 +2,22 @@ package com.mangacombiner.service
 
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.http.*
+import io.ktor.client.call.body
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jsoup.Jsoup
-import java.io.*
-import java.util.zip.*
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.exception.ZipException
+import org.jsoup.Jsoup
+import java.io.ByteArray
+import java.io.File
+import java.io.FileOutputStream
+import java.io.ZipEntry
+import java.io.ZipOutputStream
+import java.util.zip.*
 
 /**
  * Extension function to update EPUB metadata with scraped series information.

@@ -9,13 +9,19 @@ import androidx.core.app.NotificationCompat
 import com.mangacombiner.R
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
-import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.FileMover
+import com.mangacombiner.util.FileUtils
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.PlatformProvider
 import com.mangacombiner.util.toSlug
 import io.ktor.client.plugins.ClientRequestException
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.koin.core.component.KoinComponent
@@ -121,125 +127,189 @@ class BackgroundDownloaderService : Service(), KoinComponent {
     private suspend fun runQueuedOperation(op: QueuedOperation) {
         val metadataUpdateMutex = Mutex()
         try {
-            val initialNotification = createNotification("Starting: ${op.customTitle}", 0, 0, true)
-            startForeground(NOTIFICATION_ID, initialNotification)
-
-            Logger.logInfo("--- Starting BG Job: ${op.customTitle} (${op.jobId}) ---")
-            val tempDir = File(platformProvider.getTmpDir())
-            val seriesSlug = op.seriesUrl.toSlug()
-            val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
-
-            if (op.seriesUrl.isNotBlank()) {
-                File(tempSeriesDir, "url.txt").writeText(op.seriesUrl)
-            }
-
-            // Re-evaluate chapter status against the current cache on disk
-            val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
-            val selectedChapters = op.chapters.filter { it.selectedSource != null }
-
-            val chaptersAlreadyComplete = selectedChapters.filter {
-                val sanitizedTitle = FileUtils.sanitizeFilename(it.title)
-                // A chapter is complete if it exists in the cache and isn't marked as incomplete.
-                cachedChapterStatus[sanitizedTitle] == true
-            }
-
-            // Chapters to download are any selected chapters that are NOT complete in the cache.
-            // This correctly includes new, broken, and incomplete chapters.
-            val chaptersToDownload = selectedChapters.filter {
-                val sanitizedTitle = FileUtils.sanitizeFilename(it.title)
-                cachedChapterStatus[sanitizedTitle] != true
-            }
-
-            val allChapterFolders = chaptersAlreadyComplete
-                .map { File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)) }
-                .toMutableList()
-
-            // Correctly set initial progress
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, "Starting...", 0.05f))
-            if (chaptersAlreadyComplete.isNotEmpty()) {
-                JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = chaptersAlreadyComplete.size))
-            }
-
+            val tempSeriesDir = initializeJob(op)
+            val chapterAnalysis = analyzeChapters(op, tempSeriesDir)
+            
             var downloadResult: DownloadResult? = null
+            if (chapterAnalysis.chaptersToDownload.isNotEmpty()) {
+                downloadResult = performDownload(op, chapterAnalysis.chaptersToDownload, tempSeriesDir, metadataUpdateMutex)
+                downloadResult?.successfulFolders?.let { chapterAnalysis.allChapterFolders.addAll(it) }
+            }
 
-            if (chaptersToDownload.isNotEmpty()) {
-                val downloadOptions = DownloadOptions(
-                    seriesUrl = op.seriesUrl,
-                    chaptersToDownload = chaptersToDownload.associate { it.url to it.title },
-                    cliTitle = op.customTitle,
-                    getWorkers = { op.workers },
-                    exclude = emptyList(),
-                    format = op.outputFormat,
-                    tempDir = tempDir,
-                    getUserAgents = { op.userAgents },
-                    outputPath = op.outputPath,
-                    isPaused = { false },
-                    dryRun = false,
-                    onProgressUpdate = { chapterProgress, status ->
-                        val update = JobStatusUpdate(op.jobId, status = status, progress = chapterProgress)
-                        JobStatusHolder.postUpdate(update)
-                        notificationManager.notify(NOTIFICATION_ID, createNotification(status, (chapterProgress * 100).toInt(), 100))
-                    },
-                    onChapterCompleted = { completedChapterUrl ->
-                        serviceScope.launch {
-                            metadataUpdateMutex.withLock {
-                                JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = 1))
-                                val currentOp = queuePersistenceService.loadOperationMetadata(tempSeriesDir.absolutePath) ?: op
-                                val updatedChapters = currentOp.chapters.map { chapter ->
-                                    if (chapter.url == completedChapterUrl) {
-                                        chapter.copy(availableSources = chapter.availableSources + ChapterSource.CACHE)
-                                    } else {
-                                        chapter
-                                    }
-                                }
-                                queuePersistenceService.saveOperationMetadata(currentOp.copy(chapters = updatedChapters))
+            val tempOutputFile = packageResults(op, chapterAnalysis.allChapterFolders, downloadResult)
+            finalizeJob(op, tempOutputFile)
+
+        } catch (e: CancellationException) {
+            handleJobCancellation(op)
+        } catch (e: ClientRequestException) {
+            handleServerError(op, e)
+        } catch (e: IOException) {
+            handleNetworkError(op, e)
+        } catch (e: Exception) {
+            handleGenericError(op, e)
+        }
+    }
+
+    private fun initializeJob(op: QueuedOperation): File {
+        val initialNotification = createNotification("Starting: ${op.customTitle}", 0, 0, true)
+        startForeground(NOTIFICATION_ID, initialNotification)
+
+        Logger.logInfo("--- Starting BG Job: ${op.customTitle} (${op.jobId}) ---")
+        val tempDir = File(platformProvider.getTmpDir())
+        val seriesSlug = op.seriesUrl.toSlug()
+        val tempSeriesDir = File(tempDir, "manga-dl-$seriesSlug").apply { mkdirs() }
+
+        if (op.seriesUrl.isNotBlank()) {
+            File(tempSeriesDir, "url.txt").writeText(op.seriesUrl)
+        }
+
+        return tempSeriesDir
+    }
+
+    private data class ChapterAnalysis(
+        val chaptersToDownload: List<com.mangacombiner.model.Chapter>,
+        val allChapterFolders: MutableList<File>
+    )
+
+    private fun analyzeChapters(op: QueuedOperation, tempSeriesDir: File): ChapterAnalysis {
+        val seriesSlug = op.seriesUrl.toSlug()
+        val cachedChapterStatus = cacheService.getCachedChapterStatus(seriesSlug)
+        val selectedChapters = op.chapters.filter { it.selectedSource != null }
+
+        val chaptersAlreadyComplete = selectedChapters.filter {
+            val sanitizedTitle = FileUtils.sanitizeFilename(it.title)
+            cachedChapterStatus[sanitizedTitle] == true
+        }
+
+        val chaptersToDownload = selectedChapters.filter {
+            val sanitizedTitle = FileUtils.sanitizeFilename(it.title)
+            cachedChapterStatus[sanitizedTitle] != true
+        }
+
+        val allChapterFolders = chaptersAlreadyComplete
+            .map { File(tempSeriesDir, FileUtils.sanitizeFilename(it.title)) }
+            .toMutableList()
+
+        // Set initial progress
+        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, "Starting...", 0.05f))
+        if (chaptersAlreadyComplete.isNotEmpty()) {
+            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = chaptersAlreadyComplete.size))
+        }
+
+        return ChapterAnalysis(chaptersToDownload, allChapterFolders)
+    }
+
+    private suspend fun performDownload(
+        op: QueuedOperation,
+        chaptersToDownload: List<com.mangacombiner.model.Chapter>,
+        tempSeriesDir: File,
+        metadataUpdateMutex: Mutex
+    ): DownloadResult? {
+        val tempDir = File(platformProvider.getTmpDir())
+        val downloadOptions = createDownloadOptions(op, chaptersToDownload, tempDir, tempSeriesDir, metadataUpdateMutex)
+        return downloadService.downloadChapters(downloadOptions, tempSeriesDir)
+    }
+
+    private fun createDownloadOptions(
+        op: QueuedOperation,
+        chaptersToDownload: List<com.mangacombiner.model.Chapter>,
+        tempDir: File,
+        tempSeriesDir: File,
+        metadataUpdateMutex: Mutex
+    ): DownloadOptions {
+        return DownloadOptions(
+            seriesUrl = op.seriesUrl,
+            chaptersToDownload = chaptersToDownload.associate { it.url to it.title },
+            cliTitle = op.customTitle,
+            getWorkers = { op.workers },
+            exclude = emptyList(),
+            format = op.outputFormat,
+            tempDir = tempDir,
+            getUserAgents = { op.userAgents },
+            outputPath = op.outputPath,
+            isPaused = { false },
+            dryRun = false,
+            onProgressUpdate = { chapterProgress, status ->
+                val update = JobStatusUpdate(op.jobId, status = status, progress = chapterProgress)
+                JobStatusHolder.postUpdate(update)
+                notificationManager.notify(NOTIFICATION_ID, createNotification(status, (chapterProgress * 100).toInt(), 100))
+            },
+            onChapterCompleted = { completedChapterUrl ->
+                serviceScope.launch {
+                    metadataUpdateMutex.withLock {
+                        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, downloadedChapters = 1))
+                        val currentOp = queuePersistenceService.loadOperationMetadata(tempSeriesDir.absolutePath) ?: op
+                        val updatedChapters = currentOp.chapters.map { chapter ->
+                            if (chapter.url == completedChapterUrl) {
+                                chapter.copy(availableSources = chapter.availableSources + ChapterSource.CACHE)
+                            } else {
+                                chapter
                             }
                         }
+                        queuePersistenceService.saveOperationMetadata(currentOp.copy(chapters = updatedChapters))
                     }
-                )
-                downloadResult = downloadService.downloadChapters(downloadOptions, tempSeriesDir)
-                downloadResult?.successfulFolders?.let { allChapterFolders.addAll(it) }
+                }
             }
+        )
+    }
 
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Packaging..."))
-            notificationManager.notify(NOTIFICATION_ID, createNotification("Packaging: ${op.customTitle}", 0, 0, true))
+    private suspend fun packageResults(
+        op: QueuedOperation,
+        allChapterFolders: List<File>,
+        downloadResult: DownloadResult?
+    ): File {
+        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Packaging..."))
+        notificationManager.notify(NOTIFICATION_ID, createNotification("Packaging: ${op.customTitle}", 0, 0, true))
 
-            val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
-            val tempOutputFile = File(tempDir, finalFileName)
+        val tempDir = File(platformProvider.getTmpDir())
+        val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
+        val tempOutputFile = File(tempDir, finalFileName)
 
-            downloadService.processorService.createEpubFromFolders(
-                mangaTitle = op.customTitle,
-                chapterFolders = allChapterFolders,
-                outputFile = tempOutputFile,
+        downloadService.processorService.createEpubFromFolders(
+            mangaTitle = op.customTitle,
+            chapterFolders = allChapterFolders,
+            outputFile = tempOutputFile,
+            options = ProcessorService.EpubCreationOptions(
                 seriesUrl = op.seriesUrl,
                 failedChapters = downloadResult?.failedChapters,
                 seriesMetadata = op.seriesMetadata
             )
+        )
 
+        return tempOutputFile
+    }
 
-            fileMover.moveToFinalDestination(tempOutputFile, op.outputPath, finalFileName)
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Completed", progress = 1f, isFinished = true))
-            Logger.logInfo("--- Finished BG Job: ${op.customTitle} ---")
+    private fun finalizeJob(op: QueuedOperation, tempOutputFile: File) {
+        val finalFileName = "${FileUtils.sanitizeFilename(op.customTitle)}.${op.outputFormat}"
+        fileMover.moveToFinalDestination(tempOutputFile, op.outputPath, finalFileName)
+        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Completed", progress = 1f, isFinished = true))
+        Logger.logInfo("--- Finished BG Job: ${op.customTitle} ---")
 
-            notificationManager.notify(NOTIFICATION_ID_COMPLETED_OFFSET + op.jobId.hashCode(), createNotification("Completed: ${op.customTitle}", 0, 0, isOngoing = false))
-            stopForeground(STOP_FOREGROUND_REMOVE)
+        notificationManager.notify(NOTIFICATION_ID_COMPLETED_OFFSET + op.jobId.hashCode(), createNotification("Completed: ${op.customTitle}", 0, 0, isOngoing = false))
+        stopForeground(STOP_FOREGROUND_REMOVE)
+    }
 
-        } catch (e: CancellationException) {
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Paused", isFinished = true))
-            Logger.logInfo("Job ${op.jobId} was stopped by its manager.")
-        } catch (e: ClientRequestException) {
-            val errorMessage = "Paused (Server Error)"
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = false, errorMessage = e.message))
-            Logger.logError("Job ${op.jobId} paused due to server error: ${e.response.status}", e)
-        } catch (e: IOException) {
-            val errorMessage = "Paused (Network Error)"
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = false, errorMessage = e.message))
-            Logger.logError("Job ${op.jobId} paused due to network error", e)
-        } catch (e: Exception) {
-            val errorMessage = "Error: ${e.message?.take(40) ?: "Unknown"}"
-            Logger.logError("Job ${op.jobId} failed", e)
-            JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = true, errorMessage = e.message))
-        }
+    private fun handleJobCancellation(op: QueuedOperation) {
+        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = "Paused", isFinished = true))
+        Logger.logInfo("Job ${op.jobId} was stopped by its manager.")
+    }
+
+    private fun handleServerError(op: QueuedOperation, e: ClientRequestException) {
+        val errorMessage = "Paused (Server Error)"
+        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = false, errorMessage = e.message))
+        Logger.logError("Job ${op.jobId} paused due to server error: ${e.response.status}", e)
+    }
+
+    private fun handleNetworkError(op: QueuedOperation, e: IOException) {
+        val errorMessage = "Paused (Network Error)"
+        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = false, errorMessage = e.message))
+        Logger.logError("Job ${op.jobId} paused due to network error", e)
+    }
+
+    private fun handleGenericError(op: QueuedOperation, e: Exception) {
+        val errorMessage = "Error: ${e.message?.take(40) ?: "Unknown"}"
+        Logger.logError("Job ${op.jobId} failed", e)
+        JobStatusHolder.postUpdate(JobStatusUpdate(op.jobId, status = errorMessage, isFinished = true, errorMessage = e.message))
     }
 
     private fun acquireWakeLock(jobTitle: String) {

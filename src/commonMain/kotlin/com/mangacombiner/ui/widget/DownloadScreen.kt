@@ -1,11 +1,36 @@
 package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.*
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
+import androidx.compose.material.Card
+import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.Divider
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.LinearProgressIndicator
+import androidx.compose.material.LocalContentColor
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.OutlinedButton
+import androidx.compose.material.ProgressIndicatorDefaults
+import androidx.compose.material.Spacer
+import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
@@ -59,22 +84,24 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                         onValueChange = { onEvent(Event.Download.UpdateUrl(it)) },
                         label = { Text("Series URL") },
                         onSubmit = { onEvent(Event.Download.FetchChapters) },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = isIdle && !state.offlineMode,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                        trailingIcon = {
-                            if (state.seriesUrl.isNotBlank()) {
-                                IconButton(
-                                    onClick = { onEvent(Event.Download.ClearInputs) },
-                                    enabled = isIdle
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Clear,
-                                        contentDescription = "Clear URL and Filename"
-                                    )
+                        options = SubmitTextFieldOptions(
+                            enabled = isIdle && !state.offlineMode,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                if (state.seriesUrl.isNotBlank()) {
+                                    IconButton(
+                                        onClick = { onEvent(Event.Download.ClearInputs) },
+                                        enabled = isIdle
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Clear,
+                                            contentDescription = "Clear URL and Filename"
+                                        )
+                                    }
                                 }
                             }
-                        }
+                        )
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -130,8 +157,10 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                         label = { Text("Output Filename (without extension)") },
                         onSubmit = { onEvent(Event.Download.FetchChapters) },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = isIdle,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go)
+                        options = SubmitTextFieldOptions(
+                            enabled = isIdle,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go)
+                        )
                     )
 
                     SubmitTextField(
@@ -139,18 +168,20 @@ fun DownloadScreen(state: UiState, onEvent: (Event) -> Unit) {
                         onValueChange = { onEvent(Event.Download.UpdateOutputPath(it)) },
                         label = { Text("Output Directory") },
                         onSubmit = { onEvent(Event.Download.FetchChapters) },
-                        placeholder = { Text("Default: Your Downloads folder") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = isIdle,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                        trailingIcon = {
-                            IconButton(
-                                onClick = { onEvent(Event.Download.PickOutputPath) },
-                                enabled = isIdle
-                            ) {
-                                Icon(Icons.Default.FolderOpen, contentDescription = "Browse for output directory")
+                        options = SubmitTextFieldOptions(
+                            placeholder = { Text("Default: Your Downloads folder") },
+                            enabled = isIdle,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { onEvent(Event.Download.PickOutputPath) },
+                                    enabled = isIdle
+                                ) {
+                                    Icon(Icons.Default.FolderOpen, contentDescription = "Browse for output directory")
+                                }
                             }
-                        }
+                        )
                     )
 
                     Column(

@@ -1,15 +1,31 @@
 package com.mangacombiner.ui.viewmodel.state
 
-import com.mangacombiner.model.*
-import com.mangacombiner.service.*
-import com.mangacombiner.ui.theme.AppTheme
+import com.mangacombiner.model.AppSettings
+import com.mangacombiner.model.CachedSeries
+import com.mangacombiner.model.Chapter
+import com.mangacombiner.model.DownloadJob
+import com.mangacombiner.model.DownloadResult
+import com.mangacombiner.model.GithubRelease
+import com.mangacombiner.model.IpInfo
+import com.mangacombiner.model.ProxyType
+import com.mangacombiner.model.QueuedOperation
+import com.mangacombiner.model.SearchResult
+import com.mangacombiner.model.WebDavFile
+import com.mangacombiner.service.Book
+import com.mangacombiner.service.DownloadOptions
+import com.mangacombiner.util.SeriesMetadata
 import com.mangacombiner.service.ProxyMonitorService
+import com.mangacombiner.ui.theme.AppTheme
 import com.mangacombiner.ui.viewmodel.OperationState
 
 data class UiState(
     val currentScreen: Screen = Screen.SEARCH,
     val showAboutDialog: Boolean = false,
     val showRestoreDefaultsDialog: Boolean = false,
+    val showUpdateDialog: Boolean = false,
+    val latestRelease: GithubRelease? = null,
+    val showUpdateDownloadedDialog: Boolean = false,
+    val downloadedUpdatePath: String? = null,
 
     // Settings
     val theme: AppTheme = AppSettings.Defaults.THEME,

@@ -3,10 +3,8 @@ package com.mangacombiner.ui.viewmodel.handler
 import com.mangacombiner.service.WebDavFile
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
-import com.mangacombiner.ui.viewmodel.state.CacheSortState
-import com.mangacombiner.ui.viewmodel.state.SortCriteria
-import com.mangacombiner.ui.viewmodel.state.SortDirection
 import com.mangacombiner.util.Logger
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.update
@@ -16,7 +14,6 @@ import kotlinx.coroutines.withContext
 import net.lingala.zip4j.ZipFile
 import java.io.File
 import java.net.URI
-import kotlinx.coroutines.Dispatchers
 
 internal fun MainViewModel.handleWebDavEvent(event: Event.WebDav) {
     when (event) {

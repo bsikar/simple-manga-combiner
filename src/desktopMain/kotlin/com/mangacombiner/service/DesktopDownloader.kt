@@ -2,9 +2,19 @@ package com.mangacombiner.service
 
 import com.mangacombiner.model.QueuedOperation
 import com.mangacombiner.ui.viewmodel.state.ChapterSource
-import com.mangacombiner.util.*
+import com.mangacombiner.util.FileUtils
+import com.mangacombiner.util.FileMover
+import com.mangacombiner.util.Logger
+import com.mangacombiner.util.PlatformProvider
+import com.mangacombiner.util.createHttpClient
+import com.mangacombiner.util.toSlug
 import io.ktor.client.plugins.ClientRequestException
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
@@ -164,9 +174,11 @@ class DesktopDownloader(
                 mangaTitle = op.customTitle,
                 chapterFolders = allChapterFolders,
                 outputFile = tempOutputFile,
-                seriesUrl = op.seriesUrl,
-                failedChapters = downloadResult?.failedChapters,
-                seriesMetadata = metadata
+                options = ProcessorService.EpubCreationOptions(
+                    seriesUrl = op.seriesUrl,
+                    failedChapters = downloadResult?.failedChapters,
+                    seriesMetadata = metadata
+                )
             )
 
 

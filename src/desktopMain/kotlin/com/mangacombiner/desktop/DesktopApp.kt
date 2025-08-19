@@ -30,9 +30,9 @@ import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.widget.AboutDialog
 import com.mangacombiner.util.Logger
+import org.jetbrains.skia.Image
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.get
-import org.jetbrains.skia.Image
 import java.awt.Desktop
 import java.awt.FileDialog
 import java.awt.Frame

@@ -1,8 +1,5 @@
 package com.mangacombiner.service
 
-import com.mangacombiner.util.Logger
-import kotlinx.coroutines.flow.StateFlow
-
 /**
  * Interceptor that enforces kill switch behavior by blocking network operations
  * when the proxy is not connected.

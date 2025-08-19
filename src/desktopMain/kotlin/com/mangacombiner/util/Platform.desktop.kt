@@ -2,7 +2,9 @@ package com.mangacombiner.util
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp // Use OkHttp engine
-import io.ktor.client.plugins.*
+import io.ktor.client.plugins.HttpRequestRetry
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.plugins.logging.LogLevel
@@ -21,51 +23,54 @@ import java.net.URI
  * Creates a Ktor HttpClient using the OkHttp engine with the standard Java Authenticator
  * for reliable SOCKS5 proxy support and a strict no-fallback policy.
  */
-actual fun createHttpClient(proxyUrl: String?): HttpClient {
+private fun configureProxy(proxyUrl: String?): Proxy? {
     // Clear the JVM's global authenticator to ensure a clean state for each client.
     Authenticator.setDefault(null)
 
-    var configuredProxy: Proxy? = null
-
-    if (!proxyUrl.isNullOrBlank()) {
-        try {
-            val uri = URI(proxyUrl)
-            val host = uri.host
-            val port = if (uri.port != -1) uri.port else when (uri.scheme?.lowercase()) {
-                "http" -> 80
-                "https" -> 443
-                "socks", "socks5" -> 1080
-                else -> 1080 // Default SOCKS port
-            }
-
-            val proxyType = when (uri.scheme?.lowercase()) {
-                "http", "https" -> Proxy.Type.HTTP
-                "socks", "socks5" -> Proxy.Type.SOCKS
-                else -> throw IllegalArgumentException("Unsupported proxy scheme: ${uri.scheme}")
-            }
-
-            configuredProxy = Proxy(proxyType, InetSocketAddress(host, port))
-            Logger.logInfo("Configuring proxy: ${proxyType}://$host:$port")
-
-            val username = uri.userInfo?.split(":", limit = 2)?.getOrNull(0)
-            val password = uri.userInfo?.split(":", limit = 2)?.getOrNull(1)
-
-            // For SOCKS5, OkHttp delegates to the JVM, which uses this global authenticator.
-            if (!username.isNullOrBlank()) {
-                Authenticator.setDefault(object : Authenticator() {
-                    override fun getPasswordAuthentication(): PasswordAuthentication {
-                        return PasswordAuthentication(username, password?.toCharArray() ?: "".toCharArray())
-                    }
-                })
-                Logger.logInfo("Proxy authentication enabled for user: '$username'")
-            }
-        } catch (e: Exception) {
-            Logger.logError("Invalid proxy URL format or configuration error: $proxyUrl", e)
-            configuredProxy = null
-        }
-    } else {
-        configuredProxy = Proxy.NO_PROXY
+    if (proxyUrl.isNullOrBlank()) {
+        return Proxy.NO_PROXY
     }
+
+    try {
+        val uri = URI(proxyUrl)
+        val host = uri.host
+        val port = if (uri.port != -1) uri.port else when (uri.scheme?.lowercase()) {
+            "http" -> 80
+            "https" -> 443
+            "socks", "socks5" -> 1080
+            else -> 1080 // Default SOCKS port
+        }
+
+        val proxyType = when (uri.scheme?.lowercase()) {
+            "http", "https" -> Proxy.Type.HTTP
+            "socks", "socks5" -> Proxy.Type.SOCKS
+            else -> throw IllegalArgumentException("Unsupported proxy scheme: ${uri.scheme}")
+        }
+
+        val configuredProxy = Proxy(proxyType, InetSocketAddress(host, port))
+        Logger.logInfo("Configuring proxy: ${proxyType}://$host:$port")
+
+        val username = uri.userInfo?.split(":", limit = 2)?.getOrNull(0)
+        val password = uri.userInfo?.split(":", limit = 2)?.getOrNull(1)
+
+        // For SOCKS5, OkHttp delegates to the JVM, which uses this global authenticator.
+        if (!username.isNullOrBlank()) {
+            Authenticator.setDefault(object : Authenticator() {
+                override fun getPasswordAuthentication(): PasswordAuthentication {
+                    return PasswordAuthentication(username, password?.toCharArray() ?: "".toCharArray())
+                }
+            })
+            Logger.logInfo("Proxy authentication enabled for user: '$username'")
+        }
+        return configuredProxy
+    } catch (e: Exception) {
+        Logger.logError("Invalid proxy URL format or configuration error: $proxyUrl", e)
+        return null
+    }
+}
+
+actual fun createHttpClient(proxyUrl: String?): HttpClient {
+    val configuredProxy = configureProxy(proxyUrl)
 
     return HttpClient(OkHttp) {
         engine {

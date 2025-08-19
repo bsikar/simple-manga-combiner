@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.util.pointer.pointerIcon
 import com.mangacombiner.util.pointer.resizeCursor
-import java.awt.Cursor
 
 private const val DEFAULT_RATIO = 0.65f
 private const val MIN_RATIO = 0.1f

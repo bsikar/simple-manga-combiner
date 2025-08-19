@@ -3,9 +3,8 @@ package com.mangacombiner.service
 import com.mangacombiner.model.AppSettings
 import com.mangacombiner.model.SearchResult
 import com.mangacombiner.util.Logger
-import com.mangacombiner.util.toSlug
 import io.ktor.client.HttpClient
-import io.ktor.client.call.*
+import io.ktor.client.call.body
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.get

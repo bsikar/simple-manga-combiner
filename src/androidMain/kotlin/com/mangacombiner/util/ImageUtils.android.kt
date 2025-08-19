@@ -1,6 +1,7 @@
 package com.mangacombiner.util
 
 import android.graphics.BitmapFactory
+import java.io.IOException
 
 /**
  * Android-specific implementation for getting image dimensions using BitmapFactory.
@@ -18,7 +19,10 @@ actual fun getImageDimensions(path: String): ImageDimensions? {
         } else {
             null
         }
-    } catch (e: Exception) {
+    } catch (e: IOException) {
+        Logger.logError("Failed to get image dimensions for path: $path", e)
+        null
+    } catch (e: IllegalArgumentException) {
         Logger.logError("Failed to get image dimensions for path: $path", e)
         null
     }

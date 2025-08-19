@@ -1,12 +1,38 @@
 package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.*
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
+import androidx.compose.material.Card
+import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.Divider
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.ExposedDropdownMenuBox
+import androidx.compose.material.ExposedDropdownMenuDefaults
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.LocalContentColor
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.OutlinedButton
+import androidx.compose.material.OutlinedTextField
+import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
@@ -81,22 +107,24 @@ fun SearchScreen(state: UiState, onEvent: (Event) -> Unit) {
                     onValueChange = { onEvent(Event.Search.UpdateQuery(it)) },
                     label = { Text("Search on ${state.searchSource}") },
                     onSubmit = { onEvent(Event.Search.Perform) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = isIdle,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    trailingIcon = {
-                        if (state.searchQuery.isNotBlank()) {
-                            IconButton(
-                                onClick = {
-                                    onEvent(Event.Search.UpdateQuery(""))
-                                    onEvent(Event.Search.ClearResults)
-                                },
-                                enabled = isIdle
-                            ) {
-                                Icon(Icons.Filled.Clear, "Clear Search")
+                    options = SubmitTextFieldOptions(
+                        enabled = isIdle,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            if (state.searchQuery.isNotBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        onEvent(Event.Search.UpdateQuery(""))
+                                        onEvent(Event.Search.ClearResults)
+                                    },
+                                    enabled = isIdle
+                                ) {
+                                    Icon(Icons.Filled.Clear, "Clear Search")
+                                }
                             }
                         }
-                    }
+                    )
                 )
                 Button(
                     onClick = {

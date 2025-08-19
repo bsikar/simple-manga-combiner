@@ -2,14 +2,50 @@ package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.*
+import androidx.compose.material.Button
+import androidx.compose.material.Card
+import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.Divider
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.LinearProgressIndicator
+import androidx.compose.material.LocalContentColor
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.OutlinedButton
+import androidx.compose.material.ProgressIndicatorDefaults
+import androidx.compose.material.Switch
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -198,11 +234,13 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
                     itemsIndexed(state.downloadQueue, key = { _, item -> item.id }) { index, job ->
                         DownloadJobItem(
                             job = job,
-                            index = index,
-                            onEvent = onEvent,
-                            isFirst = index == 0,
-                            isLast = index == state.downloadQueue.lastIndex,
-                            isBlocked = state.isNetworkBlocked
+                            context = JobItemContext(
+                                index = index,
+                                isFirst = index == 0,
+                                isLast = index == state.downloadQueue.lastIndex,
+                                isBlocked = state.isNetworkBlocked
+                            ),
+                            onEvent = onEvent
                         )
                     }
                 }
@@ -211,17 +249,24 @@ fun DownloadQueueScreen(state: UiState, onEvent: (Event) -> Unit) {
     }
 }
 
+private data class JobItemContext(
+    val index: Int,
+    val isFirst: Boolean,
+    val isLast: Boolean,
+    val isBlocked: Boolean
+)
+
 @Composable
-private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Unit, isFirst: Boolean, isLast: Boolean, isBlocked: Boolean) {
+private fun DownloadJobItem(job: DownloadJob, context: JobItemContext, onEvent: (Event) -> Unit) {
     val animatedProgress by animateFloatAsState(
         targetValue = job.progress,
         animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
     )
     val isFinished = job.status == "Completed" || job.status.startsWith("Error", true) || job.status == "Cancelled"
-    val isRunning = !isFinished && !isBlocked && (
-            job.status.startsWith("Downloading", true) ||
-                    job.status.startsWith("Starting", true) ||
-                    job.status.startsWith("Packaging", true))
+    val isRunning = !isFinished && !context.isBlocked && (
+        job.status.startsWith("Downloading", true) ||
+            job.status.startsWith("Starting", true) ||
+            job.status.startsWith("Packaging", true))
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -234,11 +279,11 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
             Column {
                 IconButton(
                     onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.UP)) },
-                    enabled = !isFirst && !isBlocked
+                    enabled = !context.isFirst && !context.isBlocked
                 ) { Icon(Icons.Default.KeyboardArrowUp, "Move Up") }
                 IconButton(
                     onClick = { onEvent(Event.Queue.MoveJob(job.id, Event.Queue.MoveDirection.DOWN)) },
-                    enabled = !isLast && !isBlocked
+                    enabled = !context.isLast && !context.isBlocked
                 ) { Icon(Icons.Default.KeyboardArrowDown, "Move Down") }
             }
 
@@ -287,7 +332,7 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
                         text = if (isRunning) job.status else job.status.replaceFirstChar { it.titlecase() },
                         style = MaterialTheme.typography.caption,
                         color = when {
-                            isBlocked -> MaterialTheme.colors.error
+                            context.isBlocked -> MaterialTheme.colors.error
                             isRunning -> MaterialTheme.colors.primary
                             job.status == "Paused" -> MaterialTheme.colors.secondary
                             else -> LocalContentColor.current.copy(alpha = 0.7f)
@@ -303,14 +348,14 @@ private fun DownloadJobItem(job: DownloadJob, index: Int, onEvent: (Event) -> Un
                         IconButton(
                             onClick = { onEvent(Event.Queue.RequestEditJob(job.id)) },
                             modifier = Modifier.size(36.dp),
-                            enabled = !isBlocked
+                            enabled = !context.isBlocked
                         ) { Icon(Icons.Default.Edit, "Edit Job") }
                     }
                 }
                 PlatformTooltip(if (job.isIndividuallyPaused || job.status == "Paused") "Resume Job" else "Pause Job") {
                     IconButton(
                         onClick = { onEvent(Event.Queue.TogglePauseJob(job.id)) },
-                        enabled = !isFinished && !isBlocked,
+                        enabled = !isFinished && !context.isBlocked,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(

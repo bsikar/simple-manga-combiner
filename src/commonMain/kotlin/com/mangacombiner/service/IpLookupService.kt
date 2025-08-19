@@ -3,10 +3,10 @@ package com.mangacombiner.service
 import com.mangacombiner.model.IpInfo
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
-import io.ktor.client.call.*
-import io.ktor.client.plugins.*
-import io.ktor.client.request.*
-import io.ktor.http.*
+import io.ktor.client.call.body
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.get
+import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive

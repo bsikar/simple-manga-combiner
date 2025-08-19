@@ -1,6 +1,5 @@
 package com.mangacombiner.ui.viewmodel.handler
 
-import com.mangacombiner.model.SearchResult
 import com.mangacombiner.service.NetworkException
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
@@ -10,15 +9,15 @@ import com.mangacombiner.util.Logger
 import com.mangacombiner.util.UserAgent
 import com.mangacombiner.util.createHttpClient
 import com.mangacombiner.util.titlecase
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.NonCancellable
 
 internal fun MainViewModel.handleSearchEvent(event: Event.Search) {
     when (event) {

@@ -2,14 +2,46 @@ package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.*
+import androidx.compose.material.Button
+import androidx.compose.material.Card
+import androidx.compose.material.Checkbox
+import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.ContentAlpha
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.LinearProgressIndicator
+import androidx.compose.material.LocalContentColor
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.OutlinedButton
+import androidx.compose.material.OutlinedTextField
+import androidx.compose.material.Switch
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -145,14 +177,16 @@ fun WebDavScreen(state: UiState, onEvent: (Event) -> Unit) {
                     items(filteredAndSortedFiles, key = { it.href }) { file ->
                         WebDavFileItem(
                             file = file,
-                            isSelected = file.href in state.webDavSelectedFiles,
                             folderSize = state.webDavFolderSizes[file.href],
-                            onItemClick = {
-                                if (file.isDirectory) onEvent(Event.WebDav.NavigateTo(file))
-                                else onEvent(Event.WebDav.ToggleFileSelection(file.href, file.href !in state.webDavSelectedFiles))
-                            },
-                            onCheckedChange = { isSelected -> onEvent(Event.WebDav.ToggleFileSelection(file.href, isSelected)) },
-                            enabled = !state.isDownloadingFromWebDav
+                            interaction = WebDavFileItemInteraction(
+                                isSelected = file.href in state.webDavSelectedFiles,
+                                onItemClick = {
+                                    if (file.isDirectory) onEvent(Event.WebDav.NavigateTo(file))
+                                    else onEvent(Event.WebDav.ToggleFileSelection(file.href, file.href !in state.webDavSelectedFiles))
+                                },
+                                onCheckedChange = { isSelected -> onEvent(Event.WebDav.ToggleFileSelection(file.href, isSelected)) },
+                                enabled = !state.isDownloadingFromWebDav
+                            )
                         )
                     }
                 }
@@ -249,31 +283,35 @@ private fun WebDavToolbar(state: UiState, onEvent: (Event) -> Unit) {
     }
 }
 
+private data class WebDavFileItemInteraction(
+    val isSelected: Boolean,
+    val onItemClick: () -> Unit,
+    val onCheckedChange: (Boolean) -> Unit,
+    val enabled: Boolean
+)
+
 @Composable
 private fun WebDavFileItem(
     file: WebDavFile,
-    isSelected: Boolean,
     folderSize: Long?,
-    onItemClick: () -> Unit,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean
+    interaction: WebDavFileItemInteraction
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onItemClick, enabled = enabled)
+            .clickable(onClick = interaction.onItemClick, enabled = interaction.enabled)
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Checkbox(
-            checked = isSelected,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled
+            checked = interaction.isSelected,
+            onCheckedChange = interaction.onCheckedChange,
+            enabled = interaction.enabled
         )
         Icon(
             imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.Default.Description,
             contentDescription = if (file.isDirectory) "Directory" else "File",
-            tint = if (enabled) LocalContentColor.current else LocalContentColor.current.copy(alpha = ContentAlpha.disabled),
+            tint = if (interaction.enabled) LocalContentColor.current else LocalContentColor.current.copy(alpha = ContentAlpha.disabled),
             modifier = Modifier.padding(end = 8.dp).size(20.dp)
         )
         Column(modifier = Modifier.weight(1f)) {

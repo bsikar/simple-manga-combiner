@@ -13,7 +13,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
-import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -129,7 +128,7 @@ class DownloadService(
                 val contentLength = response.headers["Content-Length"]?.toLongOrNull()
                 Logger.logDebug {
                     "Starting download of ${outputFile.name}" +
-                            if (contentLength != null) " (${contentLength} bytes)" else ""
+                        if (contentLength != null) " (${contentLength} bytes)" else ""
                 }
 
                 writeChannelToFile(response.bodyAsChannel(), outputFile)
@@ -278,9 +277,9 @@ class DownloadService(
         // Count successfully downloaded images
         val downloadedImages = chapterDir.listFiles()?.filter { file ->
             file.isFile &&
-                    !file.name.startsWith(".") &&
-                    file.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS &&
-                    file.length() > 0
+                !file.name.startsWith(".") &&
+                file.extension.lowercase() in ProcessorService.IMAGE_EXTENSIONS &&
+                file.length() > 0
         } ?: emptyList()
 
         val downloadedCount = downloadedImages.size

@@ -1,6 +1,5 @@
 package com.mangacombiner.service
 
-import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
 data class DownloadOptions(

@@ -28,7 +28,7 @@ fun BrokenDownloadDialog(state: UiState, onEvent: (Event) -> Unit) {
             Column {
                 Text(
                     "The download completed, but $failedCount chapter(s) had missing images. " +
-                            "You can create a partial file now, retry only the failed chapters, or discard the result."
+                        "You can create a partial file now, retry only the failed chapters, or discard the result."
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(

@@ -1,19 +1,19 @@
 package com.mangacombiner.ui.viewmodel.handler
 
 import com.mangacombiner.model.AppSettings
-import com.mangacombiner.model.ProxyType
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
 import com.mangacombiner.ui.viewmodel.state.ProxyStatus
-import com.mangacombiner.ui.viewmodel.state.Screen
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
-import io.ktor.client.call.*
-import io.ktor.client.plugins.*
-import io.ktor.client.request.*
+import io.ktor.client.call.body
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.request.accept
+import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.*
+import io.ktor.http.ContentType
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch

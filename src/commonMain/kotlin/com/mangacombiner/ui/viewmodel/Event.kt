@@ -14,6 +14,11 @@ import com.mangacombiner.ui.viewmodel.state.SearchSortOption
 sealed interface Event {
     data class Navigate(val screen: Screen) : Event
     data class ToggleAboutDialog(val show: Boolean) : Event
+    object CheckForUpdate : Event
+    data class ToggleUpdateDialog(val show: Boolean) : Event
+    object DownloadUpdate : Event
+    data class ToggleUpdateDownloadedDialog(val show: Boolean) : Event
+    object RestartToUpdate : Event
 
     sealed interface Settings : Event {
         data class UpdateTheme(val theme: AppTheme) : Settings

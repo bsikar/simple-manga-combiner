@@ -11,6 +11,7 @@ plugins {
     alias(libs.plugins.kotlin.plugin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.shadow.jar)
+    alias(libs.plugins.detekt)
 }
 
 val appVersionName: String by project
@@ -512,7 +513,20 @@ tasks.named("clean") {
     }
 }
 
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    jvmTarget = "17"
+    dependsOn(generateVersionFile)
+}
+
 // Global rule to exclude the conflicting 'xmlpull' dependency
 configurations.all {
     exclude(group = "xmlpull", module = "xmlpull")
+}
+
+detekt {
+    config.setFrom(files("detekt.yml"))
+    source.setFrom(files(kotlin.sourceSets.map { it.kotlin.srcDirs }))
+    dependencies {
+        detektPlugins(libs.detekt.formatting)
+    }
 }

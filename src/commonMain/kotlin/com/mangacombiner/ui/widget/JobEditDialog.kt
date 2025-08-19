@@ -1,8 +1,26 @@
 package com.mangacombiner.ui.widget
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.*
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.OutlinedButton
+import androidx.compose.material.Surface
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.FolderOpen
@@ -57,9 +75,11 @@ fun JobEditDialog(
                     onValueChange = { title = it },
                     label = { Text("Output Filename") },
                     onSubmit = submitAction,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = isEditable,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+                    options = SubmitTextFieldOptions(
+                        enabled = isEditable,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 )
 
                 SubmitTextField(
@@ -67,17 +87,19 @@ fun JobEditDialog(
                     onValueChange = { outputPath = it },
                     label = { Text("Output Directory") },
                     onSubmit = submitAction,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = isEditable,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    trailingIcon = {
-                        IconButton(
-                            onClick = { onEvent(Event.Queue.PickJobOutputPath) },
-                            enabled = isEditable
-                        ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = "Browse for output directory")
+                    options = SubmitTextFieldOptions(
+                        enabled = isEditable,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            IconButton(
+                                onClick = { onEvent(Event.Queue.PickJobOutputPath) },
+                                enabled = isEditable
+                            ) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = "Browse for output directory")
+                            }
                         }
-                    }
+                    )
                 )
 
                 Row(

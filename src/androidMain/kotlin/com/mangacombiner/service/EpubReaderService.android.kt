@@ -77,89 +77,24 @@ actual class EpubReaderService : KoinComponent {
     }
 
     actual suspend fun parseEpub(filePath: String): Book? = withContext(Dispatchers.IO) {
-        val tempEpubFile = getCacheFileForBook(filePath)
-
-        if (!tempEpubFile.exists()) {
-            Logger.logDebug { "Caching EPUB for first-time parse: $filePath" }
-            val inputStream = getInputStream(filePath) ?: return@withContext null
-            inputStream.use { input ->
-                tempEpubFile.outputStream().use { output -> input.copyTo(output) }
-            }
-        }
+        val tempEpubFile = ensureCachedFile(filePath) ?: return@withContext null
 
         try {
             ZipFile(tempEpubFile).use { zip ->
-                val containerEntry =
-                    zip.getFileHeader("META-INF/container.xml") ?: return@withContext null
-                val opfPath = zip.getInputStream(containerEntry).use {
-                    val doc = Jsoup.parse(it, "UTF-8", "", Parser.xmlParser())
-                    doc.selectFirst("rootfile")?.attr("full-path")
-                } ?: return@withContext null
-
-                val opfEntry = zip.getFileHeader(opfPath) ?: return@withContext null
-                val opfDoc = zip.getInputStream(opfEntry).use {
-                    Jsoup.parse(it, "UTF-8", "", Parser.xmlParser())
-                }
-
-                val title = opfDoc.selectFirst("metadata > dc|title")?.text() ?: "Unknown Title"
-                val genres = opfDoc.select("metadata > dc|subject").map { it.text() }
-                val manifest =
-                    opfDoc.select("manifest > item").associate { it.id() to it.attr("href") }
-                val coverId = opfDoc.selectFirst("metadata > meta[name=cover]")?.attr("content")
-                val coverHref = coverId?.let { manifest[it] }
-                val coverImageBytes = coverHref?.let { href ->
-                    val coverPath = URI(opfPath).resolve(href).path.removePrefix("/")
-                    zip.getFileHeader(coverPath)
-                        ?.let { zip.getInputStream(it).use { stream -> stream.readBytes() } }
-                }
-
-                val chapterIds = opfDoc.select("spine > itemref").map { it.attr("idref") }
-                val pageLevelChapters = chapterIds.mapNotNull { id ->
-                    val chapterHref = manifest[id] ?: return@mapNotNull null
-                    val chapterPath = URI(opfPath).resolve(chapterHref).path.removePrefix("/")
-                    val chapterEntry = zip.getFileHeader(chapterPath) ?: return@mapNotNull null
-
-                    val chapterContent =
-                        zip.getInputStream(chapterEntry).use { it.reader().readText() }
-                    val chapterDoc = Jsoup.parse(chapterContent)
-                    val chapterTitle = chapterDoc.title()
-
-                    val imageHrefs = chapterDoc.select("img").map { img ->
-                        val relativePath = img.attr("src")
-                        URI(chapterPath).resolve(relativePath).path.removePrefix("/")
-                    }
-                    val textContent = if (imageHrefs.isEmpty()) chapterDoc.body()?.text() else null
-
-                    if (imageHrefs.isNotEmpty() || !textContent.isNullOrBlank()) {
-                        ChapterContent(chapterTitle, imageHrefs, textContent)
-                    } else {
-                        null
-                    }
-                }
-
-                val chapterRegex = Regex("""^(.*?)(?: - Page \d+|$)""")
-                val groupedChapters = pageLevelChapters
-                    .groupBy { chapter ->
-                        chapterRegex.find(chapter.title)?.groupValues?.get(1)?.trim()
-                            ?: chapter.title
-                    }
-                    .map { (chapterTitle, pages) ->
-                        val allImageHrefs = pages.flatMap { it.imageHrefs }
-                        val combinedText = pages.mapNotNull { it.textContent }.joinToString("\n\n")
-                        ChapterContent(
-                            title = chapterTitle,
-                            imageHrefs = allImageHrefs,
-                            textContent = if (combinedText.isNotBlank()) combinedText else null
-                        )
-                    }
+                val opfPath = extractOpfPath(zip) ?: return@withContext null
+                val opfDoc = parseOpfDocument(zip, opfPath) ?: return@withContext null
+                val metadata = extractMetadata(opfDoc)
+                val manifest = extractManifest(opfDoc)
+                val coverImageBytes = extractCoverImage(zip, opfPath, opfDoc, manifest)
+                val chapters = extractAndGroupChapters(zip, opfPath, opfDoc, manifest)
 
                 Book(
                     filePath = filePath,
-                    title = title,
+                    title = metadata.title,
                     coverImage = coverImageBytes,
-                    chapters = groupedChapters,
+                    chapters = chapters,
                     localCachePath = tempEpubFile.absolutePath,
-                    genres = genres.takeIf { it.isNotEmpty() }
+                    genres = metadata.genres.takeIf { it.isNotEmpty() }
                 )
             }
         } catch (e: Exception) {
@@ -167,6 +102,119 @@ actual class EpubReaderService : KoinComponent {
             tempEpubFile.delete()
             null
         }
+    }
+
+    private suspend fun ensureCachedFile(filePath: String): File? {
+        val tempEpubFile = getCacheFileForBook(filePath)
+        
+        if (!tempEpubFile.exists()) {
+            Logger.logDebug { "Caching EPUB for first-time parse: $filePath" }
+            val inputStream = getInputStream(filePath) ?: return null
+            inputStream.use { input ->
+                tempEpubFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        
+        return tempEpubFile
+    }
+
+    private fun extractOpfPath(zip: ZipFile): String? {
+        val containerEntry = zip.getFileHeader("META-INF/container.xml") ?: return null
+        return zip.getInputStream(containerEntry).use {
+            val doc = Jsoup.parse(it, "UTF-8", "", Parser.xmlParser())
+            doc.selectFirst("rootfile")?.attr("full-path")
+        }
+    }
+
+    private fun parseOpfDocument(zip: ZipFile, opfPath: String): org.jsoup.nodes.Document? {
+        val opfEntry = zip.getFileHeader(opfPath) ?: return null
+        return zip.getInputStream(opfEntry).use {
+            Jsoup.parse(it, "UTF-8", "", Parser.xmlParser())
+        }
+    }
+
+    private data class EpubMetadata(val title: String, val genres: List<String>)
+
+    private fun extractMetadata(opfDoc: org.jsoup.nodes.Document): EpubMetadata {
+        val title = opfDoc.selectFirst("metadata > dc|title")?.text() ?: "Unknown Title"
+        val genres = opfDoc.select("metadata > dc|subject").map { it.text() }
+        return EpubMetadata(title, genres)
+    }
+
+    private fun extractManifest(opfDoc: org.jsoup.nodes.Document): Map<String, String> {
+        return opfDoc.select("manifest > item").associate { it.id() to it.attr("href") }
+    }
+
+    private fun extractCoverImage(
+        zip: ZipFile,
+        opfPath: String,
+        opfDoc: org.jsoup.nodes.Document,
+        manifest: Map<String, String>
+    ): ByteArray? {
+        val coverId = opfDoc.selectFirst("metadata > meta[name=cover]")?.attr("content")
+        val coverHref = coverId?.let { manifest[it] }
+        return coverHref?.let { href ->
+            val coverPath = URI(opfPath).resolve(href).path.removePrefix("/")
+            zip.getFileHeader(coverPath)
+                ?.let { zip.getInputStream(it).use { stream -> stream.readBytes() } }
+        }
+    }
+
+    private fun extractAndGroupChapters(
+        zip: ZipFile,
+        opfPath: String,
+        opfDoc: org.jsoup.nodes.Document,
+        manifest: Map<String, String>
+    ): List<ChapterContent> {
+        val chapterIds = opfDoc.select("spine > itemref").map { it.attr("idref") }
+        val pageLevelChapters = extractPageLevelChapters(zip, opfPath, chapterIds, manifest)
+        return groupChaptersByTitle(pageLevelChapters)
+    }
+
+    private fun extractPageLevelChapters(
+        zip: ZipFile,
+        opfPath: String,
+        chapterIds: List<String>,
+        manifest: Map<String, String>
+    ): List<ChapterContent> {
+        return chapterIds.mapNotNull { id ->
+            val chapterHref = manifest[id] ?: return@mapNotNull null
+            val chapterPath = URI(opfPath).resolve(chapterHref).path.removePrefix("/")
+            val chapterEntry = zip.getFileHeader(chapterPath) ?: return@mapNotNull null
+
+            val chapterContent = zip.getInputStream(chapterEntry).use { it.reader().readText() }
+            val chapterDoc = Jsoup.parse(chapterContent)
+            val chapterTitle = chapterDoc.title()
+
+            val imageHrefs = chapterDoc.select("img").map { img ->
+                val relativePath = img.attr("src")
+                URI(chapterPath).resolve(relativePath).path.removePrefix("/")
+            }
+            val textContent = if (imageHrefs.isEmpty()) chapterDoc.body()?.text() else null
+
+            if (imageHrefs.isNotEmpty() || !textContent.isNullOrBlank()) {
+                ChapterContent(chapterTitle, imageHrefs, textContent)
+            } else {
+                null
+            }
+        }
+    }
+
+    private fun groupChaptersByTitle(pageLevelChapters: List<ChapterContent>): List<ChapterContent> {
+        val chapterRegex = Regex("""^(.*?)(?: - Page \d+|$)""")
+        return pageLevelChapters
+            .groupBy { chapter ->
+                chapterRegex.find(chapter.title)?.groupValues?.get(1)?.trim() ?: chapter.title
+            }
+            .map { (chapterTitle, pages) ->
+                val allImageHrefs = pages.flatMap { it.imageHrefs }
+                val combinedText = pages.mapNotNull { it.textContent }.joinToString("\n\n")
+                ChapterContent(
+                    title = chapterTitle,
+                    imageHrefs = allImageHrefs,
+                    textContent = if (combinedText.isNotBlank()) combinedText else null
+                )
+            }
     }
 
     actual suspend fun extractImage(filePath: String, imageHref: String): ByteArray? =

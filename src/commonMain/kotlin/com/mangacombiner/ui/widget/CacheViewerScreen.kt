@@ -2,14 +2,45 @@ package com.mangacombiner.ui.widget
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.*
+import androidx.compose.material.AlertDialog
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
+import androidx.compose.material.Card
+import androidx.compose.material.Checkbox
+import androidx.compose.material.Divider
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SyncProblem
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -20,7 +51,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.mangacombiner.service.CachedSeries
 import com.mangacombiner.ui.viewmodel.Event
-import com.mangacombiner.ui.viewmodel.state.*
+import com.mangacombiner.ui.viewmodel.state.CacheSortState
+import com.mangacombiner.ui.viewmodel.state.RangeAction
+import com.mangacombiner.ui.viewmodel.state.SortCriteria
+import com.mangacombiner.ui.viewmodel.state.SortDirection
+import com.mangacombiner.ui.viewmodel.state.UiState
 import com.mangacombiner.util.CachedChapterNameComparator
 import com.mangacombiner.util.pointer.tooltipHoverFix
 
@@ -160,7 +195,7 @@ private fun CacheSeriesItem(
         seriesChapterPaths.intersect(selectedPaths)
     }
     val isSeriesChecked = selectedPaths.contains(series.path) ||
-            (seriesChapterPaths.isNotEmpty() && selectedPaths.containsAll(seriesChapterPaths))
+        (seriesChapterPaths.isNotEmpty() && selectedPaths.containsAll(seriesChapterPaths))
 
     val startInt = rangeStart.toIntOrNull()
     val endInt = rangeEnd.toIntOrNull()
@@ -254,16 +289,20 @@ private fun CacheSeriesItem(
                                 onValueChange = { rangeStart = it.filter(Char::isDigit) },
                                 label = { Text("Start") },
                                 onSubmit = submitRange,
-                                modifier = Modifier.weight(1f),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
+                                options = SubmitTextFieldOptions(
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                                    modifier = Modifier.weight(1f)
+                                )
                             )
                             SubmitTextField(
                                 value = rangeEnd,
                                 onValueChange = { rangeEnd = it.filter(Char::isDigit) },
                                 label = { Text("End") },
                                 onSubmit = submitRange,
-                                modifier = Modifier.weight(1f),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
+                                options = SubmitTextFieldOptions(
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                    modifier = Modifier.weight(1f)
+                                )
                             )
                         }
                         FlowRow(

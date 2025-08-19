@@ -3,7 +3,6 @@ package com.mangacombiner.ui.viewmodel.handler
 import com.mangacombiner.ui.viewmodel.Event
 import com.mangacombiner.ui.viewmodel.MainViewModel
 import com.mangacombiner.ui.viewmodel.state.FilePickerRequest
-import com.mangacombiner.util.Logger
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 

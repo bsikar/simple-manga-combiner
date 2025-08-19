@@ -4,11 +4,17 @@ import com.mangacombiner.model.WebDavMultiStatus
 import com.mangacombiner.model.WebDavResponse
 import com.mangacombiner.util.Logger
 import com.mangacombiner.util.createHttpClient
-import io.ktor.client.call.*
-import io.ktor.client.plugins.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
+import io.ktor.client.call.body
+import io.ktor.client.plugins.onDownload
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.isSuccess
 import io.ktor.util.cio.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
@@ -91,7 +97,17 @@ class WebDavService {
     ): Result<List<WebDavFile>> = withContext(Dispatchers.IO) {
         try {
             val allFiles = mutableListOf<WebDavFile>()
-            traverseAndCollectFiles(fullUrl, user, pass, allFiles, mutableSetOf(), 0, includeHidden)
+            traverseAndCollectFiles(
+                fullUrl, 
+                user, 
+                pass, 
+                WebDavTraversalContext(
+                    allFiles = allFiles,
+                    visitedUrls = mutableSetOf(),
+                    depth = 0,
+                    includeHidden = includeHidden
+                )
+            )
             Result.success(allFiles.filter { !it.isDirectory })
         } catch (e: Exception) {
             Logger.logError("Failed to recursively scan directory: $fullUrl", e)
@@ -99,17 +115,21 @@ class WebDavService {
         }
     }
 
+    private data class WebDavTraversalContext(
+        val allFiles: MutableList<WebDavFile>,
+        val visitedUrls: MutableSet<String>,
+        val depth: Int,
+        val includeHidden: Boolean,
+        val maxDepth: Int = 20
+    )
+
     private suspend fun traverseAndCollectFiles(
         directoryUrl: String,
         user: String?,
         pass: String?,
-        allFiles: MutableList<WebDavFile>,
-        visitedUrls: MutableSet<String>,
-        depth: Int,
-        includeHidden: Boolean,
-        maxDepth: Int = 20
+        context: WebDavTraversalContext
     ) {
-        if (depth > maxDepth || !visitedUrls.add(directoryUrl)) return
+        if (context.depth > context.maxDepth || !context.visitedUrls.add(directoryUrl)) return
 
         val client = createHttpClient(null)
         try {
@@ -128,14 +148,19 @@ class WebDavService {
 
             val itemsInDir = multiStatus.responses
                 .mapNotNull { it.toWebDavFile(directoryUrl) }
-                .filter { includeHidden || !it.name.startsWith('.') }
+                .filter { context.includeHidden || !it.name.startsWith('.') }
 
-            allFiles.addAll(itemsInDir)
+            context.allFiles.addAll(itemsInDir)
 
             val subdirectories = itemsInDir.filter { it.isDirectory }
             for (subdir in subdirectories) {
                 val subdirUrl = serverRoot + subdir.href
-                traverseAndCollectFiles(subdirUrl, user, pass, allFiles, visitedUrls, depth + 1, includeHidden, maxDepth)
+                traverseAndCollectFiles(
+                    subdirUrl,
+                    user,
+                    pass,
+                    context.copy(depth = context.depth + 1)
+                )
             }
         } finally {
             client.close()

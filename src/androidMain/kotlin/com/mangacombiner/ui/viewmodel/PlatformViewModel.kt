@@ -3,16 +3,15 @@ package com.mangacombiner.ui.viewmodel
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope as androidViewModelScope
 import com.mangacombiner.service.Book
 import com.mangacombiner.util.AndroidPlatformProvider
-import com.mangacombiner.util.titlecase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import androidx.lifecycle.viewModelScope as androidViewModelScope
 
 /**
  * Android implementation of PlatformViewModel.
